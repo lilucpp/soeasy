@@ -1,0 +1,59 @@
+# Build directories
+build/
+build-*/
+bin/
+lib/
+dist/
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+compile_commands.json
+
+# Qt generated files
+*.moc
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.qmlc
+*.jsc
+
+# Compiled binaries and libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Preserve vendored sysroot dependencies
+!third_party/sysroot/**
+
+# Database and test artifacts
+*.db
+*.db-wal
+*.db-shm
+/tmp/soeasy*
+logs/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Distribution archives
+*.zip
+*.tar.gz
+*.tar.xz
+
+# Local documentation (view locally, do not track)
+doc/

@@ -1,0 +1,399 @@
+#include "service/index_pipeline.h"
+
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "common/logger.h"
+
+namespace soeasy {
+namespace service {
+
+namespace {
+
+std::string ExtractFileName(const std::string& path) {
+  size_t pos = path.find_last_of("/\\");
+  if (pos == std::string::npos) {
+    return path;
+  }
+  return path.substr(pos + 1);
+}
+
+std::string ExtractExtension(const std::string& filename) {
+  size_t dot_pos = filename.find_last_of('.');
+  if (dot_pos == std::string::npos || dot_pos == 0) {
+    return "";
+  }
+  std::string ext = filename.substr(dot_pos + 1);
+  std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+  return ext;
+}
+
+}  // namespace
+
+int64_t IndexPipeline::GenerateDocId(const std::string& path) {
+  constexpr uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
+  constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
+  uint64_t hash = kFnvOffsetBasis;
+  for (char c : path) {
+    hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+    hash *= kFnvPrime;
+  }
+  // Ensure positive signed 64-bit integer
+  return static_cast<int64_t>(hash & 0x7FFFFFFFFFFFFFFFLL);
+}
+
+IndexPipeline::IndexPipeline(
+    std::shared_ptr<IndexConfig> config,
+    std::shared_ptr<WorkerGuard> worker_guard,
+    std::shared_ptr<storage::StorageEngine> storage_engine)
+    : config_(std::move(config)),
+      worker_guard_(std::move(worker_guard)),
+      storage_engine_(std::move(storage_engine)) {}
+
+IndexPipeline::~IndexPipeline() {
+  StopLiveWatch();
+}
+
+bool IndexPipeline::Init() {
+  if (!config_ || !worker_guard_ || !storage_engine_) {
+    return false;
+  }
+
+  debouncer_ = std::make_shared<EventDebouncer>(config_->debounce_ms());
+  debouncer_->SetCallback([this](const DebouncedEvent& ev) {
+    HandleFileChange(ev);
+  });
+
+  name_index_ = std::make_shared<NameIndex>();
+  watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
+  return true;
+}
+
+bool IndexPipeline::StartLiveWatch() {
+  if (!watch_engine_) {
+    return false;
+  }
+  return watch_engine_->Start();
+}
+
+void IndexPipeline::StopLiveWatch() {
+  if (watch_engine_) {
+    watch_engine_->Stop();
+  }
+  if (debouncer_) {
+    debouncer_->Stop(true);
+  }
+}
+
+bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
+                                        bool recursive) {
+  if (!watch_engine_) {
+    return false;
+  }
+
+  LOG_INFO("[IndexPipeline] Adding directory to monitor and scan: '{}'", dir_path);
+
+  // 1. Register with watch engine for live events
+  watch_engine_->AddWatch(dir_path);
+
+  // 2. Perform baseline crawl of existing files
+  ScanDirectoryRecursive(dir_path);
+  return true;
+}
+
+void IndexPipeline::ScanDirectoryRecursive(const std::string& dir_path) {
+  try {
+    for (const auto& entry :
+         std::filesystem::recursive_directory_iterator(
+             dir_path, std::filesystem::directory_options::skip_permission_denied)) {
+      if (entry.is_regular_file()) {
+        std::string file_path = entry.path().string();
+        std::string filename = entry.path().filename().string();
+        std::string ext = ExtractExtension(filename);
+
+        uint64_t fsize = 0;
+        try {
+          fsize = entry.file_size();
+        } catch (...) {
+          fsize = 0;
+        }
+
+        if (config_->ShouldIndex(file_path, ext, fsize)) {
+          IndexSingleFile(file_path);
+        }
+      }
+    }
+  } catch (const std::exception& e) {
+    LOG_WARN("[IndexPipeline] Directory scan error on '{}': {}", dir_path, e.what());
+  }
+}
+
+bool IndexPipeline::RebuildIndex(
+    std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb) {
+  LOG_INFO("[IndexPipeline] Starting full index rebuild from scratch...");
+  auto start_time = std::chrono::high_resolution_clock::now();
+
+  // 1. Temporarily pause live watcher and drain debouncer
+  bool was_watching = false;
+  if (watch_engine_) {
+    was_watching = watch_engine_->is_watching();
+    watch_engine_->Stop();
+  }
+
+  // 2. Clear in-memory filename index
+  if (name_index_) {
+    name_index_->Clear();
+    LOG_INFO("[IndexPipeline] Cleared in-memory NameIndex.");
+  }
+
+  // 3. Reset persistent storage and FTS tables
+  if (storage_engine_) {
+    if (!storage_engine_->ClearAll()) {
+      LOG_ERROR("[IndexPipeline] Failed to reset storage engine tables: {}",
+                storage_engine_->GetLastError());
+      return false;
+    }
+    LOG_INFO("[IndexPipeline] Cleared persistent storage and FTS5 index.");
+  }
+
+  // 4. Reset stats
+  {
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    stats_ = PipelineStats();
+  }
+
+  // 5. Gather all configured directories
+  auto watched_dirs = config_->GetIndexedDirectories();
+  if (watched_dirs.empty() && watch_engine_) {
+    watched_dirs = watch_engine_->GetWatchedDirectories();
+  }
+
+  // Collect candidate files first for progress calculation
+  std::vector<std::string> files_to_index;
+  for (const auto& dir : watched_dirs) {
+    try {
+      for (const auto& entry :
+           std::filesystem::recursive_directory_iterator(
+               dir, std::filesystem::directory_options::skip_permission_denied)) {
+        if (entry.is_regular_file()) {
+          std::string fpath = entry.path().string();
+          std::string fname = entry.path().filename().string();
+          std::string ext = ExtractExtension(fname);
+          uint64_t fsize = 0;
+          try {
+            fsize = entry.file_size();
+          } catch (...) {}
+
+          if (config_->ShouldIndex(fpath, ext, fsize)) {
+            files_to_index.push_back(fpath);
+          }
+        }
+      }
+    } catch (const std::exception& e) {
+      LOG_WARN("[IndexPipeline] Error enumerating directory '{}': {}", dir, e.what());
+    }
+  }
+
+  size_t total_files = files_to_index.size();
+  LOG_INFO("[IndexPipeline] Rebuild discovered {} files to index across {} directories.",
+           total_files, watched_dirs.size());
+
+  size_t indexed_count = 0;
+  for (const auto& fpath : files_to_index) {
+    bool ok = IndexSingleFile(fpath);
+    if (ok) {
+      indexed_count++;
+    }
+    if (progress_cb) {
+      progress_cb(indexed_count, total_files, fpath);
+    }
+  }
+
+  // 6. Restore watcher if it was running
+  if (was_watching && watch_engine_) {
+    watch_engine_->Start();
+    for (const auto& dir : watched_dirs) {
+      watch_engine_->AddWatch(dir);
+    }
+  }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  double elapsed_ms =
+      std::chrono::duration<double, std::milli>(end_time - start_time).count();
+
+  LOG_INFO(
+      "[IndexPipeline] Index rebuild finished in {:.2f} ms | Indexed: {} / {} files | "
+      "Total parsed bytes: {}",
+      elapsed_ms, indexed_count, total_files, stats_.total_bytes_indexed);
+
+  return true;
+}
+
+bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
+  auto start_time = std::chrono::high_resolution_clock::now();
+
+  struct stat st;
+  if (stat(file_path.c_str(), &st) != 0) {
+    LOG_WARN("[IndexPipeline] Failed to stat file: '{}'", file_path);
+    return false;
+  }
+
+  std::string filename = ExtractFileName(file_path);
+  std::string ext = ExtractExtension(filename);
+  uint64_t file_size = static_cast<uint64_t>(st.st_size);
+
+  if (!config_->ShouldIndex(file_path, ext, file_size)) {
+    return false;
+  }
+
+  int64_t doc_id = GenerateDocId(file_path);
+
+  // 1. Dispatch parsing task to worker sandbox pool
+  ParseTask task{doc_id, file_path, ext, 1};
+  ParseTaskResult res;
+
+  auto parse_start = std::chrono::high_resolution_clock::now();
+  bool ok = worker_guard_->ExecuteTask(task, &res);
+  auto parse_end = std::chrono::high_resolution_clock::now();
+  double parse_cost_ms =
+      std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
+
+  if (!ok || res.status != TaskStatus::kSuccess) {
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    stats_.total_parse_failures++;
+    LOG_ERROR("[Parser] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | status: {}",
+              file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status));
+    return false;
+  }
+
+  // 2. Read extracted plain text from shared memory slot
+  const uint8_t* extracted_data = nullptr;
+  size_t extracted_bytes = 0;
+  bool read_ok = worker_guard_->shm_pool()->ReadSlot(
+      res.slot_id, &extracted_data, &extracted_bytes);
+
+  std::string text_content;
+  if (read_ok && extracted_data && extracted_bytes > 0) {
+    text_content.assign(reinterpret_cast<const char*>(extracted_data),
+                        extracted_bytes);
+  }
+  worker_guard_->shm_pool()->ReleaseSlot(res.slot_id);
+
+  // 3. Update in-memory filename index (for instant filename queries)
+  NameRecord rec;
+  rec.doc_id = doc_id;
+  rec.file_name = filename;
+  rec.file_path = file_path;
+  rec.ext = ext;
+  rec.file_size = file_size;
+  rec.mtime = st.st_mtime;
+  name_index_->Upsert(rec);
+
+  // 4. Update encrypted persistent database (FTS5 inverted index + Zstd compressed text)
+  bool idx_ok = storage_engine_->IndexDocument(
+      doc_id, file_path, filename, ext, file_size, st.st_mtime, 1, text_content);
+
+  auto total_end = std::chrono::high_resolution_clock::now();
+  double total_cost_ms =
+      std::chrono::duration<double, std::milli>(total_end - start_time).count();
+
+  if (idx_ok) {
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    stats_.total_files_indexed++;
+    stats_.total_bytes_indexed += extracted_bytes;
+
+    LOG_INFO(
+        "[Parser] SUCCESS parsed & indexed '{}' (ext: '{}', size: {} B, extracted: {} B) | "
+        "parse: {:.2f} ms, total: {:.2f} ms",
+        file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms);
+  } else {
+    LOG_ERROR(
+        "[Parser] FAILED storage indexing for '{}' in {:.2f} ms | error: {}",
+        file_path, total_cost_ms, storage_engine_->GetLastError());
+  }
+
+  return idx_ok;
+}
+
+bool IndexPipeline::HandleFileChange(const DebouncedEvent& event) {
+  int64_t doc_id = GenerateDocId(event.file_path);
+
+  if (event.action == FileChangeAction::kDelete) {
+    LOG_INFO("[Watcher] File delete event: '{}' | removing from index", event.file_path);
+    name_index_->Remove(doc_id);
+    storage_engine_->DeleteDocument(doc_id);
+
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    stats_.total_files_deleted++;
+    return true;
+  }
+
+  if (event.action == FileChangeAction::kAdd) {
+    LOG_INFO("[Watcher] File added event: '{}' | triggering index", event.file_path);
+    return IndexSingleFile(event.file_path);
+  }
+
+  if (event.action == FileChangeAction::kModified) {
+    LOG_INFO("[Watcher] File modified event: '{}' | triggering re-index", event.file_path);
+    return IndexSingleFile(event.file_path);
+  }
+
+  return true;
+}
+
+std::vector<NameMatchResult> IndexPipeline::SearchFilename(
+    const std::string& query, int limit,
+    const std::string& path_prefix) const {
+  if (!name_index_) {
+    return {};
+  }
+  return name_index_->Search(query, limit, path_prefix);
+}
+
+std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(
+    const std::string& query, int limit, int offset,
+    const std::string& path_prefix) {
+  if (!storage_engine_) {
+    return {};
+  }
+
+  // Fetch hits from storage engine
+  int fetch_limit = path_prefix.empty() ? limit : limit * 3;
+  auto raw_hits = storage_engine_->Search(query, fetch_limit, offset);
+
+  if (path_prefix.empty()) {
+    return raw_hits;
+  }
+
+  // Filter hits constrained to path_prefix
+  std::vector<storage::SearchResultItem> filtered;
+  for (auto& hit : raw_hits) {
+    if (hit.file_path.rfind(path_prefix, 0) == 0) {
+      filtered.push_back(std::move(hit));
+      if (static_cast<int>(filtered.size()) >= limit) {
+        break;
+      }
+    }
+  }
+
+  return filtered;
+}
+
+PipelineStats IndexPipeline::GetStats() const {
+  std::lock_guard<std::mutex> lock(stats_mutex_);
+  return stats_;
+}
+
+}  // namespace service
+}  // namespace soeasy

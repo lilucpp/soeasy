@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/x86_64-linux-gnu
+includedir=${prefix}/include
+
+Name: Cap'n Proto RPC
+Description: Fast object-oriented RPC system
+Version: 1.0.1
+Libs: -L${libdir} -lcapnp-rpc
+Requires: capnp = 1.0.1 kj-async = 1.0.1
+Cflags: -I${includedir}

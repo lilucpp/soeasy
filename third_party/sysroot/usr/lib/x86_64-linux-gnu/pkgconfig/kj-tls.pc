@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/x86_64-linux-gnu
+includedir=${prefix}/include
+
+Name: KJ TLS Adapters
+Description: Basic utility library called KJ (TLS part)
+Version: 1.0.1
+Libs: -L${libdir} -lkj-tls   
+Requires: kj-async = 1.0.1
+Cflags: -I${includedir}   

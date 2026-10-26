@@ -1,0 +1,3 @@
+capnproto binary: hardening-no-fortify-functions
+capnproto: spelling-error-in-binary geting getting [usr/bin/capnpc-c++]
+

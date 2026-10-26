@@ -1,0 +1,12 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${prefix}/lib/x86_64-linux-gnu
+includedir=${prefix}/include
+
+Name: Cap'n Proto
+Description: Insanely fast serialization system
+Version: 1.0.1
+Libs: -L${libdir} -lcapnp   
+Libs.private: -latomic  
+Requires: kj = 1.0.1
+Cflags: -I${includedir}   

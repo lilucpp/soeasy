@@ -1,0 +1,240 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: capnproto
+Source: https://capnproto.org/
+
+Files: *
+Copyright: 2013-2017 Sandstorm Development Group, Inc. and contributors
+License: MIT
+
+Files:
+  src/capnp/afl-testcase.c++
+  src/capnp/compat/json-test.capnp
+  src/capnp/stream.capnp
+  src/capnp/testdata/errors2.capnp.nobuild
+  src/kj/async-queue-test.c++
+  src/kj/async-queue.h
+  src/kj/async-unix-xthread-test.c++
+  src/kj/async-win32-xthread-test.c++
+  src/kj/async-xthread-test.c++
+  src/kj/compat/gzip-test.c++
+  src/kj/compat/gzip.c++
+  src/kj/compat/gzip.h
+  src/kj/compat/url-test.c++
+  src/kj/compat/url.c++
+  src/kj/compat/url.h
+  src/kj/encoding-test.c++
+  src/kj/encoding.h
+  src/kj/list-test.c++
+  src/kj/list.c++
+  src/kj/list.h
+  src/kj/source-location.c++
+  src/kj/source-location.h
+  src/kj/time-test.c++
+Copyright: 2017-2023 Cloudflare, Inc. and contributors
+License: MIT
+
+Files:
+  src/kj/hash.c++
+  src/kj/hash.h
+  src/kj/map-test.c++
+  src/kj/map.h
+  src/kj/table-test.c++
+  src/kj/table.c++
+  src/kj/table.h
+Copyright: 2018 Kenton Varda and contributors
+License: MIT
+
+Files:
+  src/capnp/serialize-text-test.c++
+  src/capnp/serialize-text.c++
+  src/capnp/serialize-text.h
+Copyright: 2015 Philip Quinn
+License: MIT
+
+Files:
+  src/capnp/compat/websocket-rpc-test.c++
+  src/capnp/compat/websocket-rpc.c++
+  src/capnp/compat/websocket-rpc.h
+Copyright: 2021 Ian Denhardt and contributors
+License: MIT
+
+Files: src/kj/async-io-win32.c++
+Copyright:
+  2013-2017 Sandstorm Development Group, Inc. and contributors
+  2007, 2010 Nathan C. Myers <ncm@cantrip.org>
+License: MIT and BSD-3-clause
+Comment:
+  The win32SocketPair function includes code by Nathan C. Myers from
+  https://github.com/ncm/selectable-socketpair/blob/master/socketpair.c
+  which is under the 3 clause BSD license.
+
+Files:
+  src/capnp/compiler/type-id.c++
+Copyright:
+  2013-2017 Sandstorm Development Group, Inc. and contributors
+  2001 Alexander Peslyak
+License: MIT and public-domain
+  This software was written by Alexander Peslyak in 2001.  No copyright is
+  claimed, and the software is hereby placed in the public domain.
+  In case this attempt to disclaim copyright and place the software in the
+  public domain is deemed null and void, then the software is
+  Copyright (c) 2001 Alexander Peslyak and it is hereby released to the
+  general public under the following terms:
+  .
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted.
+  .
+  There's ABSOLUTELY NO WARRANTY, express or implied.
+  .
+  (This is a heavily cut-down "BSD license".)
+Comment:
+  This file includes an MD5 implementation derived from code Alexander
+  Peslyak placed in the public domain. Alexander's copyright notice is
+  included verbatim in this file and reproduced here.
+
+Files:
+  src/kj/time.c++
+  src/kj/time.h
+  src/kj/timer.c++
+  src/kj/timer.h
+Copyright:
+  2013-2014, Sandstorm Development Group, Inc. and contributors
+  2014 Google Inc. (contributed by Remy Blank <rblank@google.com>)
+License: MIT
+
+Files: src/kj/threadlocal.h
+Copyright:
+  2013-2014 Sandstorm Development Group, Inc. and contributors
+  2014 Jason Choy <jjwchoy@gmail.com>
+License: MIT
+
+Files: debian/*
+Copyright: 2013-2023 Tom Lee <debian@tomlee.co>
+           2019-2023 tony mancill <tmancill@debian.org>
+License: MIT
+
+Files:
+  aclocal.m4
+  m4/ltoptions.m4
+  m4/ltsugar.m4
+  m4/lt~obsolete.m4
+  m4/ltversion.m4
+  Makefile.in
+Copyright: 1996-2015 Free Software Foundation, Inc.
+License: FSFULLR
+ This file is free software; the Free Software Foundation
+ gives unlimited permission to copy and/or distribute it,
+ with or without modifications, as long as this notice is preserved.
+
+Files: m4/ax_cxx_compile_stdcxx_14.m4
+Copyright:
+  2008, Benjamin Kosnik <bkoz@redhat.com>
+  2012, Zack Weinberg <zackw@panix.com>
+  2013, Kenton Varda <temporal@gmail.com>
+License: FSFAP
+ Copying and distribution of this file, with or without modification, are
+ permitted in any medium without royalty provided the copyright notice
+ and this notice are preserved. This file is offered as-is, without any
+ warranty.
+
+Files: configure
+Copyright: 1992-1996, 1998-2012, Free Software Foundation, Inc.
+License: FSFUL
+ This configure script is free software; the Free Software Foundation
+ gives unlimited permission to copy, distribute and modify it.
+
+Files:
+  build-aux/compile
+  build-aux/depcomp
+  build-aux/missing
+Copyright: 1996-2020, Free Software Foundation, Inc.
+  1999-2020, Free Software Foundation, Inc.
+License: GPL-2+ with Autoconf-data exception
+ On Debian systems the full text of the GNU General Public License can be found
+ in the /usr/share/common-licenses/GPL-2' file.
+ .
+ As a special exception to the GNU General Public License, if you
+ distribute this file as part of a program that contains a
+ configuration script generated by Autoconf, you may include it under
+ the same distribution terms that you use for the rest of that program.
+
+Files:
+  build-aux/config.guess
+  build-aux/config.sub
+Copyright: 1992-2018, Free Software Foundation, Inc.
+License: GPL-3+ with Autoconf-data exception
+ On Debian systems the full text of the GNU General Public License can be found
+ in the /usr/share/common-licenses/GPL-3' file.
+ .
+ As a special exception to the GNU General Public License, if you
+ distribute this file as part of a program that contains a
+ configuration script generated by Autoconf, you may include it under
+ the same distribution terms that you use for the rest of that
+ program.  This Exception is an additional permission under section 7
+ of the GNU General Public License, version 3 ("GPLv3").
+
+Files:
+  build-aux/ltmain.sh
+  m4/libtool.m4
+Copyright: 1996-2015, Free Software Foundation, Inc.
+License: GPL-2+ with Libtool exception
+ GNU Libtool is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ As a special exception to the GNU General Public License,
+ if you distribute this file as part of a program or library that
+ is built using GNU Libtool, you may include this file under the
+ same distribution terms that you use for the rest of that program.
+
+Files: build-aux/install-sh
+Copyright: 1994, X Consortium
+License: MIT
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ .
+     Redistributions of source code must retain the above copyright
+     notice, this list of conditions and the following disclaimer.
+ .
+     Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in
+     the documentation and/or other materials provided with the
+     distribution.
+ .
+     The name of the author must not be used to endorse or promote
+     products derived from this software without specific prior
+     written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
