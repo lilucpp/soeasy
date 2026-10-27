@@ -20,6 +20,12 @@ echo "   SoEasy 桌面搜索引擎一键打包系统"
 echo "   版本: ${VERSION}  |  平台: ${PLATFORM}"
 echo "========================================================"
 
+# 0. 检查并同步 Git Submodule
+if [ ! -f "${PROJECT_ROOT}/third_party/zstd/build/cmake/CMakeLists.txt" ] || [ ! -f "${PROJECT_ROOT}/third_party/efsw/CMakeLists.txt" ]; then
+    echo "[Submodule] 检测到子模组未初始化，正在拉取 Git Submodule..."
+    git -C "${PROJECT_ROOT}" submodule update --init --recursive
+fi
+
 # 1. 编译 Release 版本二进制
 echo "[1/6] 编译最新 Release 版本二进制..."
 cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" -DCMAKE_BUILD_TYPE=Release

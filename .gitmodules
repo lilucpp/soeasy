@@ -1,0 +1,15 @@
+[submodule "third_party/cppjieba"]
+	path = third_party/cppjieba
+	url = https://github.com/yanyiwu/cppjieba.git
+
+[submodule "third_party/efsw"]
+	path = third_party/efsw
+	url = https://github.com/SpartanJ/efsw.git
+
+[submodule "third_party/utfcpp"]
+	path = third_party/utfcpp
+	url = https://github.com/nemtrif/utfcpp.git
+
+[submodule "third_party/zstd"]
+	path = third_party/zstd
+	url = https://github.com/facebook/zstd.git

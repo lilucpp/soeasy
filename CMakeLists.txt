@@ -142,15 +142,18 @@ target_include_directories(soeasy_worker_lib PUBLIC
     third_party/onnxruntime/include
     ${OpenCV_INCLUDE_DIRS}
 )
+find_library(XML2_LIB NAMES xml2 libxml2.so.2 libxml2 REQUIRED)
+find_library(Z_LIB NAMES z libz.so.1 libz REQUIRED)
+
 target_link_libraries(soeasy_worker_lib PUBLIC
     soeasy_common
     soeasy_schema
     doctotext
-    xml2
+    ${XML2_LIB}
     uchardet
     capnp
     kj
-    z
+    ${Z_LIB}
     onnxruntime
     ${OpenCV_LIBS}
 )

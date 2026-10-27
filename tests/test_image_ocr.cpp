@@ -4,6 +4,7 @@
 #include <cassert>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -166,6 +167,22 @@ void TestStorageFts5ImageSearch() {
       {"/home/peanut/project/test_dataset/img/receipt_angled_093.png", "png"},
       {"/home/peanut/project/test_dataset/img/vector_badge_181.svg", "svg"}
   };
+
+  // If local dataset does not exist, synthesize test SVG so the test is self-contained
+  bool has_any_dataset = false;
+  for (const auto& [p, _] : test_docs) {
+    if (std::filesystem::exists(p)) {
+      has_any_dataset = true;
+      break;
+    }
+  }
+  if (!has_any_dataset) {
+    std::string mock_svg = "/tmp/test_ocr_mock.svg";
+    std::ofstream ofs(mock_svg);
+    ofs << "<svg><text>统一社会信用代码 财务报销审批单</text></svg>";
+    ofs.close();
+    test_docs.push_back({mock_svg, "svg"});
+  }
 
   int64_t doc_id = 1000;
   for (const auto& [path, ext] : test_docs) {
