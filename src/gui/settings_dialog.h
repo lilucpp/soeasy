@@ -34,6 +34,7 @@ class SettingsDialog : public QDialog {
   void OnRemovePattern();
   void OnAddExtension();
   void OnRemoveExtension();
+  void OnResetExtensionsToDefault();
   void OnSaveAndApply();
   void OnRebuildIndex();
 

@@ -93,9 +93,11 @@ void SettingsDialog::SetupUi() {
   new_ext_edit_->setPlaceholderText("例如: log 或 v");
   auto* btn_add_ext = new QPushButton("添加格式", tab_exts);
   auto* btn_rm_ext = new QPushButton("移除所选", tab_exts);
+  auto* btn_reset_exts = new QPushButton("恢复默认推荐格式", tab_exts);
   add_ext_layout->addWidget(new_ext_edit_);
   add_ext_layout->addWidget(btn_add_ext);
   add_ext_layout->addWidget(btn_rm_ext);
+  add_ext_layout->addWidget(btn_reset_exts);
 
   layout_exts->addWidget(label_exts);
   layout_exts->addWidget(exts_list_);
@@ -104,6 +106,7 @@ void SettingsDialog::SetupUi() {
 
   connect(btn_add_ext, &QPushButton::clicked, this, &SettingsDialog::OnAddExtension);
   connect(btn_rm_ext, &QPushButton::clicked, this, &SettingsDialog::OnRemoveExtension);
+  connect(btn_reset_exts, &QPushButton::clicked, this, &SettingsDialog::OnResetExtensionsToDefault);
 
   // -------------------------------------------------------------
   // Tab 4: 性能与调度参数 (Performance)
@@ -254,6 +257,18 @@ void SettingsDialog::OnRemoveExtension() {
   int row = exts_list_->currentRow();
   if (row >= 0) {
     delete exts_list_->takeItem(row);
+  }
+}
+
+void SettingsDialog::OnResetExtensionsToDefault() {
+  exts_list_->clear();
+  std::vector<std::string> sorted_exts;
+  for (const auto& ext : service::IndexConfig::GetDefaultSupportedExtensions()) {
+    sorted_exts.push_back(ext);
+  }
+  std::sort(sorted_exts.begin(), sorted_exts.end());
+  for (const auto& ext : sorted_exts) {
+    exts_list_->addItem(QString::fromStdString(ext));
   }
 }
 

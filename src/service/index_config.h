@@ -31,6 +31,8 @@ class IndexConfig {
   void AddSupportedExtension(const std::string& ext);
   void RemoveSupportedExtension(const std::string& ext);
   void SetSupportedExtensions(const std::vector<std::string>& extensions);
+  void ResetSupportedExtensionsToDefault();
+  static std::unordered_set<std::string> GetDefaultSupportedExtensions();
 
   void set_max_file_size(uint64_t bytes) { max_file_size_ = bytes; }
   uint64_t max_file_size() const { return max_file_size_; }

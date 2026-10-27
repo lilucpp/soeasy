@@ -18,6 +18,10 @@
 #include "gui/title_bar.h"
 #include "service/index_pipeline.h"
 
+#include <atomic>
+#include <thread>
+#include <QProgressBar>
+
 namespace soeasy {
 namespace gui {
 
@@ -27,7 +31,16 @@ class MainWindow : public QMainWindow {
  public:
   explicit MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
                       QWidget* parent = nullptr);
-  ~MainWindow() override = default;
+  ~MainWindow() override;
+
+  /**
+   * @brief Trigger non-blocking asynchronous initial scan and indexing in the background.
+   */
+  void StartBackgroundInitialIndex();
+
+ signals:
+  void IndexProgressUpdated(int indexed, int total, const QString& current_file);
+  void IndexFinished(int total_indexed);
 
  protected:
   void changeEvent(QEvent* event) override;
@@ -43,6 +56,9 @@ class MainWindow : public QMainWindow {
   void OnSettingsApplied();
   void OnRebuildIndexRequested();
 
+  void OnIndexProgressUpdated(int indexed, int total, const QString& current_file);
+  void OnIndexFinished(int total_indexed);
+
  private:
   void SetupUi();
   void UpdateStatusBar(int match_count, double cost_ms);
@@ -56,9 +72,14 @@ class MainWindow : public QMainWindow {
   PreviewPanel* preview_panel_ = nullptr;
 
   QLabel* status_stats_label_ = nullptr;
+  QProgressBar* status_progress_bar_ = nullptr;
+  QLabel* status_file_label_ = nullptr;
   QLabel* status_latency_label_ = nullptr;
 
   QString current_query_;
+
+  std::thread background_index_thread_;
+  std::atomic<bool> is_indexing_{false};
 };
 
 }  // namespace gui

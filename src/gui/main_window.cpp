@@ -57,8 +57,19 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
   resize(1024, 640);
   SetupUi();
 
+  connect(this, &MainWindow::IndexProgressUpdated, this,
+          &MainWindow::OnIndexProgressUpdated);
+  connect(this, &MainWindow::IndexFinished, this,
+          &MainWindow::OnIndexFinished);
+
   // Initial stats
   UpdateStatusBar(0, 0.0);
+}
+
+MainWindow::~MainWindow() {
+  if (background_index_thread_.joinable()) {
+    background_index_thread_.join();
+  }
 }
 
 void MainWindow::changeEvent(QEvent* event) {
@@ -144,11 +155,40 @@ void MainWindow::SetupUi() {
   // Status Bar
   status_stats_label_ = new QLabel(this);
   status_stats_label_->setStyleSheet("color: #334155; font-size: 12px;");
+
+  status_progress_bar_ = new QProgressBar(this);
+  status_progress_bar_->setRange(0, 100);
+  status_progress_bar_->setValue(0);
+  status_progress_bar_->setTextVisible(true);
+  status_progress_bar_->setFixedHeight(14);
+  status_progress_bar_->setFixedWidth(130);
+  status_progress_bar_->setStyleSheet(
+      "QProgressBar {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 4px;"
+      "  background-color: #E2E8F0;"
+      "  text-align: center;"
+      "  font-size: 10px;"
+      "  font-weight: bold;"
+      "  color: #1E293B;"
+      "}"
+      "QProgressBar::chunk {"
+      "  background-color: #0EA5E9;"
+      "  border-radius: 3px;"
+      "}");
+  status_progress_bar_->setVisible(false);
+
+  status_file_label_ = new QLabel(this);
+  status_file_label_->setStyleSheet("color: #64748B; font-size: 11px;");
+  status_file_label_->setVisible(false);
+
   status_latency_label_ = new QLabel(this);
   status_latency_label_->setStyleSheet("color: #334155; font-size: 12px; font-weight: 500;");
   status_latency_label_->setTextFormat(Qt::RichText);
 
-  statusBar()->addWidget(status_stats_label_, 1);
+  statusBar()->addWidget(status_stats_label_);
+  statusBar()->addWidget(status_progress_bar_);
+  statusBar()->addWidget(status_file_label_, 1);
   statusBar()->addPermanentWidget(status_latency_label_);
 
   // Signal Connections
@@ -389,6 +429,70 @@ void MainWindow::OnRebuildIndexRequested() {
   });
 
   worker_thread.detach();
+}
+
+void MainWindow::StartBackgroundInitialIndex() {
+  if (is_indexing_.load()) return;
+  is_indexing_.store(true);
+
+  status_progress_bar_->setValue(0);
+  status_progress_bar_->setVisible(true);
+  status_file_label_->setText("正在扫描待索引目录...");
+  status_file_label_->setVisible(true);
+  status_stats_label_->setText("正在初始化索引...");
+
+  if (background_index_thread_.joinable()) {
+    background_index_thread_.join();
+  }
+
+  background_index_thread_ = std::thread([this]() {
+    if (!pipeline_) {
+      is_indexing_.store(false);
+      emit IndexFinished(0);
+      return;
+    }
+
+    size_t count = pipeline_->PerformInitialScan(
+        [this](size_t indexed, size_t total, const std::string& path) {
+          emit IndexProgressUpdated(static_cast<int>(indexed), static_cast<int>(total),
+                                    QString::fromStdString(path));
+        });
+
+    is_indexing_.store(false);
+    emit IndexFinished(static_cast<int>(count));
+  });
+}
+
+void MainWindow::OnIndexProgressUpdated(int indexed, int total, const QString& current_file) {
+  if (total > 0) {
+    int pct = (indexed * 100) / total;
+    status_progress_bar_->setValue(pct);
+    status_stats_label_->setText(
+        QString("正在建立索引: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
+  } else {
+    status_stats_label_->setText("正在扫描待索引目录...");
+  }
+
+  if (!current_file.isEmpty()) {
+    QFontMetrics fm(status_file_label_->font());
+    QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 380);
+    status_file_label_->setText(elided);
+    status_file_label_->setToolTip(current_file);
+  }
+}
+
+void MainWindow::OnIndexFinished(int total_indexed) {
+  Q_UNUSED(total_indexed);
+  status_progress_bar_->setVisible(false);
+  status_file_label_->setVisible(false);
+
+  int match_count = result_view_ ? result_view_->rowCount() : 0;
+  UpdateStatusBar(match_count, 0.0);
+
+  // If search bar has active query, re-run search to surface newly indexed items immediately
+  if (search_bar_ && !search_bar_->query().trimmed().isEmpty()) {
+    OnSearchTriggered(search_bar_->query(), search_bar_->mode(), search_bar_->path_scope());
+  }
 }
 
 }  // namespace gui

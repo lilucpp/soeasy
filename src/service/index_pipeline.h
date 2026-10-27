@@ -56,6 +56,15 @@ class IndexPipeline {
   bool AddAndScanDirectory(const std::string& dir_path, bool recursive = true);
 
   /**
+   * @brief Perform initial background scan and indexing of configured directories.
+   * Incremental: skips unchanged files without reprocessing.
+   *
+   * @param progress_cb Optional callback receiving (indexed_count, total_count, current_path)
+   * @return Number of files indexed
+   */
+  size_t PerformInitialScan(std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb = nullptr);
+
+  /**
    * @brief Rebuild full-text and filename indexes from scratch.
    * Clears database and in-memory index, then rescans all configured directories.
    *

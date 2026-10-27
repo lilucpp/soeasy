@@ -30,8 +30,11 @@ IndexConfig::IndexConfig() {
       "/.cache/",      "\\.cache\\",
   };
 
-  // Default supported file extensions (L1 text/code + L2 documents)
-  supported_exts_ = {
+  supported_exts_ = GetDefaultSupportedExtensions();
+}
+
+std::unordered_set<std::string> IndexConfig::GetDefaultSupportedExtensions() {
+  return {
       "txt", "md", "markdown", "log", "rtf", "ini", "conf", "cfg", "toml",
       "yaml", "yml", "json", "xml", "html", "htm", "css", "sql", "sh", "bat",
       "cpp", "c", "cc", "cxx", "h", "hpp", "hxx", "py", "java", "go", "rs",
@@ -39,6 +42,11 @@ IndexConfig::IndexConfig() {
       "docx", "pdf", "pptx", "xlsx", "doc", "ppt", "xls",
       "png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"
   };
+}
+
+void IndexConfig::ResetSupportedExtensionsToDefault() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  supported_exts_ = GetDefaultSupportedExtensions();
 }
 
 void IndexConfig::AddIndexedDirectory(const std::string& dir_path) {

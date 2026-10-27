@@ -156,6 +156,69 @@ void IndexPipeline::ScanDirectoryRecursive(const std::string& dir_path) {
   }
 }
 
+size_t IndexPipeline::PerformInitialScan(
+    std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb) {
+  auto watched_dirs = config_->GetIndexedDirectories();
+  if (watched_dirs.empty() && watch_engine_) {
+    watched_dirs = watch_engine_->GetWatchedDirectories();
+  }
+
+  // 1. Register watches for live filesystem events
+  if (watch_engine_) {
+    for (const auto& dir : watched_dirs) {
+      watch_engine_->AddWatch(dir);
+    }
+  }
+
+  // 2. Discover all candidate files
+  std::vector<std::string> files_to_index;
+  for (const auto& dir : watched_dirs) {
+    try {
+      for (const auto& entry :
+           std::filesystem::recursive_directory_iterator(
+               dir, std::filesystem::directory_options::skip_permission_denied)) {
+        if (entry.is_regular_file()) {
+          std::string fpath = entry.path().string();
+          std::string fname = entry.path().filename().string();
+          std::string ext = ExtractExtension(fname);
+          uint64_t fsize = 0;
+          try {
+            fsize = entry.file_size();
+          } catch (...) {}
+          if (config_->ShouldIndex(fpath, ext, fsize)) {
+            files_to_index.push_back(fpath);
+          }
+        }
+      }
+    } catch (const std::exception& e) {
+      LOG_WARN("[IndexPipeline] Initial scan error on '{}': {}", dir, e.what());
+    }
+  }
+
+  size_t total_files = files_to_index.size();
+  LOG_INFO("[IndexPipeline] Initial scan discovered {} files to index across {} directories.",
+           total_files, watched_dirs.size());
+
+  size_t indexed_count = 0;
+  size_t processed_count = 0;
+  for (const auto& fpath : files_to_index) {
+    if (progress_cb) {
+      progress_cb(processed_count, total_files, fpath);
+    }
+    bool ok = IndexSingleFile(fpath);
+    if (ok) {
+      indexed_count++;
+    }
+    processed_count++;
+  }
+
+  if (progress_cb) {
+    progress_cb(total_files, total_files, "");
+  }
+
+  return indexed_count;
+}
+
 bool IndexPipeline::RebuildIndex(
     std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb) {
   LOG_INFO("[IndexPipeline] Starting full index rebuild from scratch...");

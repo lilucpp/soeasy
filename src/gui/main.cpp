@@ -171,15 +171,15 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // Scan initial configured directories and start live watch
-  for (const auto& dir : config->GetIndexedDirectories()) {
-    pipeline->AddAndScanDirectory(dir, true);
-  }
+  // Start live file watcher
   pipeline->StartLiveWatch();
 
-  // 5. Construct and show MainWindow
+  // 5. Construct and show MainWindow immediately (Instant UI appearance)
   soeasy::gui::MainWindow main_window(pipeline);
   main_window.show();
+
+  // Asynchronously trigger initial scan in the background with progress reporting on status bar
+  main_window.StartBackgroundInitialIndex();
 
   int exit_code = app.exec();
 
