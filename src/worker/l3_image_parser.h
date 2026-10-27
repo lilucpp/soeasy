@@ -51,10 +51,14 @@ class L3ImageParser {
    */
   static bool ParseSvgText(const std::string& file_path, std::string* out_utf8);
 
+  void set_min_effective_chars(size_t min_chars) { min_effective_chars_ = min_chars; }
+  size_t min_effective_chars() const { return min_effective_chars_; }
+
  private:
   std::unordered_set<std::string> supported_exts_;
   ocr::ImageFilter filter_;
   std::unique_ptr<ocr::IOcrEngine> ocr_engine_;
+  size_t min_effective_chars_ = 4;
 };
 
 }  // namespace worker

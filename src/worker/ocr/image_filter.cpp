@@ -17,6 +17,10 @@ namespace ocr {
 ImageFilter::ImageFilter(FilterOptions options) : options_(options) {}
 
 FilterDecision ImageFilter::PrecheckFile(const std::string& file_path, uint64_t file_size) const {
+  if (options_.filter_cache_thumbnails && IsCacheOrThumbnailPath(file_path)) {
+    return FilterDecision::kIconOrThumbnailPath;
+  }
+
   if (file_size == 0) {
     std::error_code ec;
     file_size = std::filesystem::file_size(file_path, ec);
@@ -44,6 +48,62 @@ FilterDecision ImageFilter::PrecheckFile(const std::string& file_path, uint64_t 
   }
 
   return FilterDecision::kPass;
+}
+
+bool ImageFilter::IsCacheOrThumbnailPath(const std::string& file_path) {
+  std::string lower = file_path;
+  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+  static const char* kPathKeywords[] = {
+      "/weappicon/", "/thumb/", "/thumbs/", "/emoji/", "/emojis/",
+      "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"
+  };
+  for (const char* kw : kPathKeywords) {
+    if (lower.find(kw) != std::string::npos) {
+      return true;
+    }
+  }
+
+  // Suffix checks on filename
+  if (lower.find("_thumb.") != std::string::npos ||
+      lower.find("_thumbnail.") != std::string::npos) {
+    return true;
+  }
+
+  return false;
+}
+
+size_t ImageFilter::CountEffectiveChars(const std::string& text) {
+  size_t count = 0;
+  for (size_t i = 0; i < text.size(); ) {
+    unsigned char c = text[i];
+    size_t seq_len = 1;
+    if (c >= 0xF0) seq_len = 4;
+    else if (c >= 0xE0) seq_len = 3;
+    else if (c >= 0xC0) seq_len = 2;
+
+    if (seq_len == 1) {
+      if (!isspace(c) && !ispunct(c) && c != '`' && c != '~' && c != '^') {
+        count++;
+      }
+    } else if (seq_len == 3 && i + 2 < text.size()) {
+      unsigned char c1 = static_cast<unsigned char>(text[i + 1]);
+      unsigned char c2 = static_cast<unsigned char>(text[i + 2]);
+      bool is_cjk_punct = false;
+      if (c == 0xEF && c1 == 0xBC) {
+        if (c2 >= 0x81 && c2 <= 0x9F) is_cjk_punct = true; // Full-width ASCII symbols/punct
+      } else if (c == 0xE3 && c1 == 0x80) {
+        if (c2 >= 0x81 && c2 <= 0x8F) is_cjk_punct = true; // CJK punctuation marks
+      }
+      if (!is_cjk_punct) {
+        count++;
+      }
+    } else {
+      count++;
+    }
+    i += seq_len;
+  }
+  return count;
 }
 
 FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat& bgr_image) const {

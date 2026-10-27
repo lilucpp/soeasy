@@ -85,7 +85,12 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
 
   // 1. Vector graphics SVG: direct zero-overhead XML extraction
   if (lower_ext == "svg") {
-    return ParseSvgText(file_path, out_utf8_text);
+    bool ok = ParseSvgText(file_path, out_utf8_text);
+    if (ok && min_effective_chars_ > 0 &&
+        ocr::ImageFilter::CountEffectiveChars(*out_utf8_text) < min_effective_chars_) {
+      out_utf8_text->clear();
+    }
+    return ok;
   }
 
   // 2. Scientific Tier 1 filtering (Header & Dimension check)
@@ -118,6 +123,10 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
           full_text += ocr_res.full_text;
         }
       }
+      if (min_effective_chars_ > 0 &&
+          ocr::ImageFilter::CountEffectiveChars(full_text) < min_effective_chars_) {
+        full_text.clear();
+      }
       *out_utf8_text = full_text;
       return true;
     }
@@ -143,6 +152,15 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
   if (!ocr_res.success) {
     LOG_ERROR("[L3ImageParser] OCR recognition failed for '{}'", file_path);
     return false;
+  }
+
+  // 7. Text box count & effective characters filter
+  size_t eff_chars = ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text);
+  if (eff_chars < min_effective_chars_) {
+    LOG_INFO("[L3ImageParser] Filtered image '{}': insufficient text ({} effective chars < {}, {} boxes), skipping body index",
+             file_path, eff_chars, min_effective_chars_, ocr_res.lines.size());
+    out_utf8_text->clear();
+    return true;
   }
 
   *out_utf8_text = ocr_res.full_text;

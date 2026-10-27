@@ -18,7 +18,8 @@ enum class FilterDecision {
   kExtremeAspectRatioStrip = 2,
   kFileTooLarge = 3,
   kSolidColorOrBlank = 4,
-  kUnreadable = 5
+  kUnreadable = 5,
+  kIconOrThumbnailPath = 6
 };
 
 struct ImageDimension {
@@ -32,6 +33,7 @@ struct FilterOptions {
   float max_aspect_ratio = 20.0f; // Aspect ratio > 20 is divider/border stripe
   uint64_t max_file_size = 40ULL * 1024ULL * 1024ULL; // 40 MB max
   double min_std_dev = 8.0;       // stddev < 8 is solid single color
+  bool filter_cache_thumbnails = true; // Pre-filter WeAppIcon, Thumb, Emoji, etc.
 };
 
 class ImageFilter {
@@ -41,7 +43,7 @@ class ImageFilter {
   explicit ImageFilter(FilterOptions options = FilterOptions{});
 
   /**
-   * @brief Tier 1 fast probe: check file size, magic header, and dimensions without decoding image.
+   * @brief Tier 1 fast probe: check file size, magic header, path patterns, and dimensions without decoding image.
    * Execution time < 30 microseconds.
    */
   FilterDecision PrecheckFile(const std::string& file_path, uint64_t file_size = 0) const;
@@ -55,6 +57,16 @@ class ImageFilter {
    * @brief Helper to probe image width and height directly from file header bytes.
    */
   static ImageDimension ProbeHeaderDimensions(const std::string& file_path);
+
+  /**
+   * @brief Check whether file path matches temporary chat/app cache, icon, or thumbnail patterns.
+   */
+  static bool IsCacheOrThumbnailPath(const std::string& file_path);
+
+  /**
+   * @brief Count informative non-whitespace, non-punctuation UTF-8 characters.
+   */
+  static size_t CountEffectiveChars(const std::string& text);
 
  private:
   FilterOptions options_;

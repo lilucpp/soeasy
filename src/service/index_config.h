@@ -79,6 +79,24 @@ class IndexConfig {
    */
   bool SaveToFile(const std::string& file_path) const;
 
+  void set_min_image_text_length(uint32_t len) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    min_image_text_length_ = len;
+  }
+  uint32_t min_image_text_length() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return min_image_text_length_;
+  }
+
+  void set_filter_cache_thumbnails(bool filter) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    filter_cache_thumbnails_ = filter;
+  }
+  bool filter_cache_thumbnails() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return filter_cache_thumbnails_;
+  }
+
   void set_config_path(const std::string& path) {
     std::lock_guard<std::mutex> lock(mutex_);
     config_path_ = path;
@@ -106,6 +124,8 @@ class IndexConfig {
   uint64_t max_file_size_ = kDefaultMaxFileSize;
   uint32_t debounce_ms_ = kDefaultDebounceMs;
   size_t worker_count_ = kDefaultWorkerCount;
+  uint32_t min_image_text_length_ = 4;
+  bool filter_cache_thumbnails_ = true;
 };
 
 }  // namespace service

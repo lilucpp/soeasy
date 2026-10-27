@@ -165,7 +165,33 @@ bool IndexConfig::ShouldIndex(const std::string& file_path,
   }
 
   // Check file extension
-  return supported_exts_.find(lower_ext) != supported_exts_.end();
+  if (supported_exts_.find(lower_ext) == supported_exts_.end()) {
+    return false;
+  }
+
+  // Pre-filter cache and thumbnail paths for images to save indexing overhead
+  if (filter_cache_thumbnails_ &&
+      (lower_ext == "png" || lower_ext == "jpg" || lower_ext == "jpeg" ||
+       lower_ext == "bmp" || lower_ext == "webp" || lower_ext == "gif" ||
+       lower_ext == "tif" || lower_ext == "tiff" || lower_ext == "svg")) {
+    static const char* kPathKeywords[] = {
+        "/weappicon/", "/thumb/", "/thumbs/", "/emoji/", "/emojis/",
+        "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"
+    };
+    std::string lower_path = file_path;
+    std::transform(lower_path.begin(), lower_path.end(), lower_path.begin(), ::tolower);
+    for (const char* kw : kPathKeywords) {
+      if (lower_path.find(kw) != std::string::npos) {
+        return false;
+      }
+    }
+    if (lower_path.find("_thumb.") != std::string::npos ||
+        lower_path.find("_thumbnail.") != std::string::npos) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool IndexConfig::LoadFromFile(const std::string& file_path) {
@@ -221,6 +247,14 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
       }
     }
 
+    if (j.contains("min_image_text_length") && j["min_image_text_length"].is_number()) {
+      min_image_text_length_ = j["min_image_text_length"].get<uint32_t>();
+    }
+
+    if (j.contains("filter_cache_thumbnails") && j["filter_cache_thumbnails"].is_boolean()) {
+      filter_cache_thumbnails_ = j["filter_cache_thumbnails"].get<bool>();
+    }
+
     LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)",
              file_path, indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
     return true;
@@ -243,6 +277,8 @@ bool IndexConfig::SaveToFile(const std::string& file_path) const {
       j["max_file_size"] = max_file_size_;
       j["debounce_ms"] = debounce_ms_;
       j["worker_count"] = worker_count_;
+      j["min_image_text_length"] = min_image_text_length_;
+      j["filter_cache_thumbnails"] = filter_cache_thumbnails_;
     }
 
     std::string temp_path = file_path + ".tmp";

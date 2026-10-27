@@ -1,6 +1,7 @@
 #ifndef SOEASY_SRC_GUI_SETTINGS_DIALOG_H_
 #define SOEASY_SRC_GUI_SETTINGS_DIALOG_H_
 
+#include <QCheckBox>
 #include <QDialog>
 #include <QLineEdit>
 #include <QListWidget>
@@ -61,6 +62,8 @@ class SettingsDialog : public QDialog {
   QSpinBox* debounce_spin_ = nullptr;
   QSpinBox* max_size_spin_ = nullptr;
   QSpinBox* worker_count_spin_ = nullptr;
+  QSpinBox* min_img_chars_spin_ = nullptr;
+  QCheckBox* filter_thumbs_check_ = nullptr;
 };
 
 }  // namespace gui

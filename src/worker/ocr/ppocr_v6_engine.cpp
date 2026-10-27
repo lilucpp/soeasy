@@ -344,11 +344,26 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat& bgr_image) {
       return ay < by;
     });
 
-    // Tier 3: If 0 boxes detected, immediately exit with success (zero text)
+    // Tier 3: Box count & geometric filtering
+    // If 0 boxes detected, immediately exit with success (zero text)
     if (boxes.empty()) {
       result.success = true;
       result.total_ms = result.det_ms;
       return result;
+    }
+
+    // If only 1 box detected, check if its area or dimensions are too minuscule to contain meaningful text
+    if (boxes.size() == 1) {
+      const auto& pts = boxes[0].points;
+      float dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+      float w = std::sqrt(dx * dx + dy * dy);
+      float hx = pts[3].x - pts[0].x, hy = pts[3].y - pts[0].y;
+      float h = std::sqrt(hx * hx + hy * hy);
+      if (w * h < 200.0f || (std::max)(w, h) < 16.0f) {
+        result.success = true;
+        result.total_ms = result.det_ms;
+        return result;
+      }
     }
 
     // 4. Recognition pipeline
@@ -376,6 +391,11 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat& bgr_image) {
       float conf = 0.0f;
       std::string text = CtcDecode(logits, T, C, dict_, &conf);
       if (!text.empty()) {
+        // Filter out extreme low-confidence noise lines
+        if (conf < 0.35f && text.size() <= 6) {
+          continue;
+        }
+
         OcrLine line;
         line.text = text;
         line.confidence = conf;

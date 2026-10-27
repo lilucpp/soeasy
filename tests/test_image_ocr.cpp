@@ -64,6 +64,21 @@ void TestImageFilter() {
     assert(dec == FilterDecision::kPass);
   }
 
+  // 5. Test path precheck for cache & thumbnails
+  assert(ImageFilter::IsCacheOrThumbnailPath("/home/peanut/文档/xwechat_files/lilu/cache/WeAppIcon/123.jpg"));
+  assert(ImageFilter::IsCacheOrThumbnailPath("/home/peanut/文档/xwechat_files/lilu/msg/Thumb/574_1788_thumb.jpg"));
+  assert(!ImageFilter::IsCacheOrThumbnailPath("/home/peanut/文档/invoice_2026.png"));
+  std::cout << "  Path-based cache & thumbnail filter check: PASS\n";
+
+  // 6. Test CountEffectiveChars
+  assert(ImageFilter::CountEffectiveChars("福") == 1);
+  assert(ImageFilter::CountEffectiveChars("哈哈哈") == 3);
+  assert(ImageFilter::CountEffectiveChars("3.0") == 2);
+  assert(ImageFilter::CountEffectiveChars("《走线》") == 2);
+  assert(ImageFilter::CountEffectiveChars("辽宁人社") == 4);
+  assert(ImageFilter::CountEffectiveChars("统一社会信用代码") == 8);
+  std::cout << "  Effective character count validation: PASS\n";
+
   std::cout << ">>> Test 1 (Scientific Image Filter): SUCCESS!\n";
 }
 
@@ -138,6 +153,25 @@ void TestL3ImageParser() {
     std::cout << "  Parsed " << path << " -> " << text.size() << " bytes text\n";
     assert(ok);
     assert(!text.empty());
+  }
+
+  // Test noise image with only 1 char (receipt_angled_098.bmp has '位')
+  std::string noise_bmp = "/home/peanut/project/test_dataset/img/receipt_angled_098.bmp";
+  if (std::filesystem::exists(noise_bmp)) {
+    std::string noise_text;
+    parser.set_min_effective_chars(4);
+    bool ok = parser.Parse(noise_bmp, "bmp", &noise_text);
+    std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=4: text length="
+              << noise_text.size() << " (Expected 0/skipped)\n";
+    assert(ok);
+    assert(noise_text.empty());
+
+    // When threshold is 0, text is preserved
+    parser.set_min_effective_chars(0);
+    parser.Parse(noise_bmp, "bmp", &noise_text);
+    std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=0: text='"
+              << noise_text << "'\n";
+    assert(!noise_text.empty());
   }
 
   std::cout << ">>> Test 3 (L3 Image Parser): SUCCESS!\n";

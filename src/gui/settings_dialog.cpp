@@ -132,7 +132,16 @@ void SettingsDialog::SetupUi() {
   worker_count_spin_->setSuffix(" 个进程");
   form_perf->addRow("并发解析 Worker 进程数:", worker_count_spin_);
 
-  tab_widget_->addTab(tab_perf, "性能调度");
+  min_img_chars_spin_ = new QSpinBox(tab_perf);
+  min_img_chars_spin_->setRange(0, 50);
+  min_img_chars_spin_->setSingleStep(1);
+  min_img_chars_spin_->setSuffix(" 个字 (0为不限制)");
+  form_perf->addRow("图片最少有效文字数（过滤表情/图标）:", min_img_chars_spin_);
+
+  filter_thumbs_check_ = new QCheckBox("自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)", tab_perf);
+  form_perf->addRow("", filter_thumbs_check_);
+
+  tab_widget_->addTab(tab_perf, "性能与过滤");
 
   main_layout->addWidget(tab_widget_);
 
@@ -197,6 +206,8 @@ void SettingsDialog::PopulateFromConfig() {
   debounce_spin_->setValue(static_cast<int>(config_->debounce_ms()));
   max_size_spin_->setValue(static_cast<int>(config_->max_file_size() / (1024 * 1024)));
   worker_count_spin_->setValue(static_cast<int>(config_->worker_count()));
+  min_img_chars_spin_->setValue(static_cast<int>(config_->min_image_text_length()));
+  filter_thumbs_check_->setChecked(config_->filter_cache_thumbnails());
 }
 
 void SettingsDialog::OnAddDirectory() {
@@ -299,10 +310,12 @@ void SettingsDialog::OnSaveAndApply() {
   }
   config_->SetSupportedExtensions(exts);
 
-  // Save performance
+  // Save performance and filtering
   config_->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
   config_->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
   config_->set_worker_count(static_cast<size_t>(worker_count_spin_->value()));
+  config_->set_min_image_text_length(static_cast<uint32_t>(min_img_chars_spin_->value()));
+  config_->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
 
   // Persist to disk
   config_->Save();
