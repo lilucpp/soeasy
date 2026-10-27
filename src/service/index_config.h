@@ -14,6 +14,7 @@ class IndexConfig {
  public:
   static constexpr uint64_t kDefaultMaxFileSize = 50 * 1024 * 1024;  // 50MB
   static constexpr uint32_t kDefaultDebounceMs = 300;                // 300ms
+  static constexpr size_t kDefaultWorkerCount = 2;                   // 2 workers default
 
   IndexConfig();
   ~IndexConfig() = default;
@@ -36,6 +37,15 @@ class IndexConfig {
 
   void set_debounce_ms(uint32_t ms) { debounce_ms_ = ms; }
   uint32_t debounce_ms() const { return debounce_ms_; }
+
+  void set_worker_count(size_t count) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    worker_count_ = count > 0 ? count : kDefaultWorkerCount;
+  }
+  size_t worker_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return worker_count_;
+  }
 
   std::vector<std::string> GetIndexedDirectories() const;
   std::vector<std::string> GetExcludedPatterns() const;
@@ -64,6 +74,7 @@ class IndexConfig {
   std::unordered_set<std::string> supported_exts_;
   uint64_t max_file_size_ = kDefaultMaxFileSize;
   uint32_t debounce_ms_ = kDefaultDebounceMs;
+  size_t worker_count_ = kDefaultWorkerCount;
 };
 
 }  // namespace service

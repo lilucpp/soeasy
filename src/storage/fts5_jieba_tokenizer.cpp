@@ -71,12 +71,8 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
 
   std::vector<cppjieba::Word> words;
 
-  // Use CutForSearch for indexing and Cut for query matching
-  if (flags & FTS5_TOKENIZE_QUERY) {
-    instance->jieba->Cut(sentence, words, true);
-  } else {
-    instance->jieba->CutForSearch(sentence, words, true);
-  }
+  // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
+  instance->jieba->Cut(sentence, words, true);
 
   for (const auto& w : words) {
     if (w.word.empty()) {

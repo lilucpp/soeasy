@@ -109,6 +109,14 @@ class IndexPipeline {
 
   mutable std::mutex stats_mutex_;
   PipelineStats stats_;
+
+  struct FailedFileInfo {
+    uint64_t file_size = 0;
+    int64_t mtime = 0;
+    std::string reason;
+  };
+  std::mutex failed_files_mutex_;
+  std::unordered_map<std::string, FailedFileInfo> failed_files_;
 };
 
 }  // namespace service

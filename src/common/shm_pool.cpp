@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -167,6 +168,9 @@ bool ShmSlotPool::AllocateSlot(uint32_t* out_slot_id, uint8_t** out_data_ptr) {
             expected, kSlotAllocated, std::memory_order_acq_rel)) {
       header->data_bytes = 0;
       header->checksum = 0;
+      uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count();
+      header->last_heartbeat_ms.store(now_ms, std::memory_order_relaxed);
       *out_slot_id = i;
       *out_data_ptr = GetSlotData(i);
       return true;
@@ -224,6 +228,24 @@ void ShmSlotPool::ReleaseSlot(uint32_t slot_id) {
   }
   SlotHeader* header = GetSlotHeader(slot_id);
   header->state.store(kSlotFree, std::memory_order_release);
+}
+
+void ShmSlotPool::TouchHeartbeat(uint32_t slot_id) {
+  if (!base_addr_ || slot_id >= slot_count_) {
+    return;
+  }
+  SlotHeader* header = GetSlotHeader(slot_id);
+  uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  header->last_heartbeat_ms.store(now_ms, std::memory_order_relaxed);
+}
+
+uint64_t ShmSlotPool::GetSlotLastHeartbeat(uint32_t slot_id) const {
+  if (!base_addr_ || slot_id >= slot_count_) {
+    return 0;
+  }
+  SlotHeader* header = GetSlotHeader(slot_id);
+  return header->last_heartbeat_ms.load(std::memory_order_relaxed);
 }
 
 uint8_t* ShmSlotPool::GetWritableSlotData(uint32_t slot_id) {

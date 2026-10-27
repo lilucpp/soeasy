@@ -59,6 +59,7 @@ class SettingsDialog : public QDialog {
   // Tab 4: Performance & Scheduling
   QSpinBox* debounce_spin_ = nullptr;
   QSpinBox* max_size_spin_ = nullptr;
+  QSpinBox* worker_count_spin_ = nullptr;
 };
 
 }  // namespace gui

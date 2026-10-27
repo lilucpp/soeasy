@@ -159,6 +159,7 @@ add_library(soeasy_service STATIC
     src/service/event_debouncer.cpp
     src/service/watch_engine.cpp
     src/service/name_index.cpp
+    src/service/doc_prechecker.cpp
     src/service/index_pipeline.cpp
     src/service/worker_guard.cpp
 )

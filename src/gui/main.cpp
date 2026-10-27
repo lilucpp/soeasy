@@ -131,15 +131,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // 2. Initialize Worker Guard
-  auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  if (!worker_guard->Init(worker_bin.toStdString(), 2 /* worker pool size */,
-                          1500 /* timeout_ms */)) {
-    std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "
-              << "Workers will be lazily initialized or retried." << std::endl;
-  }
-
-  // 3. Initialize Index Config
+  // 2. Initialize Index Config
   auto config = std::make_shared<soeasy::service::IndexConfig>();
   // If no indexed directories are specified, default to user's Documents & Desktop
   if (config->GetIndexedDirectories().empty()) {
@@ -153,6 +145,14 @@ int main(int argc, char* argv[]) {
     if (!desktop.isEmpty() && QDir(desktop).exists()) {
       config->AddIndexedDirectory(desktop.toStdString());
     }
+  }
+
+  // 3. Initialize Worker Guard with configured worker count and 15s base timeout
+  auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
+  if (!worker_guard->Init(worker_bin.toStdString(), config->worker_count(),
+                          soeasy::service::WorkerGuard::kDefaultTimeoutMs)) {
+    std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "
+              << "Workers will be lazily initialized or retried." << std::endl;
   }
 
   // 4. Initialize Index Pipeline

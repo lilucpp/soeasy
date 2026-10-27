@@ -67,12 +67,14 @@ int RunWorkerLoop(int socket_fd, const std::string& shm_name,
       bool is_scanned_pdf = false;
       bool parse_ok = false;
 
+      shm_pool.TouchHeartbeat(slot_id);
       auto parse_start = std::chrono::high_resolution_clock::now();
       if (l2_parser.IsSupported(ext)) {
         parse_ok = l2_parser.Parse(file_path, ext, &extracted_utf8, &is_scanned_pdf);
       } else {
         parse_ok = l1_parser.ParseFile(file_path, ext, &extracted_utf8);
       }
+      shm_pool.TouchHeartbeat(slot_id);
       auto parse_end = std::chrono::high_resolution_clock::now();
       double cost_ms =
           std::chrono::duration<double, std::milli>(parse_end - parse_start).count();

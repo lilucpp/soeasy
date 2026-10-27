@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "common/logger.h"
+#include "service/doc_prechecker.h"
 
 namespace soeasy {
 namespace service {
@@ -167,10 +168,14 @@ bool IndexPipeline::RebuildIndex(
     LOG_INFO("[IndexPipeline] Cleared persistent storage and FTS5 index.");
   }
 
-  // 4. Reset stats
+  // 4. Reset stats & failed files cache
   {
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_ = PipelineStats();
+  }
+  {
+    std::lock_guard<std::mutex> lock(failed_files_mutex_);
+    failed_files_.clear();
   }
 
   // 5. Gather all configured directories
@@ -257,10 +262,42 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     return false;
   }
 
+  // Check if previously marked as failed/corrupt and file has not changed
+  {
+    std::lock_guard<std::mutex> lock(failed_files_mutex_);
+    auto it = failed_files_.find(file_path);
+    if (it != failed_files_.end() && it->second.file_size == file_size &&
+        it->second.mtime == st.st_mtime) {
+      return false;
+    }
+  }
+
   int64_t doc_id = GenerateDocId(file_path);
 
-  // 1. Dispatch parsing task to worker sandbox pool
-  ParseTask task{doc_id, file_path, ext, 1};
+  // 1. Fast sanity check (magic, EOCD, encryption precheck, dynamic timeout)
+  auto precheck = DocPrechecker::Check(file_path, ext, file_size);
+  if (precheck.status != PrecheckStatus::kValid) {
+    LOG_WARN("[IndexPipeline] Precheck skipped body for '{}' (ext: '{}') | reason: {}",
+             file_path, ext, precheck.reason);
+    // Index filename into NameIndex and StorageEngine with empty body
+    NameRecord rec;
+    rec.doc_id = doc_id;
+    rec.file_name = filename;
+    rec.file_path = file_path;
+    rec.ext = ext;
+    rec.file_size = file_size;
+    rec.mtime = st.st_mtime;
+    name_index_->Upsert(rec);
+    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
+                                   st.st_mtime, 1, "");
+
+    std::lock_guard<std::mutex> lock(failed_files_mutex_);
+    failed_files_[file_path] = {file_size, st.st_mtime, precheck.reason};
+    return true;
+  }
+
+  // 2. Dispatch parsing task to worker sandbox pool with dynamic timeout
+  ParseTask task{doc_id, file_path, ext, 1, precheck.recommended_timeout_ms};
   ParseTaskResult res;
 
   auto parse_start = std::chrono::high_resolution_clock::now();
@@ -272,8 +309,26 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   if (!ok || res.status != TaskStatus::kSuccess) {
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_parse_failures++;
-    LOG_ERROR("[Parser] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | status: {}",
-              file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status));
+    LOG_ERROR(
+        "[Parser] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | "
+        "status: {} | err: {}",
+        file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status),
+        res.error_message);
+
+    // Index filename into NameIndex and StorageEngine so it remains searchable
+    NameRecord rec;
+    rec.doc_id = doc_id;
+    rec.file_name = filename;
+    rec.file_path = file_path;
+    rec.ext = ext;
+    rec.file_size = file_size;
+    rec.mtime = st.st_mtime;
+    name_index_->Upsert(rec);
+    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
+                                   st.st_mtime, 1, "");
+
+    std::lock_guard<std::mutex> flock(failed_files_mutex_);
+    failed_files_[file_path] = {file_size, st.st_mtime, res.error_message};
     return false;
   }
 

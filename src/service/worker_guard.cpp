@@ -132,7 +132,7 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   WorkerInstance& inst = workers_[index];
   inst.pid = pid;
   inst.socket_fd = fds[0];
-  inst.is_busy = false;
+  inst.state = WorkerState::kIdle;
   inst.current_doc_id = 0;
   inst.current_slot_id = 0;
   inst.total_tasks_processed = 0;
@@ -153,10 +153,10 @@ void WorkerGuard::KillWorker(size_t index, TaskStatus status,
     close(inst.socket_fd);
     inst.socket_fd = -1;
   }
-  if (inst.is_busy) {
+  if (inst.is_busy()) {
     shm_pool_.ReleaseSlot(inst.current_slot_id);
-    inst.is_busy = false;
   }
+  inst.state = WorkerState::kIdle;
   inst.pid = -1;
 
   // Respawn clean replacement worker
@@ -185,31 +185,48 @@ void WorkerGuard::WatchdogLoop() {
           close(inst.socket_fd);
           inst.socket_fd = -1;
         }
-        if (inst.is_busy) {
+        if (inst.is_busy()) {
           shm_pool_.ReleaseSlot(inst.current_slot_id);
-          inst.is_busy = false;
         }
+        inst.state = WorkerState::kIdle;
         inst.pid = -1;
         SpawnWorker(i);
         worker_available_cv_.notify_one();
         continue;
       }
 
-      // 2. Check for task timeout
-      if (inst.is_busy) {
+      // 2. Check for task timeout or stall heartbeat
+      if (inst.state == WorkerState::kBusy) {
+        uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()).count();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                            now - inst.task_start_time)
                            .count();
-        if (elapsed > timeout_ms_) {
-          // Timeout threshold exceeded! Force kill worker
-          KillWorker(i, TaskStatus::kTimeout, "Task timeout threshold exceeded");
-          worker_available_cv_.notify_one();
+
+        uint64_t last_hb_ms = shm_pool_.GetSlotLastHeartbeat(inst.current_slot_id);
+        bool is_stalled = (last_hb_ms > 0 && (now_ms > last_hb_ms) &&
+                           (now_ms - last_hb_ms > kDefaultStallTimeoutMs));
+        bool is_overtime = (elapsed > inst.current_timeout_ms);
+
+        if (is_stalled || is_overtime) {
+          inst.state = WorkerState::kKilledByWatchdog;
+          shm_pool_.ReleaseSlot(inst.current_slot_id);
+          if (inst.pid > 0) {
+            kill(inst.pid, SIGKILL);
+            waitpid(inst.pid, nullptr, 0);
+            inst.pid = -1;
+          }
+          if (inst.socket_fd >= 0) {
+            close(inst.socket_fd);
+            inst.socket_fd = -1;
+          }
+          // Do not spawn here, let ExecuteTask unblock and safely respawn
           continue;
         }
       }
 
       // 3. Check memory limit when idle
-      if (!inst.is_busy) {
+      if (inst.state == WorkerState::kIdle) {
         size_t rss = GetProcessRssBytes(inst.pid);
         if (rss > kDefaultMaxMemoryBytes) {
           KillWorker(i, TaskStatus::kSuccess, "Memory limit exceeded; recycling");
@@ -248,7 +265,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
         return true;
       }
       for (size_t i = 0; i < workers_.size(); ++i) {
-        if (!workers_[i].is_busy && workers_[i].pid > 0 &&
+        if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0 &&
             workers_[i].socket_fd >= 0) {
           if (shm_pool_.AllocateSlot(&slot_id, &slot_data)) {
             assigned_worker_idx = i;
@@ -264,9 +281,10 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
     }
 
     WorkerInstance& worker = workers_[assigned_worker_idx];
-    worker.is_busy = true;
+    worker.state = WorkerState::kBusy;
     worker.current_doc_id = task.doc_id;
     worker.current_slot_id = slot_id;
+    worker.current_timeout_ms = task.timeout_ms > 0 ? task.timeout_ms : timeout_ms_;
     worker.task_start_time = start_time;
     worker_fd = worker.socket_fd;
   }
@@ -324,19 +342,20 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
     std::unique_lock<std::mutex> lock(pool_mutex_);
     WorkerInstance& worker = workers_[assigned_worker_idx];
 
-    if (success_response) {
-      worker.is_busy = false;
+    if (worker.state == WorkerState::kKilledByWatchdog) {
+      // Watchdog already cleaned up the slot and terminated the worker.
+      // Avoid double-free and mis-killing new workers.
+      out_result->status = TaskStatus::kTimeout;
+      out_result->error_message = "Task timed out or stalled (killed by watchdog)";
+      worker.state = WorkerState::kIdle;
+      SpawnWorker(assigned_worker_idx);
+    } else if (success_response) {
+      worker.state = WorkerState::kIdle;
       worker.total_tasks_processed++;
     } else {
-      // Determine if it was timeout or crash
-      if (out_result->elapsed_ms >= timeout_ms_ * 0.9) {
-        out_result->status = TaskStatus::kTimeout;
-        out_result->error_message = "Task timed out and was killed by watchdog";
-      } else {
-        out_result->status = TaskStatus::kCrashed;
-        out_result->error_message =
-            "Worker crashed (SIGSEGV/abort) during file parsing";
-      }
+      out_result->status = TaskStatus::kCrashed;
+      out_result->error_message =
+          "Worker crashed (SIGSEGV/abort) during file parsing";
       shm_pool_.ReleaseSlot(slot_id);
       KillWorker(assigned_worker_idx, out_result->status, out_result->error_message);
     }

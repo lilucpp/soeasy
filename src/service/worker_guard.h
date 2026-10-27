@@ -33,6 +33,7 @@ struct ParseTask {
   std::string file_path;
   std::string ext;
   int parse_level = 1;
+  uint32_t timeout_ms = 15000;  // Dynamic timeout computed by DocPrechecker
 };
 
 struct ParseTaskResult {
@@ -45,19 +46,29 @@ struct ParseTaskResult {
   double elapsed_ms = 0.0;
 };
 
+enum class WorkerState {
+  kIdle = 0,
+  kBusy = 1,
+  kKilledByWatchdog = 2
+};
+
 struct WorkerInstance {
   pid_t pid = -1;
   int socket_fd = -1;
-  bool is_busy = false;
+  WorkerState state = WorkerState::kIdle;
   int64_t current_doc_id = 0;
   uint32_t current_slot_id = 0;
+  uint32_t current_timeout_ms = 15000;
   std::chrono::steady_clock::time_point task_start_time;
   uint64_t total_tasks_processed = 0;
+
+  bool is_busy() const { return state == WorkerState::kBusy; }
 };
 
 class WorkerGuard {
  public:
-  static constexpr uint32_t kDefaultTimeoutMs = 10000;          // 10s timeout
+  static constexpr uint32_t kDefaultTimeoutMs = 15000;          // 15s default
+  static constexpr uint32_t kDefaultStallTimeoutMs = 5000;      // 5s stall heartbeat
   static constexpr size_t kDefaultMaxMemoryBytes = 512 * 1024 * 1024;  // 512MB RSS
 
   WorkerGuard();

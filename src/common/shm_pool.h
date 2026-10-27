@@ -23,7 +23,8 @@ struct SlotHeader {
   uint32_t slot_id;
   uint64_t data_bytes;
   uint64_t checksum;
-  uint8_t reserved[40];  // Cache line padding (64 bytes total)
+  std::atomic<uint64_t> last_heartbeat_ms;
+  uint8_t reserved[32];  // Cache line padding (64 bytes total)
 };
 #pragma pack(pop)
 
@@ -105,6 +106,16 @@ class ShmSlotPool {
    * @param slot_id Slot index
    */
   void ReleaseSlot(uint32_t slot_id);
+
+  /**
+   * @brief Touch the slot heartbeat timestamp to indicate active progress.
+   */
+  void TouchHeartbeat(uint32_t slot_id);
+
+  /**
+   * @brief Read the last active heartbeat timestamp (epoch milliseconds) of a slot.
+   */
+  uint64_t GetSlotLastHeartbeat(uint32_t slot_id) const;
 
   /**
    * @brief Get pointer to writable payload buffer for a slot.

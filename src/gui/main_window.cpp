@@ -12,9 +12,11 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <atomic>
 #include <chrono>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace soeasy {
@@ -324,38 +326,63 @@ void MainWindow::OnRebuildIndexRequested() {
     return;
   }
 
-  QProgressDialog progress("正在重建全盘文件全文索引...", "取消", 0, 100, this);
-  progress.setWindowTitle("重建索引");
-  progress.setWindowModality(Qt::WindowModal);
-  progress.setMinimumDuration(0);
-  progress.setValue(0);
+  auto* progress = new QProgressDialog("正在准备全盘文件全文索引...", "取消", 0, 100, this);
+  progress->setWindowTitle("重建索引");
+  progress->setWindowModality(Qt::WindowModal);
+  progress->setMinimumDuration(0);
+  progress->setValue(0);
+  progress->setAttribute(Qt::WA_DeleteOnClose);
 
-  bool ok = pipeline_->RebuildIndex(
-      [&](size_t indexed, size_t total, const std::string& path) {
-        if (total > 0) {
-          int pct = static_cast<int>((indexed * 100) / total);
-          progress.setValue(pct);
-          progress.setLabelText(QString("正在解析并建立索引 (%1/%2):\n%3")
-                                    .arg(indexed)
-                                    .arg(total)
-                                    .arg(QString::fromStdString(path)));
-          QApplication::processEvents();
-        }
-      });
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  connect(progress, &QProgressDialog::canceled, [cancelled]() {
+    cancelled->store(true);
+  });
 
-  progress.setValue(100);
-  UpdateStatusBar(0, 0.0);
+  std::thread worker_thread([this, progress, cancelled]() {
+    bool ok = pipeline_->RebuildIndex(
+        [this, progress, cancelled](size_t indexed, size_t total, const std::string& path) {
+          if (cancelled->load()) {
+            return;
+          }
+          if (total > 0) {
+            int pct = static_cast<int>((indexed * 100) / total);
+            QString label = QString("正在解析并建立索引 (%1/%2):\n%3")
+                                .arg(indexed)
+                                .arg(total)
+                                .arg(QString::fromStdString(path));
+            QMetaObject::invokeMethod(
+                progress,
+                [progress, pct, label]() {
+                  progress->setValue(pct);
+                  progress->setLabelText(label);
+                },
+                Qt::QueuedConnection);
+          }
+        });
 
-  if (ok) {
-    QMessageBox::information(this, "重建索引完成",
-                             "所有配置目录的倒排全文索引与文件名秒索引已彻底重构完毕！");
-    // Refresh search
-    OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
-                      search_bar_->path_scope());
-  } else {
-    QMessageBox::critical(this, "重建索引失败",
-                          "重建索引过程中发生异常，请检查日志文件获取详细信息。");
-  }
+    QMetaObject::invokeMethod(
+        this,
+        [this, progress, ok, cancelled]() {
+          progress->setValue(100);
+          progress->close();
+          UpdateStatusBar(0, 0.0);
+
+          if (cancelled->load()) {
+            QMessageBox::information(this, "重建索引已取消", "索引重建过程已被用户取消。");
+          } else if (ok) {
+            QMessageBox::information(this, "重建索引完成",
+                                     "所有配置目录的倒排全文索引与文件名秒索引已彻底重构完毕！");
+            OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
+                              search_bar_->path_scope());
+          } else {
+            QMessageBox::critical(this, "重建索引失败",
+                                  "重建索引过程中发生异常，请检查日志文件获取详细信息。");
+          }
+        },
+        Qt::QueuedConnection);
+  });
+
+  worker_thread.detach();
 }
 
 }  // namespace gui

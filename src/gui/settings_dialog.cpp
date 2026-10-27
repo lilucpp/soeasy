@@ -123,6 +123,12 @@ void SettingsDialog::SetupUi() {
   max_size_spin_->setSuffix(" MB");
   form_perf->addRow("单文件最大全文索引上限:", max_size_spin_);
 
+  worker_count_spin_ = new QSpinBox(tab_perf);
+  worker_count_spin_->setRange(1, 8);
+  worker_count_spin_->setSingleStep(1);
+  worker_count_spin_->setSuffix(" 个进程");
+  form_perf->addRow("并发解析 Worker 进程数:", worker_count_spin_);
+
   tab_widget_->addTab(tab_perf, "性能调度");
 
   main_layout->addWidget(tab_widget_);
@@ -187,6 +193,7 @@ void SettingsDialog::PopulateFromConfig() {
 
   debounce_spin_->setValue(static_cast<int>(config_->debounce_ms()));
   max_size_spin_->setValue(static_cast<int>(config_->max_file_size() / (1024 * 1024)));
+  worker_count_spin_->setValue(static_cast<int>(config_->worker_count()));
 }
 
 void SettingsDialog::OnAddDirectory() {
@@ -280,6 +287,7 @@ void SettingsDialog::OnSaveAndApply() {
   // Save performance
   config_->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
   config_->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
+  config_->set_worker_count(static_cast<size_t>(worker_count_spin_->value()));
 
   emit SettingsApplied();
   accept();
