@@ -118,13 +118,96 @@ PrecheckResult DocPrechecker::Check(const std::string& file_path,
       return res;
     }
 
-    // Scan header / first sector for encryption stream indicators
-    const uint8_t kEncInfo[] = {'E', 0, 'n', 0, 'c', 0, 'r', 0, 'y', 0, 'p', 0, 't', 0};
-    auto it_enc = std::search(header.begin(), header.end(), kEncInfo, kEncInfo + sizeof(kEncInfo));
-    if (it_enc != header.end()) {
-      res.status = PrecheckStatus::kEncrypted;
-      res.reason = "Encrypted OLE document (contains EncryptionInfo stream)";
-      return res;
+    // Inspect OLE2 Directory sectors to check for encryption streams & record flags
+    if (header.size() >= 512) {
+      uint16_t sector_shift = *reinterpret_cast<const uint16_t*>(header.data() + 0x1E);
+      if (sector_shift < 9 || sector_shift > 12) sector_shift = 9;  // standard 512
+      size_t sector_size = 1ULL << sector_shift;
+
+      uint32_t sect_dir_start = *reinterpret_cast<const uint32_t*>(header.data() + 0x30);
+      if (sect_dir_start != 0xFFFFFFFE && sect_dir_start != 0xFFFFFFFF) {
+        size_t dir_offset = (static_cast<uint64_t>(sect_dir_start) + 1) * sector_size;
+        file.seekg(dir_offset, std::ios::beg);
+        std::vector<uint8_t> dir_sector(sector_size);
+        file.read(reinterpret_cast<char*>(dir_sector.data()), dir_sector.size());
+        size_t num_entries = file.gcount() / 128;
+
+        for (size_t i = 0; i < num_entries; ++i) {
+          const uint8_t* entry = dir_sector.data() + i * 128;
+          uint16_t name_len = *reinterpret_cast<const uint16_t*>(entry + 0x40);
+          if (name_len == 0 || name_len > 64) continue;
+
+          const char16_t* u16_name = reinterpret_cast<const char16_t*>(entry);
+          size_t char_count = (name_len / 2) - 1;
+          std::u16string name(u16_name, char_count);
+
+          if (name == u"EncryptedPackage" || name == u"EncryptionInfo" ||
+              name == u"EncryptedSummary") {
+            res.status = PrecheckStatus::kEncrypted;
+            res.reason = "OLE2 directory contains encrypted stream: " +
+                         std::string(name == u"EncryptedPackage"   ? "EncryptedPackage"
+                                     : name == u"EncryptionInfo" ? "EncryptionInfo"
+                                                                 : "EncryptedSummary");
+            return res;
+          }
+
+          uint32_t sect_start = *reinterpret_cast<const uint32_t*>(entry + 116);
+          uint64_t stream_size = *reinterpret_cast<const uint64_t*>(entry + 120);
+          if (sect_start == 0xFFFFFFFE || sect_start == 0xFFFFFFFF) continue;
+
+          uint64_t stream_offset = (static_cast<uint64_t>(sect_start) + 1) * sector_size;
+
+          // WordDocument: check FIB fEncrypted flag at offset 0x0A
+          if (lower_ext == "doc" && name == u"WordDocument" && stream_size >= 12) {
+            file.seekg(stream_offset, std::ios::beg);
+            uint8_t fib[12];
+            file.read(reinterpret_cast<char*>(fib), sizeof(fib));
+            if (file.gcount() == 12) {
+              uint16_t fib_flags = *reinterpret_cast<uint16_t*>(fib + 10);
+              if ((fib_flags & 0x0100) != 0) {
+                res.status = PrecheckStatus::kEncrypted;
+                res.reason = "MS Word FIB flag indicates password encryption (fEncrypted)";
+                return res;
+              }
+            }
+          }
+
+          // Workbook: check for FILEPASS record (0x002F) or PROTECT (0x0086)
+          if (lower_ext == "xls" && (name == u"Workbook" || name == u"Book") && stream_size >= 4) {
+            file.seekg(stream_offset, std::ios::beg);
+            std::vector<uint8_t> wb_buf(std::min<size_t>(stream_size, 4096));
+            file.read(reinterpret_cast<char*>(wb_buf.data()), wb_buf.size());
+            size_t bytes_read = file.gcount();
+            size_t pos = 0;
+            while (pos + 4 <= bytes_read) {
+              uint16_t rtype = *reinterpret_cast<uint16_t*>(wb_buf.data() + pos);
+              uint16_t rlen = *reinterpret_cast<uint16_t*>(wb_buf.data() + pos + 2);
+              if (rtype == 0x002F) {
+                res.status = PrecheckStatus::kEncrypted;
+                res.reason = "MS Excel contains FILEPASS record (0x002F)";
+                return res;
+              }
+              pos += 4 + rlen;
+              if (rlen == 0) break;
+            }
+          }
+
+          // PowerPoint Document: check for CryptSession10Container (0x2F14)
+          if (lower_ext == "ppt" && name == u"PowerPoint Document" && stream_size >= 4) {
+            file.seekg(stream_offset, std::ios::beg);
+            std::vector<uint8_t> ppt_buf(std::min<size_t>(stream_size, 4096));
+            file.read(reinterpret_cast<char*>(ppt_buf.data()), ppt_buf.size());
+            size_t ppt_bytes = static_cast<size_t>(file.gcount());
+            for (size_t p = 0; p + 2 <= ppt_bytes; ++p) {
+              if (*reinterpret_cast<uint16_t*>(ppt_buf.data() + p) == 0x2F14) {
+                res.status = PrecheckStatus::kEncrypted;
+                res.reason = "MS PowerPoint contains CryptSession10Container record (0x2F14)";
+                return res;
+              }
+            }
+          }
+        }
+      }
     }
 
     res.recommended_timeout_ms = 15000;
