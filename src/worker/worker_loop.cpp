@@ -18,6 +18,7 @@
 #include "soeasy_ipc.capnp.h"
 #include "worker/l1_text_parser.h"
 #include "worker/l2_office_parser.h"
+#include "worker/l3_image_parser.h"
 
 namespace soeasy {
 namespace worker {
@@ -34,6 +35,7 @@ int RunWorkerLoop(int socket_fd, const std::string& shm_name,
 
   L1TextParser l1_parser;
   L2OfficeParser l2_parser;
+  L3ImageParser l3_parser(ocr::OcrMode::kNormal);
 
   while (true) {
     kj::FdInputStream input_stream(socket_fd);
@@ -69,7 +71,9 @@ int RunWorkerLoop(int socket_fd, const std::string& shm_name,
 
       shm_pool.TouchHeartbeat(slot_id);
       auto parse_start = std::chrono::high_resolution_clock::now();
-      if (l2_parser.IsSupported(ext)) {
+      if (l3_parser.IsSupported(ext)) {
+        parse_ok = l3_parser.Parse(file_path, ext, &extracted_utf8);
+      } else if (l2_parser.IsSupported(ext)) {
         parse_ok = l2_parser.Parse(file_path, ext, &extracted_utf8, &is_scanned_pdf);
       } else {
         parse_ok = l1_parser.ParseFile(file_path, ext, &extracted_utf8);

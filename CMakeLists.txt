@@ -10,6 +10,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
+find_package(OpenCV REQUIRED)
 
 # Optimization flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -19,16 +20,18 @@ else()
 endif()
 
 # Set RPATH for third-party dynamic libraries
-set(CMAKE_BUILD_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu")
-set(CMAKE_INSTALL_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu")
+set(CMAKE_BUILD_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu:${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
+set(CMAKE_INSTALL_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu:${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 
 # Sysroot include and link paths
 include_directories(SYSTEM
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/include
 )
 link_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib
 )
 
 # -------------------------------------------------------------
@@ -117,12 +120,16 @@ target_link_libraries(soeasy_storage PUBLIC
 )
 
 # -------------------------------------------------------------
-# 7. Worker Subsystem (L1 Text Parser, L2 Office Parser & Worker Loop)
+# 7. Worker Subsystem (L1 Text Parser, L2 Office Parser, L3 Image Parser & Worker Loop)
 # -------------------------------------------------------------
 add_library(soeasy_worker_lib STATIC
     third_party/miniz/miniz.c
     src/worker/l1_text_parser.cpp
     src/worker/l2_office_parser.cpp
+    src/worker/l3_image_parser.cpp
+    src/worker/ocr/image_filter.cpp
+    src/worker/ocr/ppocr_v6_engine.cpp
+    src/worker/ocr/ocr_engine_factory.cpp
     src/worker/worker_loop.cpp
 )
 target_include_directories(soeasy_worker_lib PUBLIC
@@ -132,6 +139,8 @@ target_include_directories(soeasy_worker_lib PUBLIC
     third_party/doctotext/include
     third_party/utfcpp/source
     third_party/sysroot/usr/include
+    third_party/onnxruntime/include
+    ${OpenCV_INCLUDE_DIRS}
 )
 target_link_libraries(soeasy_worker_lib PUBLIC
     soeasy_common
@@ -142,6 +151,8 @@ target_link_libraries(soeasy_worker_lib PUBLIC
     capnp
     kj
     z
+    onnxruntime
+    ${OpenCV_LIBS}
 )
 
 add_executable(soeasy-worker
@@ -277,6 +288,17 @@ add_executable(test_logging_and_rebuild
 target_link_libraries(test_logging_and_rebuild PRIVATE
     soeasy_service
     soeasy_worker_lib
+    soeasy_storage
+    soeasy_common
+)
+
+# Test: L3 Image OCR Parser & Scientific Filtering
+add_executable(test_image_ocr
+    tests/test_image_ocr.cpp
+)
+target_link_libraries(test_image_ocr PRIVATE
+    soeasy_worker_lib
+    soeasy_service
     soeasy_storage
     soeasy_common
 )

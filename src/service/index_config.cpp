@@ -36,7 +36,8 @@ IndexConfig::IndexConfig() {
       "yaml", "yml", "json", "xml", "html", "htm", "css", "sql", "sh", "bat",
       "cpp", "c", "cc", "cxx", "h", "hpp", "hxx", "py", "java", "go", "rs",
       "js", "ts", "jsx", "tsx", "php", "rb", "swift", "kt", "scala",
-      "docx", "pdf", "pptx", "xlsx", "doc", "ppt", "xls"
+      "docx", "pdf", "pptx", "xlsx", "doc", "ppt", "xls",
+      "png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"
   };
 }
 

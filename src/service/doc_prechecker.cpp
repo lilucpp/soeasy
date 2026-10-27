@@ -34,7 +34,9 @@ PrecheckResult DocPrechecker::Check(const std::string& file_path,
 
   // 2. Pure image formats: 120s timeout for heavy OCR
   if (lower_ext == "jpg" || lower_ext == "jpeg" || lower_ext == "png" ||
-      lower_ext == "bmp" || lower_ext == "tiff" || lower_ext == "webp") {
+      lower_ext == "bmp" || lower_ext == "tiff" || lower_ext == "tif" ||
+      lower_ext == "webp" || lower_ext == "gif" || lower_ext == "svg" ||
+      lower_ext == "pnm" || lower_ext == "tga") {
     res.has_images = true;
     res.recommended_timeout_ms = 120000;
     return res;

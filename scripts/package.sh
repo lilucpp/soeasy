@@ -52,15 +52,21 @@ cp -d "${SYSROOT_LIB}"/libmimetic* "${STAGE_DIR}/lib/" 2>/dev/null || true
 cp -d "${SYSROOT_LIB}"/libcharsetdetect* "${STAGE_DIR}/lib/" 2>/dev/null || true
 cp -d "${SYSROOT_LIB}"/libminizip* "${STAGE_DIR}/lib/" 2>/dev/null || true
 
+# 收集 ONNX Runtime 运行库
+ORT_LIB="${PROJECT_ROOT}/third_party/onnxruntime/lib"
+cp -d "${ORT_LIB}"/libonnxruntime* "${STAGE_DIR}/lib/" 2>/dev/null || true
+
 # 收集 Qt5 xcb 平台插件
 QT_XCB="/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms/libqxcb.so"
 if [ -f "${QT_XCB}" ]; then
   cp -p "${QT_XCB}" "${STAGE_DIR}/plugins/platforms/"
 fi
 
-# 5. 收集词典与资源文件
-echo "[5/6] 收集结巴词典与启动引导脚本..."
+# 5. 收集词典与 OCR 模型文件
+echo "[5/6] 收集结巴词典、PP-OCRv6 模型与启动引导脚本..."
 cp -rp "${PROJECT_ROOT}/third_party/cppjieba/dict/"* "${STAGE_DIR}/dict/"
+mkdir -p "${STAGE_DIR}/models"
+cp -rp "${PROJECT_ROOT}/models/ppocr_v6" "${STAGE_DIR}/models/"
 cp -p "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/"
 
 # 创建启动引导脚本 run.sh

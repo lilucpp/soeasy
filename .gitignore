@@ -32,8 +32,10 @@ qrc_*.cpp
 *.dll
 *.exe
 
-# Preserve vendored sysroot dependencies
+# Preserve vendored sysroot dependencies, onnxruntime, and OCR models
 !third_party/sysroot/**
+!third_party/onnxruntime/**
+!models/**
 
 # Database and test artifacts
 *.db
