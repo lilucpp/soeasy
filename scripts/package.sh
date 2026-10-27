@@ -61,7 +61,7 @@ fi
 # 5. 收集词典与资源文件
 echo "[5/6] 收集结巴词典与启动引导脚本..."
 cp -rp "${PROJECT_ROOT}/third_party/cppjieba/dict/"* "${STAGE_DIR}/dict/"
-cp -p "${PROJECT_ROOT}/readme.md" "${STAGE_DIR}/"
+cp -p "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/"
 
 # 创建启动引导脚本 run.sh
 cat << 'EOF' > "${STAGE_DIR}/run.sh"

@@ -352,11 +352,17 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
     } else if (success_response) {
       worker.state = WorkerState::kIdle;
       worker.total_tasks_processed++;
+      if (out_result->status != TaskStatus::kSuccess) {
+        // Task returned FAILED from worker: release the slot immediately
+        shm_pool_.ReleaseSlot(slot_id);
+        out_result->slot_id = 0;
+      }
     } else {
       out_result->status = TaskStatus::kCrashed;
       out_result->error_message =
           "Worker crashed (SIGSEGV/abort) during file parsing";
       shm_pool_.ReleaseSlot(slot_id);
+      out_result->slot_id = 0;
       KillWorker(assigned_worker_idx, out_result->status, out_result->error_message);
     }
     worker_available_cv_.notify_one();

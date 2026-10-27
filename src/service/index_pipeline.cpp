@@ -215,13 +215,15 @@ bool IndexPipeline::RebuildIndex(
            total_files, watched_dirs.size());
 
   size_t indexed_count = 0;
+  size_t processed_count = 0;
   for (const auto& fpath : files_to_index) {
     bool ok = IndexSingleFile(fpath);
     if (ok) {
       indexed_count++;
     }
+    processed_count++;
     if (progress_cb) {
-      progress_cb(indexed_count, total_files, fpath);
+      progress_cb(processed_count, total_files, fpath);
     }
   }
 
@@ -307,6 +309,9 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
       std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
   if (!ok || res.status != TaskStatus::kSuccess) {
+    if (res.slot_id > 0) {
+      worker_guard_->shm_pool()->ReleaseSlot(res.slot_id);
+    }
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_parse_failures++;
     LOG_ERROR(
