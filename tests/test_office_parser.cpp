@@ -15,6 +15,7 @@
 #include "miniz.h"
 #include "service/worker_guard.h"
 #include "storage/storage_engine.h"
+#include "tests/test_helper.h"
 #include "worker/l2_office_parser.h"
 
 #define CHECK(expr)                                                          \
@@ -172,8 +173,7 @@ int main(int argc, char* argv[]) {
   const std::string test_dir = "/tmp/soeasy_phase5_test";
   const std::string test_db = "/tmp/soeasy_phase5_test.db";
   const std::string passphrase = "SoEasy_Phase5_Passphrase_2026!";
-  const std::string dict_dir =
-      "/home/peanut/project/soeasy/third_party/cppjieba/dict";
+  const std::string dict_dir = soeasy::test::FindDictDir();
 
   std::filesystem::remove_all(test_dir);
   std::filesystem::create_directories(test_dir);
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
   // -------------------------------------------------------------
   std::cout << "\n[Step 6] 验证多进程沙箱 Worker 跨进程调度解析 Office 文档...\n";
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  std::string worker_bin = "/home/peanut/project/soeasy/build/soeasy-worker";
+  std::string worker_bin = soeasy::test::FindWorkerBin();
   CHECK(worker_guard->Init(worker_bin, 2, 2000));
 
   soeasy::service::ParseTask docx_task;

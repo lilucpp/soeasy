@@ -19,10 +19,25 @@ else()
     add_compile_options(-O3 -Wall)
 endif()
 
-# Set RPATH for third-party dynamic libraries
-set(CMAKE_BUILD_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu:${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
-set(CMAKE_INSTALL_RPATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu:${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
-set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+option(BUILD_TESTS "Build test suite" ON)
+
+# Configure portable transitive RPATH (using DT_RPATH instead of DT_RUNPATH for transitive dependency lookup)
+add_link_options("-Wl,--disable-new-dtags")
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_BUILD_RPATH
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib"
+    "\$ORIGIN/../lib"
+    "\$ORIGIN/lib"
+)
+set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib;\$ORIGIN/lib")
+
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 # Sysroot include and link paths
 include_directories(SYSTEM
@@ -199,33 +214,35 @@ target_link_libraries(soeasy_service PUBLIC
 # -------------------------------------------------------------
 # 9. Test Targets
 # -------------------------------------------------------------
-# Phase 1 Test: Storage & FTS5
-add_executable(test_storage_engine
-    tests/test_storage_engine.cpp
-)
-target_link_libraries(test_storage_engine PRIVATE
-    soeasy_storage
-)
+if(BUILD_TESTS)
+  # Phase 1 Test: Storage & FTS5
+  add_executable(test_storage_engine
+      tests/test_storage_engine.cpp
+  )
+  target_link_libraries(test_storage_engine PRIVATE
+      soeasy_storage
+  )
 
-# Phase 2 Test: Sandbox & IPC
-add_executable(test_sandbox_ipc
-    tests/test_sandbox_ipc.cpp
-)
-target_link_libraries(test_sandbox_ipc PRIVATE
-    soeasy_service
-    soeasy_worker_lib
-    soeasy_storage
-)
+  # Phase 2 Test: Sandbox & IPC
+  add_executable(test_sandbox_ipc
+      tests/test_sandbox_ipc.cpp
+  )
+  target_link_libraries(test_sandbox_ipc PRIVATE
+      soeasy_service
+      soeasy_worker_lib
+      soeasy_storage
+  )
 
-# Phase 3 Test: Watcher, Debouncer, NameIndex & Live Pipeline
-add_executable(test_watch_and_index
-    tests/test_watch_and_index.cpp
-)
-target_link_libraries(test_watch_and_index PRIVATE
-    soeasy_service
-    soeasy_storage
-    soeasy_worker_lib
-)
+  # Phase 3 Test: Watcher, Debouncer, NameIndex & Live Pipeline
+  add_executable(test_watch_and_index
+      tests/test_watch_and_index.cpp
+  )
+  target_link_libraries(test_watch_and_index PRIVATE
+      soeasy_service
+      soeasy_storage
+      soeasy_worker_lib
+  )
+endif()
 
 # -------------------------------------------------------------
 # 10. GUI Subsystem (Qt5 Widgets Desktop Frontend)
@@ -259,52 +276,54 @@ target_link_libraries(soeasy-gui PRIVATE
     soeasy_gui
 )
 
-# Phase 4 Test: Qt5 GUI Component Interaction & Smoke Test
-add_executable(test_gui_smoke
-    tests/test_gui_smoke.cpp
-)
-target_link_libraries(test_gui_smoke PRIVATE
-    soeasy_gui
-    Qt5::Widgets
-    Qt5::Gui
-    Qt5::Core
-)
+if(BUILD_TESTS)
+  # Phase 4 Test: Qt5 GUI Component Interaction & Smoke Test
+  add_executable(test_gui_smoke
+      tests/test_gui_smoke.cpp
+  )
+  target_link_libraries(test_gui_smoke PRIVATE
+      soeasy_gui
+      Qt5::Widgets
+      Qt5::Gui
+      Qt5::Core
+  )
 
-# Phase 5 Test: L2 Office Document Parser (OOXML, PDF, Sandbox & FTS5)
-add_executable(test_office_parser
-    tests/test_office_parser.cpp
-)
-target_include_directories(test_office_parser PRIVATE
-    src
-    third_party/miniz
-)
-target_link_libraries(test_office_parser PRIVATE
-    soeasy_worker_lib
-    soeasy_service
-    soeasy_storage
-)
+  # Phase 5 Test: L2 Office Document Parser (OOXML, PDF, Sandbox & FTS5)
+  add_executable(test_office_parser
+      tests/test_office_parser.cpp
+  )
+  target_include_directories(test_office_parser PRIVATE
+      src
+      third_party/miniz
+  )
+  target_link_libraries(test_office_parser PRIVATE
+      soeasy_worker_lib
+      soeasy_service
+      soeasy_storage
+  )
 
-# Test: spdlog Logging & Index Rebuild Verification
-add_executable(test_logging_and_rebuild
-    tests/test_logging_and_rebuild.cpp
-)
-target_link_libraries(test_logging_and_rebuild PRIVATE
-    soeasy_service
-    soeasy_worker_lib
-    soeasy_storage
-    soeasy_common
-)
+  # Test: spdlog Logging & Index Rebuild Verification
+  add_executable(test_logging_and_rebuild
+      tests/test_logging_and_rebuild.cpp
+  )
+  target_link_libraries(test_logging_and_rebuild PRIVATE
+      soeasy_service
+      soeasy_worker_lib
+      soeasy_storage
+      soeasy_common
+  )
 
-# Test: L3 Image OCR Parser & Scientific Filtering
-add_executable(test_image_ocr
-    tests/test_image_ocr.cpp
-)
-target_link_libraries(test_image_ocr PRIVATE
-    soeasy_worker_lib
-    soeasy_service
-    soeasy_storage
-    soeasy_common
-)
+  # Test: L3 Image OCR Parser & Scientific Filtering
+  add_executable(test_image_ocr
+      tests/test_image_ocr.cpp
+  )
+  target_link_libraries(test_image_ocr PRIVATE
+      soeasy_worker_lib
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+  )
+endif()
 
 # -------------------------------------------------------------
 # 11. Packaging Target (One-click Standalone Zip Generation)

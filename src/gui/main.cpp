@@ -100,23 +100,23 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // Locate Jieba dictionary directory
+  // Locate Jieba dictionary directory relative to executable or installed paths
   QString dict_dir = parser.value(dict_option);
   if (dict_dir.isEmpty()) {
+    QString app_dir = QCoreApplication::applicationDirPath();
     QStringList dict_candidates = {
-        QCoreApplication::applicationDirPath() + "/../third_party/cppjieba/dict",
-        QCoreApplication::applicationDirPath() + "/dict",
-        "/home/peanut/project/soeasy/third_party/cppjieba/dict",
-        "/usr/local/share/soeasy/dict"
+        app_dir + "/dict",
+        app_dir + "/../dict",
+        app_dir + "/../third_party/cppjieba/dict",
+        app_dir + "/../../third_party/cppjieba/dict",
+        "/usr/local/share/soeasy/dict",
+        "/usr/share/soeasy/dict"
     };
     for (const auto& candidate : dict_candidates) {
       if (QFileInfo::exists(candidate + "/jieba.dict.utf8")) {
         dict_dir = candidate;
         break;
       }
-    }
-    if (dict_dir.isEmpty()) {
-      dict_dir = "/home/peanut/project/soeasy/third_party/cppjieba/dict";
     }
   }
 

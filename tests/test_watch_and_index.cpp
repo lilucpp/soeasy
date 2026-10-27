@@ -13,6 +13,7 @@
 #include "service/index_pipeline.h"
 #include "service/worker_guard.h"
 #include "storage/storage_engine.h"
+#include "tests/test_helper.h"
 
 namespace {
 
@@ -32,8 +33,7 @@ int main(int argc, char* argv[]) {
   const std::string test_dir = "/tmp/soeasy_watch_test";
   const std::string test_db = "/tmp/soeasy_phase3_test.db";
   const std::string passphrase = "SoEasy_Phase3_Passphrase_2026!";
-  const std::string dict_dir =
-      "/home/peanut/project/soeasy/third_party/cppjieba/dict";
+  const std::string dict_dir = soeasy::test::FindDictDir();
 
   // Clean up any leftovers
   std::filesystem::remove_all(test_dir);

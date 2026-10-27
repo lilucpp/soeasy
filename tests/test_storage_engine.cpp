@@ -1,4 +1,5 @@
 #include "storage/storage_engine.h"
+#include "tests/test_helper.h"
 
 #include <cassert>
 #include <chrono>
@@ -27,8 +28,7 @@ int main(int argc, char* argv[]) {
 
   const std::string db_path = "/tmp/soeasy_demo_encrypted.db";
   const std::string key = "SoEasy_TopSecret_Passphrase_2026!";
-  const std::string dict_dir =
-      "/home/peanut/project/soeasy/third_party/cppjieba/dict";
+  const std::string dict_dir = soeasy::test::FindDictDir();
 
   // Clean up old demo db
   std::remove(db_path.c_str());

@@ -26,10 +26,22 @@ std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(
   if (!models_base_dir.empty()) {
     candidate_dirs.push_back(models_base_dir);
   }
+
+  // Discover relative to current process executable
+  std::error_code ec;
+  auto exe_path = std::filesystem::read_symlink("/proc/self/exe", ec);
+  if (!ec && !exe_path.empty()) {
+    auto exe_dir = exe_path.parent_path();
+    candidate_dirs.push_back((exe_dir / "models/ppocr_v6").string());
+    candidate_dirs.push_back((exe_dir / "../models/ppocr_v6").string());
+    candidate_dirs.push_back((exe_dir / "../../models/ppocr_v6").string());
+  }
+
   candidate_dirs.push_back("models/ppocr_v6");
   candidate_dirs.push_back("./models/ppocr_v6");
   candidate_dirs.push_back("../models/ppocr_v6");
-  candidate_dirs.push_back("/home/peanut/project/soeasy/models/ppocr_v6");
+  candidate_dirs.push_back("../../models/ppocr_v6");
+  candidate_dirs.push_back("/usr/local/share/soeasy/models/ppocr_v6");
   candidate_dirs.push_back("/usr/share/soeasy/models/ppocr_v6");
 
   std::string found_dir;

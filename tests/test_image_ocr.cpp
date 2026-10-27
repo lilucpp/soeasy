@@ -13,6 +13,7 @@
 
 #include "common/logger.h"
 #include "storage/storage_engine.h"
+#include "tests/test_helper.h"
 #include "worker/l3_image_parser.h"
 #include "worker/ocr/image_filter.h"
 #include "worker/ocr/ocr_engine_factory.h"
@@ -26,9 +27,10 @@ void TestImageFilter() {
   std::cout << "======================================================\n";
 
   ImageFilter filter;
+  std::string img_dataset = soeasy::test::FindTestDatasetDir() + "/img";
 
   // 1. Test icon filtering
-  std::string icon_path = "/home/peanut/project/test_dataset/img/icon_small_121.png";
+  std::string icon_path = img_dataset + "/icon_small_121.png";
   if (std::filesystem::exists(icon_path)) {
     auto dec = filter.PrecheckFile(icon_path);
     std::cout << "  Icon filter check (" << icon_path << "): "
@@ -37,7 +39,7 @@ void TestImageFilter() {
   }
 
   // 2. Test divider stripe filtering
-  std::string stripe_path = "/home/peanut/project/test_dataset/img/divider_stripe_161.png";
+  std::string stripe_path = img_dataset + "/divider_stripe_161.png";
   if (std::filesystem::exists(stripe_path)) {
     auto dec = filter.PrecheckFile(stripe_path);
     std::cout << "  Stripe filter check (" << stripe_path << "): "
@@ -46,7 +48,7 @@ void TestImageFilter() {
   }
 
   // 3. Test solid color / blank filtering
-  std::string solid_path = "/home/peanut/project/test_dataset/img/solid_color_163.jpg";
+  std::string solid_path = img_dataset + "/solid_color_163.jpg";
   if (std::filesystem::exists(solid_path)) {
     cv::Mat img = cv::imread(solid_path);
     auto dec = filter.CheckDecodedImage(img);
@@ -55,8 +57,8 @@ void TestImageFilter() {
     assert(dec == FilterDecision::kSolidColorOrBlank);
   }
 
-  // 4. Test real screenshot must PASS
-  std::string real_screenshot = "/home/peanut/图片/2026-10-26_16-54.png";
+  // 4. Test real document/screenshot must PASS
+  std::string real_screenshot = img_dataset + "/doc_standard_013.png";
   if (std::filesystem::exists(real_screenshot)) {
     auto dec = filter.PrecheckFile(real_screenshot);
     std::cout << "  Real screenshot check (" << real_screenshot << "): "
@@ -65,9 +67,9 @@ void TestImageFilter() {
   }
 
   // 5. Test path precheck for cache & thumbnails
-  assert(ImageFilter::IsCacheOrThumbnailPath("/home/peanut/文档/xwechat_files/lilu/cache/WeAppIcon/123.jpg"));
-  assert(ImageFilter::IsCacheOrThumbnailPath("/home/peanut/文档/xwechat_files/lilu/msg/Thumb/574_1788_thumb.jpg"));
-  assert(!ImageFilter::IsCacheOrThumbnailPath("/home/peanut/文档/invoice_2026.png"));
+  assert(ImageFilter::IsCacheOrThumbnailPath("/tmp/cache/WeAppIcon/123.jpg"));
+  assert(ImageFilter::IsCacheOrThumbnailPath("/tmp/msg/Thumb/574_1788_thumb.jpg"));
+  assert(!ImageFilter::IsCacheOrThumbnailPath("/tmp/work/invoice_2026.png"));
   std::cout << "  Path-based cache & thumbnail filter check: PASS\n";
 
   // 6. Test CountEffectiveChars
@@ -87,11 +89,12 @@ void TestPPOCRv6Engine() {
   std::cout << "[Test 2/4] Testing PP-OCRv6 Engine (Normal & HighPerf)...\n";
   std::cout << "======================================================\n";
 
-  auto engine = OcrEngineFactory::CreateDefaultEngine("/home/peanut/project/soeasy/models/ppocr_v6", OcrMode::kNormal);
+  auto engine = OcrEngineFactory::CreateDefaultEngine(soeasy::test::FindModelsDir(), OcrMode::kNormal);
   assert(engine != nullptr);
   std::cout << "  PP-OCRv6 Engine instantiated and initialized successfully.\n";
 
-  std::string test_img = "/home/peanut/project/test_dataset/img/doc_standard_025.jpg";
+  std::string img_dataset = soeasy::test::FindTestDatasetDir() + "/img";
+  std::string test_img = img_dataset + "/doc_standard_025.jpg";
   if (std::filesystem::exists(test_img)) {
     // Normal mode (1 thread)
     engine->SetMode(OcrMode::kNormal);
@@ -120,7 +123,7 @@ void TestL3ImageParser() {
   std::cout << "[Test 3/4] Testing L3 Image Parser & Diverse Formats...\n";
   std::cout << "======================================================\n";
 
-  L3ImageParser parser(OcrMode::kNormal, "/home/peanut/project/soeasy/models/ppocr_v6");
+  L3ImageParser parser(OcrMode::kNormal, soeasy::test::FindModelsDir());
 
   // Check supported extensions
   std::vector<std::string> exts = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"};
@@ -129,8 +132,10 @@ void TestL3ImageParser() {
   }
   std::cout << "  Format support validated: png, jpg, jpeg, bmp, webp, tiff, tif, gif, svg.\n";
 
+  std::string img_dataset = soeasy::test::FindTestDatasetDir() + "/img";
+
   // Test SVG text extraction (0 OCR overhead)
-  std::string svg_path = "/home/peanut/project/test_dataset/img/vector_badge_181.svg";
+  std::string svg_path = img_dataset + "/vector_badge_181.svg";
   if (std::filesystem::exists(svg_path)) {
     std::string svg_text;
     bool ok = parser.Parse(svg_path, "svg", &svg_text);
@@ -141,9 +146,9 @@ void TestL3ImageParser() {
 
   // Test PNG and JPG parsing
   std::vector<std::pair<std::string, std::string>> sample_files = {
-      {"/home/peanut/project/test_dataset/img/doc_standard_013.png", "png"},
-      {"/home/peanut/project/test_dataset/img/receipt_angled_093.png", "png"},
-      {"/home/peanut/project/test_dataset/img/dark_code_085.jpg", "jpg"}
+      {img_dataset + "/doc_standard_013.png", "png"},
+      {img_dataset + "/receipt_angled_093.png", "png"},
+      {img_dataset + "/dark_code_085.jpg", "jpg"}
   };
 
   for (const auto& [path, ext] : sample_files) {
@@ -156,7 +161,7 @@ void TestL3ImageParser() {
   }
 
   // Test noise image with only 1 char (receipt_angled_098.bmp has '位')
-  std::string noise_bmp = "/home/peanut/project/test_dataset/img/receipt_angled_098.bmp";
+  std::string noise_bmp = img_dataset + "/receipt_angled_098.bmp";
   if (std::filesystem::exists(noise_bmp)) {
     std::string noise_text;
     parser.set_min_effective_chars(4);
@@ -185,7 +190,7 @@ void TestStorageFts5ImageSearch() {
   std::string test_db = "/tmp/test_image_ocr_fts.db";
   std::filesystem::remove(test_db);
 
-  const std::string dict_dir = "/home/peanut/project/soeasy/third_party/cppjieba/dict";
+  const std::string dict_dir = soeasy::test::FindDictDir();
   soeasy::storage::StorageEngine storage;
   bool open_ok = storage.Open(test_db, "test_password", dict_dir);
   if (!open_ok) {
@@ -194,12 +199,13 @@ void TestStorageFts5ImageSearch() {
   }
   std::cout << "  StorageEngine opened encrypted DB with FTS5 jieba tokenizer.\n";
 
-  L3ImageParser parser(OcrMode::kNormal, "/home/peanut/project/soeasy/models/ppocr_v6");
+  L3ImageParser parser(OcrMode::kNormal, soeasy::test::FindModelsDir());
 
+  std::string img_dataset = soeasy::test::FindTestDatasetDir() + "/img";
   std::vector<std::pair<std::string, std::string>> test_docs = {
-      {"/home/peanut/project/test_dataset/img/doc_standard_013.png", "png"},
-      {"/home/peanut/project/test_dataset/img/receipt_angled_093.png", "png"},
-      {"/home/peanut/project/test_dataset/img/vector_badge_181.svg", "svg"}
+      {img_dataset + "/doc_standard_013.png", "png"},
+      {img_dataset + "/receipt_angled_093.png", "png"},
+      {img_dataset + "/vector_badge_181.svg", "svg"}
   };
 
   // If local dataset does not exist, synthesize test SVG so the test is self-contained

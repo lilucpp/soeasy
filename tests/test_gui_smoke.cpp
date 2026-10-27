@@ -2,6 +2,7 @@
 // Use of this source code is governed by an Apache-2.0 license.
 
 #include <QApplication>
+#include <QDir>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -22,6 +23,7 @@
 #include "service/index_pipeline.h"
 #include "service/worker_guard.h"
 #include "storage/storage_engine.h"
+#include "tests/test_helper.h"
 
 #define CHECK(expr)                                                          \
   do {                                                                       \
@@ -56,8 +58,7 @@ int main(int argc, char* argv[]) {
   const std::string test_dir = "/tmp/soeasy_gui_test";
   const std::string test_db = "/tmp/soeasy_gui_test.db";
   const std::string passphrase = "SoEasy_Phase4_Passphrase_2026!";
-  const std::string dict_dir =
-      "/home/peanut/project/soeasy/third_party/cppjieba/dict";
+  const std::string dict_dir = soeasy::test::FindDictDir();
 
   std::filesystem::remove_all(test_dir);
   std::filesystem::create_directories(test_dir);
@@ -159,7 +160,7 @@ int main(int argc, char* argv[]) {
   CHECK(ok);
 
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  std::string worker_bin = "/home/peanut/project/soeasy/build/soeasy-worker";
+  std::string worker_bin = soeasy::test::FindWorkerBin();
   bool worker_ok = worker_guard->Init(worker_bin, 2, 1500);
   CHECK(worker_ok);
 
@@ -251,7 +252,7 @@ int main(int argc, char* argv[]) {
 
     QPixmap pix_unselected = main_win.grab();
     const QString unselected_path =
-        "/home/peanut/.gemini/antigravity/brain/76ed2a22-1d0c-462e-b299-d80268897ee2/unselected_preview_ui.png";
+        QDir::tempPath() + "/soeasy_unselected_preview_ui.png";
     pix_unselected.save(unselected_path);
     std::cout << "  -> 未选中/初始预览界面截屏已成功保存: "
               << unselected_path.toStdString() << "\n";
@@ -265,7 +266,7 @@ int main(int argc, char* argv[]) {
 
     QPixmap pix = main_win.grab();
     const QString snapshot_path =
-        "/home/peanut/.gemini/antigravity/brain/76ed2a22-1d0c-462e-b299-d80268897ee2/master_detail_ui.png";
+        QDir::tempPath() + "/soeasy_master_detail_ui.png";
     pix.save(snapshot_path);
     std::cout << "  -> Master-Detail 双栏即时预览界面截屏已成功保存: "
               << snapshot_path.toStdString() << "\n";

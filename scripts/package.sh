@@ -26,10 +26,10 @@ if [ ! -f "${PROJECT_ROOT}/third_party/zstd/build/cmake/CMakeLists.txt" ] || [ !
     git -C "${PROJECT_ROOT}" submodule update --init --recursive
 fi
 
-# 1. 编译 Release 版本二进制
+# 1. 编译 Release 版本二进制 (不编译或运行测试用例)
 echo "[1/6] 编译最新 Release 版本二进制..."
-cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" -DCMAKE_BUILD_TYPE=Release
-cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker -j4
+cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
+cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker -j8
 
 # 2. 准备打包目录结构
 echo "[2/6] 清理并构建分发目录结构..."
