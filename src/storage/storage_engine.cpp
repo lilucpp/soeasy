@@ -532,6 +532,73 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id,
   return true;
 }
 
+bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t* out_file_size,
+                                    int64_t* out_mtime, int* out_parse_stat) {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+
+  const char* sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    last_error_ = sqlite3_errmsg(db_);
+    return false;
+  }
+
+  sqlite3_bind_int64(stmt, 1, doc_id);
+  bool found = false;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (out_file_size) {
+      *out_file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
+    }
+    if (out_mtime) {
+      *out_mtime = sqlite3_column_int64(stmt, 1);
+    }
+    if (out_parse_stat) {
+      *out_parse_stat = sqlite3_column_int(stmt, 2);
+    }
+    found = true;
+  }
+  sqlite3_finalize(stmt);
+  return found;
+}
+
+std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
+  std::vector<FileMetaRecord> results;
+  if (!db_) {
+    last_error_ = "Database not open";
+    return results;
+  }
+
+  const char* sql =
+      "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat "
+      "FROM files;";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    last_error_ = sqlite3_errmsg(db_);
+    return results;
+  }
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    FileMetaRecord r;
+    r.doc_id = sqlite3_column_int64(stmt, 0);
+    const unsigned char* name = sqlite3_column_text(stmt, 1);
+    if (name) r.file_name = reinterpret_cast<const char*>(name);
+    const unsigned char* path = sqlite3_column_text(stmt, 2);
+    if (path) r.file_path = reinterpret_cast<const char*>(path);
+    const unsigned char* ext = sqlite3_column_text(stmt, 3);
+    if (ext) r.ext = reinterpret_cast<const char*>(ext);
+    r.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    r.mtime = sqlite3_column_int64(stmt, 5);
+    r.parse_level = sqlite3_column_int(stmt, 6);
+    r.parse_stat = sqlite3_column_int(stmt, 7);
+    results.push_back(std::move(r));
+  }
+  sqlite3_finalize(stmt);
+  return results;
+}
+
 std::string StorageEngine::GenerateSnippet(
     const std::string& full_text,
     const std::vector<std::string>& keywords,

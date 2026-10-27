@@ -131,10 +131,13 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // 2. Initialize Index Config
+  // 2. Initialize Index Config from persistent JSON file
   auto config = std::make_shared<soeasy::service::IndexConfig>();
-  // If no indexed directories are specified, default to user's Documents & Desktop
-  if (config->GetIndexedDirectories().empty()) {
+  QString config_path = app_data_dir + "/config.json";
+  config->set_config_path(config_path.toStdString());
+
+  bool config_loaded = config->LoadFromFile(config_path.toStdString());
+  if (!config_loaded || config->GetIndexedDirectories().empty()) {
     QString docs =
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     QString desktop =
@@ -145,6 +148,10 @@ int main(int argc, char* argv[]) {
     if (!desktop.isEmpty() && QDir(desktop).exists()) {
       config->AddIndexedDirectory(desktop.toStdString());
     }
+    config->SaveToFile(config_path.toStdString());
+    LOG_INFO("[Config] Created initial persistent config at: {}", config_path.toStdString());
+  } else {
+    LOG_INFO("[Config] Successfully loaded persistent config from: {}", config_path.toStdString());
   }
 
   // 3. Initialize Worker Guard with configured worker count and 15s base timeout

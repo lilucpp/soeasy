@@ -166,6 +166,7 @@ add_library(soeasy_service STATIC
 target_include_directories(soeasy_service PUBLIC
     src
     schema
+    third_party
     third_party/efsw/include
     third_party/sysroot/usr/include
 )

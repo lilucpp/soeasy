@@ -23,6 +23,17 @@ struct SearchResultItem {
   bool has_body_snippet = false;
 };
 
+struct FileMetaRecord {
+  int64_t doc_id = 0;
+  std::string file_name;
+  std::string file_path;
+  std::string ext;
+  uint64_t file_size = 0;
+  int64_t mtime = 0;
+  int parse_level = 0;
+  int parse_stat = 0;
+};
+
 class StorageEngine {
  public:
   StorageEngine();
@@ -100,6 +111,23 @@ class StorageEngine {
    * @return true on success
    */
   bool GetDocumentContent(int64_t doc_id, std::string* out_content);
+
+  /**
+   * @brief Retrieve metadata (file_size, mtime, parse_stat) for incremental check.
+   *
+   * @param doc_id Document ID
+   * @param out_file_size Output pointer for file size
+   * @param out_mtime Output pointer for mtime
+   * @param out_parse_stat Output pointer for parse status
+   * @return true if document exists in files table
+   */
+  bool GetFileMetadata(int64_t doc_id, uint64_t* out_file_size,
+                       int64_t* out_mtime, int* out_parse_stat = nullptr);
+
+  /**
+   * @brief Retrieve all indexed files metadata for rapid cold-restart.
+   */
+  std::vector<FileMetaRecord> GetAllFilesMetadata();
 
   /**
    * @brief Generate highlighted snippet with <mark> tags around keywords.

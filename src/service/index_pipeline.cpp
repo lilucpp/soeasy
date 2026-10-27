@@ -77,6 +77,22 @@ bool IndexPipeline::Init() {
   });
 
   name_index_ = std::make_shared<NameIndex>();
+
+  // Cold-start recovery: load existing files metadata directly from database into NameIndex
+  auto existing_files = storage_engine_->GetAllFilesMetadata();
+  for (const auto& f : existing_files) {
+    NameRecord rec;
+    rec.doc_id = f.doc_id;
+    rec.file_name = f.file_name;
+    rec.file_path = f.file_path;
+    rec.ext = f.ext;
+    rec.file_size = f.file_size;
+    rec.mtime = f.mtime;
+    name_index_->Upsert(rec);
+  }
+  LOG_INFO("[IndexPipeline] Cold-started NameIndex with {} files from database.",
+           existing_files.size());
+
   watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
   return true;
 }
@@ -275,6 +291,24 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   }
 
   int64_t doc_id = GenerateDocId(file_path);
+
+  // Fast incremental check: if file is already indexed in StorageEngine with identical size and mtime,
+  // skip expensive DocPrechecker, IPC dispatch, and worker parsing!
+  uint64_t db_size = 0;
+  int64_t db_mtime = 0;
+  if (storage_engine_->GetFileMetadata(doc_id, &db_size, &db_mtime)) {
+    if (db_size == file_size && db_mtime == st.st_mtime) {
+      NameRecord rec;
+      rec.doc_id = doc_id;
+      rec.file_name = filename;
+      rec.file_path = file_path;
+      rec.ext = ext;
+      rec.file_size = file_size;
+      rec.mtime = st.st_mtime;
+      name_index_->Upsert(rec);
+      return true;
+    }
+  }
 
   // 1. Fast sanity check (magic, EOCD, encryption precheck, dynamic timeout)
   auto precheck = DocPrechecker::Check(file_path, ext, file_size);

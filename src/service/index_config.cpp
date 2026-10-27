@@ -1,11 +1,16 @@
 #include "service/index_config.h"
 
-#include <cctype>
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include "common/logger.h"
+#include "nlohmann/json.hpp"
 
 namespace soeasy {
 namespace service {
@@ -152,6 +157,109 @@ bool IndexConfig::ShouldIndex(const std::string& file_path,
 
   // Check file extension
   return supported_exts_.find(lower_ext) != supported_exts_.end();
+}
+
+bool IndexConfig::LoadFromFile(const std::string& file_path) {
+  std::ifstream ifs(file_path);
+  if (!ifs.is_open()) {
+    return false;
+  }
+  try {
+    nlohmann::json j;
+    ifs >> j;
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_path_ = file_path;
+
+    if (j.contains("indexed_directories") && j["indexed_directories"].is_array()) {
+      indexed_dirs_.clear();
+      for (const auto& item : j["indexed_directories"]) {
+        if (item.is_string()) {
+          indexed_dirs_.push_back(item.get<std::string>());
+        }
+      }
+    }
+
+    if (j.contains("excluded_patterns") && j["excluded_patterns"].is_array()) {
+      excluded_patterns_.clear();
+      for (const auto& item : j["excluded_patterns"]) {
+        if (item.is_string()) {
+          excluded_patterns_.push_back(item.get<std::string>());
+        }
+      }
+    }
+
+    if (j.contains("supported_extensions") && j["supported_extensions"].is_array()) {
+      supported_exts_.clear();
+      for (const auto& item : j["supported_extensions"]) {
+        if (item.is_string()) {
+          supported_exts_.insert(item.get<std::string>());
+        }
+      }
+    }
+
+    if (j.contains("max_file_size") && j["max_file_size"].is_number()) {
+      max_file_size_ = j["max_file_size"].get<uint64_t>();
+    }
+
+    if (j.contains("debounce_ms") && j["debounce_ms"].is_number()) {
+      debounce_ms_ = j["debounce_ms"].get<uint32_t>();
+    }
+
+    if (j.contains("worker_count") && j["worker_count"].is_number()) {
+      worker_count_ = j["worker_count"].get<size_t>();
+      if (worker_count_ == 0) {
+        worker_count_ = kDefaultWorkerCount;
+      }
+    }
+
+    LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)",
+             file_path, indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
+    return true;
+  } catch (const std::exception& e) {
+    LOG_ERROR("[IndexConfig] Failed to parse config JSON '{}': {}", file_path, e.what());
+    return false;
+  }
+}
+
+bool IndexConfig::SaveToFile(const std::string& file_path) const {
+  try {
+    nlohmann::json j;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      j["indexed_directories"] = indexed_dirs_;
+      j["excluded_patterns"] = excluded_patterns_;
+      std::vector<std::string> sorted_exts(supported_exts_.begin(), supported_exts_.end());
+      std::sort(sorted_exts.begin(), sorted_exts.end());
+      j["supported_extensions"] = sorted_exts;
+      j["max_file_size"] = max_file_size_;
+      j["debounce_ms"] = debounce_ms_;
+      j["worker_count"] = worker_count_;
+    }
+
+    std::string temp_path = file_path + ".tmp";
+    std::ofstream ofs(temp_path);
+    if (!ofs.is_open()) {
+      LOG_ERROR("[IndexConfig] Failed to open temp config '{}' for writing", temp_path);
+      return false;
+    }
+
+    ofs << j.dump(2) << std::endl;
+    ofs.close();
+
+    std::error_code ec;
+    std::filesystem::rename(temp_path, file_path, ec);
+    if (ec) {
+      LOG_ERROR("[IndexConfig] Failed to atomically rename '{}' to '{}': {}",
+                temp_path, file_path, ec.message());
+      return false;
+    }
+
+    LOG_INFO("[IndexConfig] Configuration successfully saved to '{}'", file_path);
+    return true;
+  } catch (const std::exception& e) {
+    LOG_ERROR("[IndexConfig] Failed to save config to '{}': {}", file_path, e.what());
+    return false;
+  }
 }
 
 }  // namespace service

@@ -315,6 +315,12 @@ void MainWindow::OnOpenSettings() {
 }
 
 void MainWindow::OnSettingsApplied() {
+  if (pipeline_ && pipeline_->config()) {
+    for (const auto& dir : pipeline_->config()->GetIndexedDirectories()) {
+      pipeline_->AddAndScanDirectory(dir, true);
+    }
+  }
+
   statusBar()->showMessage("设置已成功应用并生效", 3000);
   // Re-trigger current search
   OnSearchTriggered(search_bar_->query(), search_bar_->mode(),

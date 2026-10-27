@@ -289,6 +289,9 @@ void SettingsDialog::OnSaveAndApply() {
   config_->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
   config_->set_worker_count(static_cast<size_t>(worker_count_spin_->value()));
 
+  // Persist to disk
+  config_->Save();
+
   emit SettingsApplied();
   accept();
 }

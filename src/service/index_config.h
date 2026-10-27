@@ -67,8 +67,37 @@ class IndexConfig {
    */
   bool IsDirectoryExcluded(const std::string& dir_path) const;
 
+  /**
+   * @brief Load configuration from a JSON file on disk.
+   */
+  bool LoadFromFile(const std::string& file_path);
+
+  /**
+   * @brief Persist current configuration to a JSON file on disk.
+   */
+  bool SaveToFile(const std::string& file_path) const;
+
+  void set_config_path(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_path_ = path;
+  }
+  std::string config_path() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_path_;
+  }
+  bool Save() const {
+    std::string path;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      path = config_path_;
+    }
+    if (path.empty()) return false;
+    return SaveToFile(path);
+  }
+
  private:
   mutable std::mutex mutex_;
+  std::string config_path_;
   std::vector<std::string> indexed_dirs_;
   std::vector<std::string> excluded_patterns_;
   std::unordered_set<std::string> supported_exts_;
