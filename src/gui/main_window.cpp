@@ -7,8 +7,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
-#include <QProgressDialog>
 #include <QStatusBar>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -171,6 +171,7 @@ void MainWindow::SetupUi() {
 
   // Status Bar
   status_stats_label_ = new QLabel(this);
+  status_stats_label_->setTextFormat(Qt::RichText);
   status_stats_label_->setStyleSheet("color: #334155; font-size: 12px;");
 
   status_progress_bar_ = new QProgressBar(this);
@@ -178,7 +179,7 @@ void MainWindow::SetupUi() {
   status_progress_bar_->setValue(0);
   status_progress_bar_->setTextVisible(true);
   status_progress_bar_->setFixedHeight(14);
-  status_progress_bar_->setFixedWidth(130);
+  status_progress_bar_->setFixedWidth(140);
   status_progress_bar_->setStyleSheet(
       "QProgressBar {"
       "  border: 1px solid #CBD5E1;"
@@ -187,13 +188,45 @@ void MainWindow::SetupUi() {
       "  text-align: center;"
       "  font-size: 10px;"
       "  font-weight: bold;"
-      "  color: #1E293B;"
+      "  color: #0F172A;"
       "}"
       "QProgressBar::chunk {"
-      "  background-color: #0EA5E9;"
+      "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0EA5E9, stop:1 #38BDF8);"
       "  border-radius: 3px;"
       "}");
   status_progress_bar_->setVisible(false);
+
+  status_cancel_btn_ = new QPushButton("✕ 取消", this);
+  status_cancel_btn_->setObjectName("statusCancelBtn");
+  status_cancel_btn_->setToolTip("取消当前正在进行的索引任务");
+  status_cancel_btn_->setCursor(Qt::PointingHandCursor);
+  status_cancel_btn_->setStyleSheet(
+      "QPushButton#statusCancelBtn {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 3px;"
+      "  background-color: #FFFFFF;"
+      "  color: #64748B;"
+      "  font-size: 11px;"
+      "  padding: 1px 7px;"
+      "  font-weight: 500;"
+      "}"
+      "QPushButton#statusCancelBtn:hover {"
+      "  background-color: #FEE2E2;"
+      "  color: #DC2626;"
+      "  border-color: #FCA5A5;"
+      "}"
+      "QPushButton#statusCancelBtn:pressed {"
+      "  background-color: #FECACA;"
+      "}");
+  status_cancel_btn_->setVisible(false);
+  connect(status_cancel_btn_, &QPushButton::clicked, this, [this]() {
+    if (pipeline_) {
+      pipeline_->CancelScan();
+    }
+    status_cancel_btn_->setEnabled(false);
+    status_stats_label_->setText(
+        "<span style=\"color:#D97706; font-weight:bold;\">! 正在协同取消索引...</span>");
+  });
 
   status_file_label_ = new QLabel(this);
   status_file_label_->setStyleSheet("color: #64748B; font-size: 11px;");
@@ -205,6 +238,7 @@ void MainWindow::SetupUi() {
 
   statusBar()->addWidget(status_stats_label_);
   statusBar()->addWidget(status_progress_bar_);
+  statusBar()->addWidget(status_cancel_btn_);
   statusBar()->addWidget(status_file_label_, 1);
   statusBar()->addPermanentWidget(status_latency_label_);
 
@@ -234,11 +268,11 @@ void MainWindow::UpdateStatusBar(int match_count, double cost_ms) {
 
   if (cost_ms > 0.0) {
     status_latency_label_->setText(
-        QString("<span style=\"color: #4CAF50; font-size: 13px;\">●</span> 检索耗时: %1 ms")
+        QString("<span style=\"color: #16A34A; font-size: 13px;\">●</span> 检索耗时: %1 ms")
             .arg(QString::number(cost_ms, 'f', 2)));
   } else {
     status_latency_label_->setText(
-        "<span style=\"color: #4CAF50; font-size: 13px;\">●</span> 就绪");
+        "<span style=\"color: #16A34A; font-size: 13px;\">●</span> 就绪");
   }
 }
 
@@ -388,7 +422,7 @@ void MainWindow::OnSettingsApplied() {
   statusBar()->clearMessage();
 
   // Trigger background indexing for newly added or modified directories
-  StartBackgroundInitialIndex();
+  StartBackgroundInitialIndex(true);
 
   // Re-trigger current search only if there is an active search query
   if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() ||
@@ -403,66 +437,46 @@ void MainWindow::OnRebuildIndexRequested() {
     return;
   }
 
-  auto* progress = new QProgressDialog("正在准备全盘文件全文索引...", "取消", 0, 100, this);
-  progress->setWindowTitle("重建索引");
-  progress->setWindowModality(Qt::WindowModal);
-  progress->setMinimumDuration(0);
-  progress->setValue(0);
-  progress->setAttribute(Qt::WA_DeleteOnClose);
+  // Cancel any existing scan
+  if (is_indexing_.load()) {
+    pipeline_->CancelScan();
+  }
+  if (background_index_thread_.joinable()) {
+    background_index_thread_.join();
+  }
 
-  auto cancelled = std::make_shared<std::atomic<bool>>(false);
-  connect(progress, &QProgressDialog::canceled, [cancelled]() {
-    cancelled->store(true);
-  });
+  is_indexing_.store(true);
+  current_task_type_ = kTaskRebuild;
+  index_start_time_ = std::chrono::steady_clock::now();
 
-  std::thread worker_thread([this, progress, cancelled]() {
+  statusBar()->clearMessage();
+  status_stats_label_->setText(
+      "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; border-radius:3px;\">重建索引</span> 正在清空旧缓存并扫描目录...");
+  status_progress_bar_->setValue(0);
+  status_progress_bar_->setVisible(true);
+  status_cancel_btn_->setVisible(true);
+  status_cancel_btn_->setEnabled(true);
+  status_file_label_->setText("正在初始化文件清单...");
+  status_file_label_->setVisible(true);
+  status_latency_label_->setText("<span style=\"color:#D97706;\">●</span> 重建中");
+
+  background_index_thread_ = std::thread([this]() {
+    auto t0 = std::chrono::steady_clock::now();
     bool ok = pipeline_->RebuildIndex(
-        [this, progress, cancelled](size_t indexed, size_t total, const std::string& path) {
-          if (cancelled->load()) {
-            return;
-          }
-          if (total > 0) {
-            int pct = static_cast<int>((indexed * 100) / total);
-            QString label = QString("正在解析并建立索引 (%1/%2):\n%3")
-                                .arg(indexed)
-                                .arg(total)
-                                .arg(QString::fromStdString(path));
-            QMetaObject::invokeMethod(
-                progress,
-                [progress, pct, label]() {
-                  progress->setValue(pct);
-                  progress->setLabelText(label);
-                },
-                Qt::QueuedConnection);
-          }
+        [this](size_t indexed, size_t total, const std::string& path) {
+          emit IndexProgressUpdated(kTaskRebuild, static_cast<int>(indexed),
+                                    static_cast<int>(total), QString::fromStdString(path));
         });
-
-    QMetaObject::invokeMethod(
-        this,
-        [this, progress, ok, cancelled]() {
-          progress->setValue(100);
-          progress->close();
-          UpdateStatusBar(0, 0.0);
-
-          if (cancelled->load()) {
-            QMessageBox::information(this, "重建索引已取消", "索引重建过程已被用户取消。");
-          } else if (ok) {
-            QMessageBox::information(this, "重建索引完成",
-                                     "所有配置目录的倒排全文索引与文件名秒索引已彻底重构完毕！");
-            OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
-                              search_bar_->path_scope());
-          } else {
-            QMessageBox::critical(this, "重建索引失败",
-                                  "重建索引过程中发生异常，请检查日志文件获取详细信息。");
-          }
-        },
-        Qt::QueuedConnection);
+    auto t1 = std::chrono::steady_clock::now();
+    double elapsed_sec = std::chrono::duration<double>(t1 - t0).count();
+    bool cancelled = pipeline_->is_scan_cancelled();
+    is_indexing_.store(false);
+    size_t count = (ok && pipeline_->name_index()) ? pipeline_->name_index()->size() : 0;
+    emit IndexFinished(kTaskRebuild, static_cast<int>(count), cancelled, elapsed_sec);
   });
-
-  worker_thread.detach();
 }
 
-void MainWindow::StartBackgroundInitialIndex() {
+void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
   if (is_indexing_.load()) {
     pending_reindex_.store(true);
     if (pipeline_) {
@@ -472,20 +486,36 @@ void MainWindow::StartBackgroundInitialIndex() {
   }
   is_indexing_.store(true);
 
+  bool is_cold = !force_incremental && (!pipeline_->name_index() || pipeline_->name_index()->size() == 0);
+  int task_type = is_cold ? kTaskInitial : kTaskIncremental;
+  current_task_type_ = task_type;
+  index_start_time_ = std::chrono::steady_clock::now();
+
+  QString badge = is_cold
+      ? "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; border-radius:3px;\">首次索引</span> "
+      : "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; border-radius:3px;\">增量索引</span> ";
+
+  status_stats_label_->setText(badge + "正在扫描待索引目录...");
   status_progress_bar_->setValue(0);
   status_progress_bar_->setVisible(true);
-  status_file_label_->setText("正在扫描待索引目录...");
+  status_cancel_btn_->setVisible(true);
+  status_cancel_btn_->setEnabled(true);
+  status_file_label_->setText("正在初始化文件清单...");
   status_file_label_->setVisible(true);
-  status_stats_label_->setText("正在初始化索引...");
+  status_latency_label_->setText(is_cold
+      ? "<span style=\"color:#0284C7;\">●</span> 初始化中"
+      : "<span style=\"color:#0D9488;\">●</span> 同步中");
 
   if (background_index_thread_.joinable()) {
     background_index_thread_.join();
   }
 
-  background_index_thread_ = std::thread([this]() {
+  background_index_thread_ = std::thread([this, task_type]() {
+    auto t0 = std::chrono::steady_clock::now();
+
     if (!pipeline_) {
       is_indexing_.store(false);
-      emit IndexFinished(0);
+      emit IndexFinished(task_type, 0, false, 0.0);
       return;
     }
 
@@ -507,54 +537,98 @@ void MainWindow::StartBackgroundInitialIndex() {
       }
     }
 
-    // 2. Perform initial directory scan in background worker thread
+    // 2. Perform directory scan in background worker thread
     size_t count = 0;
     if (!pipeline_->is_scan_cancelled()) {
       count = pipeline_->PerformInitialScan(
-          [this](size_t indexed, size_t total, const std::string& path) {
-            emit IndexProgressUpdated(static_cast<int>(indexed), static_cast<int>(total),
+          [this, task_type](size_t indexed, size_t total, const std::string& path) {
+            emit IndexProgressUpdated(task_type, static_cast<int>(indexed), static_cast<int>(total),
                                       QString::fromStdString(path));
           });
     }
 
+    auto t1 = std::chrono::steady_clock::now();
+    double elapsed_sec = std::chrono::duration<double>(t1 - t0).count();
+    bool cancelled = pipeline_->is_scan_cancelled();
     is_indexing_.store(false);
-    emit IndexFinished(static_cast<int>(count));
+    emit IndexFinished(task_type, static_cast<int>(count), cancelled, elapsed_sec);
   });
 }
 
-void MainWindow::OnIndexProgressUpdated(int indexed, int total, const QString& current_file) {
+void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total,
+                                        const QString& current_file) {
+  QString badge;
+  if (task_type == kTaskRebuild) {
+    badge = "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; border-radius:3px;\">重建索引</span> ";
+  } else if (task_type == kTaskInitial) {
+    badge = "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; border-radius:3px;\">首次索引</span> ";
+  } else {
+    badge = "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; border-radius:3px;\">增量索引</span> ";
+  }
+
   if (total > 0) {
     int pct = (indexed * 100) / total;
     status_progress_bar_->setValue(pct);
     status_progress_bar_->setVisible(true);
     status_stats_label_->setText(
-        QString("正在建立索引: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
+        badge + QString("正在构建: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
   } else {
-    status_stats_label_->setText("正在扫描待索引目录...");
+    status_stats_label_->setText(badge + "正在扫描待索引目录...");
   }
 
   if (!current_file.isEmpty()) {
     status_file_label_->setVisible(true);
     QFontMetrics fm(status_file_label_->font());
-    QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 500);
+    QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 460);
     status_file_label_->setText(elided);
     status_file_label_->setToolTip(current_file);
   }
 }
 
-void MainWindow::OnIndexFinished(int total_indexed) {
-  Q_UNUSED(total_indexed);
+void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelled,
+                                 double elapsed_sec) {
   status_progress_bar_->setVisible(false);
   status_file_label_->setVisible(false);
-
-  int match_count = result_view_ ? result_view_->rowCount() : 0;
-  UpdateStatusBar(match_count, 0.0);
+  status_cancel_btn_->setVisible(false);
 
   // If another re-index was requested while indexing was active, start it now
   if (pending_reindex_.exchange(false)) {
-    StartBackgroundInitialIndex();
+    StartBackgroundInitialIndex(true);
     return;
   }
+
+  if (cancelled) {
+    status_stats_label_->setText(
+        "<span style=\"color:#D97706; font-weight:bold;\">! 索引任务已取消</span> 已保留已解析的数据");
+    status_latency_label_->setText("<span style=\"color:#16A34A;\">●</span> 就绪");
+  } else {
+    QString finish_desc;
+    if (task_type == kTaskRebuild) {
+      finish_desc = QString("<span style=\"color:#16A34A; font-weight:bold;\">✓ 索引重建完成</span> "
+                            "共重构 %1 个文件索引 (耗时 %2s)")
+                        .arg(total_indexed)
+                        .arg(QString::number(elapsed_sec, 'f', 1));
+    } else if (task_type == kTaskInitial) {
+      finish_desc = QString("<span style=\"color:#16A34A; font-weight:bold;\">✓ 首次索引完成</span> "
+                            "共索引 %1 个文件 (耗时 %2s)")
+                        .arg(total_indexed)
+                        .arg(QString::number(elapsed_sec, 'f', 1));
+    } else {
+      finish_desc = QString("<span style=\"color:#16A34A; font-weight:bold;\">✓ 增量同步完成</span> "
+                            "索引已是最新 (耗时 %1s)")
+                        .arg(QString::number(elapsed_sec, 'f', 1));
+    }
+    status_stats_label_->setText(finish_desc);
+    status_latency_label_->setText("<span style=\"color:#16A34A;\">●</span> 就绪");
+  }
+
+  // Smoothly restore normal idle statistics after 3.5 seconds
+  QTimer::singleShot(3500, this, [this]() {
+    if (!is_indexing_.load()) {
+      int match_count = result_view_ ? result_view_->rowCount() : 0;
+      UpdateStatusBar(match_count, 0.0);
+    }
+  });
 
   // If search bar has active query, re-run search to surface newly indexed items immediately
   if (search_bar_ && !search_bar_->query().trimmed().isEmpty()) {

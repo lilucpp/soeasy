@@ -19,11 +19,19 @@
 #include "service/index_pipeline.h"
 
 #include <atomic>
+#include <chrono>
 #include <thread>
+#include <QPushButton>
 #include <QProgressBar>
 
 namespace soeasy {
 namespace gui {
+
+enum IndexTaskType {
+  kTaskInitial = 0,
+  kTaskRebuild = 1,
+  kTaskIncremental = 2,
+};
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -36,11 +44,11 @@ class MainWindow : public QMainWindow {
   /**
    * @brief Trigger non-blocking asynchronous initial scan and indexing in the background.
    */
-  void StartBackgroundInitialIndex();
+  void StartBackgroundInitialIndex(bool force_incremental = false);
 
  signals:
-  void IndexProgressUpdated(int indexed, int total, const QString& current_file);
-  void IndexFinished(int total_indexed);
+  void IndexProgressUpdated(int task_type, int indexed, int total, const QString& current_file);
+  void IndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
 
  protected:
   void changeEvent(QEvent* event) override;
@@ -57,8 +65,8 @@ class MainWindow : public QMainWindow {
   void OnSettingsApplied();
   void OnRebuildIndexRequested();
 
-  void OnIndexProgressUpdated(int indexed, int total, const QString& current_file);
-  void OnIndexFinished(int total_indexed);
+  void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString& current_file);
+  void OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
 
  private:
   void SetupUi();
@@ -74,6 +82,7 @@ class MainWindow : public QMainWindow {
 
   QLabel* status_stats_label_ = nullptr;
   QProgressBar* status_progress_bar_ = nullptr;
+  QPushButton* status_cancel_btn_ = nullptr;
   QLabel* status_file_label_ = nullptr;
   QLabel* status_latency_label_ = nullptr;
 
@@ -83,6 +92,8 @@ class MainWindow : public QMainWindow {
   std::atomic<bool> is_indexing_{false};
   std::atomic<bool> pending_reindex_{false};
   bool splitter_initialized_{false};
+  int current_task_type_{kTaskInitial};
+  std::chrono::steady_clock::time_point index_start_time_;
 };
 
 }  // namespace gui
