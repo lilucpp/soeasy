@@ -56,7 +56,7 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
   setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
   setWindowTitle("SoEasy - 让电脑没有难搜的文件");
   setWindowIcon(IconProvider::GetAppIcon());
-  resize(1024, 640);
+  resize(1280, 750);
   SetupUi();
 
   connect(this, &MainWindow::IndexProgressUpdated, this,
@@ -82,6 +82,17 @@ void MainWindow::changeEvent(QEvent* event) {
   if (event->type() == QEvent::WindowStateChange) {
     if (title_bar_) {
       title_bar_->UpdateMaximizeButton(isMaximized());
+    }
+  }
+}
+
+void MainWindow::showEvent(QShowEvent* event) {
+  QMainWindow::showEvent(event);
+  if (!splitter_initialized_ && splitter_) {
+    int total_width = splitter_->width();
+    if (total_width > 0) {
+      splitter_->setSizes({total_width * 6 / 10, total_width * 4 / 10});
+      splitter_initialized_ = true;
     }
   }
 }
@@ -149,8 +160,9 @@ void MainWindow::SetupUi() {
   splitter_->addWidget(preview_panel_);
   splitter_->setCollapsible(0, false);
   splitter_->setCollapsible(1, true);
-  splitter_->setStretchFactor(0, 3);
-  splitter_->setStretchFactor(1, 2);
+  splitter_->setStretchFactor(0, 6);
+  splitter_->setStretchFactor(1, 4);
+  splitter_->setSizes({768, 512});
 
   content_layout->addWidget(splitter_, 1);
   root_layout->addWidget(content_widget, 1);
@@ -255,8 +267,8 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
   auto t0 = std::chrono::high_resolution_clock::now();
 
   if (mode == kModeFulltext) {
-    // 1. Full-text inverted search
-    auto hits = pipeline_->SearchFulltext(query_std, 100, 0, scope_std);
+    // 1. Full-text inverted search (asynchronous non-blocking search on UI thread)
+    auto hits = pipeline_->SearchFulltext(query_std, 100, 0, scope_std, /*sync_flush=*/false);
     auto keywords = SplitQueryKeywords(query_std);
 
     for (const auto& hit : hits) {
@@ -370,22 +382,6 @@ void MainWindow::OnSettingsApplied() {
           pipeline_->config()->log_console(),
           pipeline_->config()->log_sync());
     }
-
-    // Synchronize watch engine directories with configured directories
-    if (pipeline_->watch_engine()) {
-      auto configured_dirs = pipeline_->config()->GetIndexedDirectories();
-      auto watched_dirs = pipeline_->watch_engine()->GetWatchedDirectories();
-      std::unordered_set<std::string> active_set(configured_dirs.begin(), configured_dirs.end());
-
-      for (const auto& watched : watched_dirs) {
-        if (active_set.find(watched) == active_set.end()) {
-          pipeline_->watch_engine()->RemoveWatch(watched);
-        }
-      }
-      for (const auto& dir : configured_dirs) {
-        pipeline_->watch_engine()->AddWatch(dir);
-      }
-    }
   }
 
   // Clear any temporary statusBar message so progress bar is visible immediately
@@ -394,9 +390,12 @@ void MainWindow::OnSettingsApplied() {
   // Trigger background indexing for newly added or modified directories
   StartBackgroundInitialIndex();
 
-  // Re-trigger current search
-  OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
-                    search_bar_->path_scope());
+  // Re-trigger current search only if there is an active search query
+  if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() ||
+                      !search_bar_->path_scope().trimmed().isEmpty())) {
+    OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
+                      search_bar_->path_scope());
+  }
 }
 
 void MainWindow::OnRebuildIndexRequested() {
@@ -490,11 +489,33 @@ void MainWindow::StartBackgroundInitialIndex() {
       return;
     }
 
-    size_t count = pipeline_->PerformInitialScan(
-        [this](size_t indexed, size_t total, const std::string& path) {
-          emit IndexProgressUpdated(static_cast<int>(indexed), static_cast<int>(total),
-                                    QString::fromStdString(path));
-        });
+    // 1. Synchronize watch engine directories in background worker thread (non-blocking for UI)
+    if (pipeline_->watch_engine() && pipeline_->config()) {
+      auto configured_dirs = pipeline_->config()->GetIndexedDirectories();
+      auto watched_dirs = pipeline_->watch_engine()->GetWatchedDirectories();
+      std::unordered_set<std::string> active_set(configured_dirs.begin(), configured_dirs.end());
+
+      for (const auto& watched : watched_dirs) {
+        if (pipeline_->is_scan_cancelled()) break;
+        if (active_set.find(watched) == active_set.end()) {
+          pipeline_->watch_engine()->RemoveWatch(watched);
+        }
+      }
+      for (const auto& dir : configured_dirs) {
+        if (pipeline_->is_scan_cancelled()) break;
+        pipeline_->watch_engine()->AddWatch(dir);
+      }
+    }
+
+    // 2. Perform initial directory scan in background worker thread
+    size_t count = 0;
+    if (!pipeline_->is_scan_cancelled()) {
+      count = pipeline_->PerformInitialScan(
+          [this](size_t indexed, size_t total, const std::string& path) {
+            emit IndexProgressUpdated(static_cast<int>(indexed), static_cast<int>(total),
+                                      QString::fromStdString(path));
+          });
+    }
 
     is_indexing_.store(false);
     emit IndexFinished(static_cast<int>(count));
@@ -515,7 +536,7 @@ void MainWindow::OnIndexProgressUpdated(int indexed, int total, const QString& c
   if (!current_file.isEmpty()) {
     status_file_label_->setVisible(true);
     QFontMetrics fm(status_file_label_->font());
-    QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 380);
+    QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 500);
     status_file_label_->setText(elided);
     status_file_label_->setToolTip(current_file);
   }

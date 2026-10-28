@@ -125,12 +125,20 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
         std::chrono::duration<double, std::milli>(t1 - t0).count();
   }
 
-  // Fallback: read directly from local file on disk
+  // Fallback: read directly from local file on disk (capped at 2MB to prevent UI hang)
   if (!ok || decompressed_utf8.empty()) {
-    std::ifstream ifs(file_path_.toStdString(), std::ios::binary);
-    if (ifs.is_open()) {
-      decompressed_utf8.assign((std::istreambuf_iterator<char>(ifs)),
-                               std::istreambuf_iterator<char>());
+    QFileInfo fi(file_path_);
+    constexpr uint64_t kMaxDirectDiskReadBytes = 2 * 1024 * 1024;  // 2 MB
+    if (fi.size() > 0) {
+      std::ifstream ifs(file_path_.toStdString(), std::ios::binary);
+      if (ifs.is_open()) {
+        uint64_t bytes_to_read = std::min<uint64_t>(fi.size(), kMaxDirectDiskReadBytes);
+        decompressed_utf8.resize(bytes_to_read);
+        ifs.read(&decompressed_utf8[0], bytes_to_read);
+        if (fi.size() > static_cast<qint64>(kMaxDirectDiskReadBytes)) {
+          decompressed_utf8.append("\n\n[... 文件较大，已截断展示前 2MB 内容 ...]");
+        }
+      }
     }
   }
 
@@ -138,6 +146,13 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
     text_viewer_->setHtml(
         "<p style='color:#B0BEC5; font-style:italic;'>无法读取文档内容或文档为空。</p>");
     return;
+  }
+
+  // Cap maximum displayed characters to protect Qt rich-text layout engine from hanging
+  constexpr size_t kMaxDisplayChars = 2 * 1024 * 1024;  // 2 MB
+  if (decompressed_utf8.size() > kMaxDisplayChars) {
+    decompressed_utf8.resize(kMaxDisplayChars);
+    decompressed_utf8.append("\n\n[... 内容过长，已截断展示 ...]");
   }
 
   if (decompress_ms > 0.0 && path_label_) {

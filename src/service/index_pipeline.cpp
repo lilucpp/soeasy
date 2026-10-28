@@ -615,8 +615,11 @@ std::vector<NameMatchResult> IndexPipeline::SearchFilename(
 
 std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(
     const std::string& query, int limit, int offset,
-    const std::string& path_prefix) {
-  FlushWriteQueue();
+    const std::string& path_prefix,
+    bool sync_flush) {
+  if (sync_flush) {
+    FlushWriteQueue();
+  }
   if (!storage_engine_) {
     return {};
   }

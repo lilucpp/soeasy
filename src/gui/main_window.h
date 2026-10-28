@@ -44,6 +44,7 @@ class MainWindow : public QMainWindow {
 
  protected:
   void changeEvent(QEvent* event) override;
+  void showEvent(QShowEvent* event) override;
 
  private slots:
   void OnSearchTriggered(const QString& query, int mode, const QString& path_scope);
@@ -81,6 +82,7 @@ class MainWindow : public QMainWindow {
   std::thread background_index_thread_;
   std::atomic<bool> is_indexing_{false};
   std::atomic<bool> pending_reindex_{false};
+  bool splitter_initialized_{false};
 };
 
 }  // namespace gui

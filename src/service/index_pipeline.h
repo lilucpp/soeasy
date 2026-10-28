@@ -91,7 +91,8 @@ class IndexPipeline {
    */
   std::vector<storage::SearchResultItem> SearchFulltext(
       const std::string& query, int limit = 50, int offset = 0,
-      const std::string& path_prefix = "");
+      const std::string& path_prefix = "",
+      bool sync_flush = true);
 
   /**
    * @brief Block until all background write operations in the async queue are committed.
