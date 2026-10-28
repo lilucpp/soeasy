@@ -191,6 +191,7 @@ add_library(soeasy_service STATIC
     src/service/doc_prechecker.cpp
     src/service/index_pipeline.cpp
     src/service/worker_guard.cpp
+    src/service/async_write_queue.cpp
 )
 target_include_directories(soeasy_service PUBLIC
     src

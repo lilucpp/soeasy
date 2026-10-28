@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "service/async_write_queue.h"
 #include "service/event_debouncer.h"
 #include "service/index_config.h"
 #include "service/name_index.h"
@@ -92,6 +93,11 @@ class IndexPipeline {
       const std::string& query, int limit = 50, int offset = 0,
       const std::string& path_prefix = "");
 
+  /**
+   * @brief Block until all background write operations in the async queue are committed.
+   */
+  void FlushWriteQueue();
+
   // Accessors
   std::shared_ptr<IndexConfig> config() { return config_; }
   std::shared_ptr<WorkerGuard> worker_guard() { return worker_guard_; }
@@ -116,6 +122,7 @@ class IndexPipeline {
   std::shared_ptr<EventDebouncer> debouncer_;
   std::shared_ptr<WatchEngine> watch_engine_;
   std::shared_ptr<NameIndex> name_index_;
+  std::shared_ptr<AsyncWriteQueue> write_queue_;
 
   mutable std::mutex stats_mutex_;
   PipelineStats stats_;

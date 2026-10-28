@@ -94,6 +94,8 @@ bool IndexPipeline::Init() {
            existing_files.size());
 
   watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
+  write_queue_ = std::make_shared<AsyncWriteQueue>();
+  write_queue_->Start(storage_engine_, 100, std::chrono::seconds(10), 500);
   return true;
 }
 
@@ -111,6 +113,15 @@ void IndexPipeline::StopLiveWatch() {
   if (debouncer_) {
     debouncer_->Stop(true);
   }
+  if (write_queue_) {
+    write_queue_->Stop();
+  }
+}
+
+void IndexPipeline::FlushWriteQueue() {
+  if (write_queue_) {
+    write_queue_->Flush();
+  }
 }
 
 bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
@@ -126,6 +137,7 @@ bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
 
   // 2. Perform baseline crawl of existing files
   ScanDirectoryRecursive(dir_path);
+  FlushWriteQueue();
   return true;
 }
 
@@ -216,13 +228,8 @@ size_t IndexPipeline::PerformInitialScan(
   size_t indexed_count = 0;
   size_t processed_count = 0;
 
-  constexpr size_t kBatchSize = 100;
-  constexpr auto kBatchTimeout = std::chrono::seconds(10);
-  auto batch_start_time = std::chrono::steady_clock::now();
-
   if (storage_engine_) {
     storage_engine_->SetBulkMode(true);
-    storage_engine_->BeginTransaction();
   }
 
   for (const auto& fpath : files_to_index) {
@@ -234,22 +241,10 @@ size_t IndexPipeline::PerformInitialScan(
       indexed_count++;
     }
     processed_count++;
-
-    if (storage_engine_) {
-      auto now = std::chrono::steady_clock::now();
-      if (storage_engine_->GetUncommittedCount() >= kBatchSize ||
-          (storage_engine_->GetUncommittedCount() > 0 &&
-           (now - batch_start_time) >= kBatchTimeout)) {
-        storage_engine_->CommitTransaction();
-        batch_start_time = now;
-        storage_engine_->BeginTransaction();
-      }
-    }
   }
 
-  if (storage_engine_ && storage_engine_->IsInTransaction()) {
-    storage_engine_->CommitTransaction();
-  }
+  FlushWriteQueue();
+
   if (storage_engine_) {
     storage_engine_->SetBulkMode(false);
   }
@@ -280,6 +275,7 @@ bool IndexPipeline::RebuildIndex(
   }
 
   // 3. Reset persistent storage and FTS tables
+  FlushWriteQueue();
   if (storage_engine_) {
     if (!storage_engine_->ClearAll()) {
       LOG_ERROR("[IndexPipeline] Failed to reset storage engine tables: {}",
@@ -345,13 +341,8 @@ bool IndexPipeline::RebuildIndex(
   size_t indexed_count = 0;
   size_t processed_count = 0;
 
-  constexpr size_t kBatchSize = 100;
-  constexpr auto kBatchTimeout = std::chrono::seconds(10);
-  auto batch_start_time = std::chrono::steady_clock::now();
-
   if (storage_engine_) {
     storage_engine_->SetBulkMode(true);
-    storage_engine_->BeginTransaction();
   }
 
   for (const auto& fpath : files_to_index) {
@@ -363,22 +354,9 @@ bool IndexPipeline::RebuildIndex(
     if (progress_cb) {
       progress_cb(processed_count, total_files, fpath);
     }
-
-    if (storage_engine_) {
-      auto now = std::chrono::steady_clock::now();
-      if (storage_engine_->GetUncommittedCount() >= kBatchSize ||
-          (storage_engine_->GetUncommittedCount() > 0 &&
-           (now - batch_start_time) >= kBatchTimeout)) {
-        storage_engine_->CommitTransaction();
-        batch_start_time = now;
-        storage_engine_->BeginTransaction();
-      }
-    }
   }
 
-  if (storage_engine_ && storage_engine_->IsInTransaction()) {
-    storage_engine_->CommitTransaction();
-  }
+  FlushWriteQueue();
 
   // Optimize FTS5 B-tree segments after full rebuild
   if (storage_engine_) {
@@ -471,8 +449,15 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     rec.file_size = file_size;
     rec.mtime = st.st_mtime;
     name_index_->Upsert(rec);
-    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
-                                   st.st_mtime, 1, "");
+
+    if (write_queue_ && write_queue_->is_running()) {
+      WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
+                 file_size, st.st_mtime, 1, ""};
+      write_queue_->Enqueue(std::move(op));
+    } else if (storage_engine_) {
+      storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
+                                     st.st_mtime, 1, "");
+    }
 
     std::lock_guard<std::mutex> lock(failed_files_mutex_);
     failed_files_[file_path] = {file_size, st.st_mtime, precheck.reason};
@@ -510,8 +495,15 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     rec.file_size = file_size;
     rec.mtime = st.st_mtime;
     name_index_->Upsert(rec);
-    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
-                                   st.st_mtime, 1, "");
+
+    if (write_queue_ && write_queue_->is_running()) {
+      WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
+                 file_size, st.st_mtime, 1, ""};
+      write_queue_->Enqueue(std::move(op));
+    } else if (storage_engine_) {
+      storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
+                                     st.st_mtime, 1, "");
+    }
 
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
     failed_files_[file_path] = {file_size, st.st_mtime, res.error_message};
@@ -541,30 +533,32 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   rec.mtime = st.st_mtime;
   name_index_->Upsert(rec);
 
-  // 4. Update encrypted persistent database (FTS5 inverted index + Zstd compressed text)
-  bool idx_ok = storage_engine_->IndexDocument(
-      doc_id, file_path, filename, ext, file_size, st.st_mtime, 1, text_content);
+  // 4. Update encrypted persistent database via async write queue
+  if (write_queue_ && write_queue_->is_running()) {
+    WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
+               file_size, st.st_mtime, 1, std::move(text_content)};
+    write_queue_->Enqueue(std::move(op));
+  } else if (storage_engine_) {
+    storage_engine_->IndexDocument(
+        doc_id, file_path, filename, ext, file_size, st.st_mtime, 1, text_content);
+  }
 
   auto total_end = std::chrono::high_resolution_clock::now();
   double total_cost_ms =
       std::chrono::duration<double, std::milli>(total_end - start_time).count();
 
-  if (idx_ok) {
+  {
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_files_indexed++;
     stats_.total_bytes_indexed += extracted_bytes;
-
-    LOG_INFO(
-        "[Parser] SUCCESS parsed & indexed '{}' (ext: '{}', size: {} B, extracted: {} B) | "
-        "parse: {:.2f} ms, total: {:.2f} ms",
-        file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms);
-  } else {
-    LOG_ERROR(
-        "[Parser] FAILED storage indexing for '{}' in {:.2f} ms | error: {}",
-        file_path, total_cost_ms, storage_engine_->GetLastError());
   }
 
-  return idx_ok;
+  LOG_INFO(
+      "[Parser] SUCCESS parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
+      "parse: {:.2f} ms, total: {:.2f} ms",
+      file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms);
+
+  return true;
 }
 
 bool IndexPipeline::HandleFileChange(const DebouncedEvent& event) {
@@ -573,7 +567,14 @@ bool IndexPipeline::HandleFileChange(const DebouncedEvent& event) {
   if (event.action == FileChangeAction::kDelete) {
     LOG_INFO("[Watcher] File delete event: '{}' | removing from index", event.file_path);
     name_index_->Remove(doc_id);
-    storage_engine_->DeleteDocument(doc_id);
+    if (write_queue_ && write_queue_->is_running()) {
+      WriteOp op;
+      op.type = WriteOpType::kDelete;
+      op.doc_id = doc_id;
+      write_queue_->Enqueue(std::move(op));
+    } else if (storage_engine_) {
+      storage_engine_->DeleteDocument(doc_id);
+    }
 
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_files_deleted++;
@@ -605,6 +606,7 @@ std::vector<NameMatchResult> IndexPipeline::SearchFilename(
 std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(
     const std::string& query, int limit, int offset,
     const std::string& path_prefix) {
+  FlushWriteQueue();
   if (!storage_engine_) {
     return {};
   }
