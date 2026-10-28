@@ -236,6 +236,38 @@ int main(int argc, char* argv[]) {
             << verified_hits.size() << " 篇。\n";
   valid_engine.Close();
 
+  // 8. Test explicit batch transactions and FTS optimization
+  std::cout << "[Step 8] 测试分批事务模式 (Batch Transactions) 与 FTS5 Optimize...\n";
+  soeasy::storage::StorageEngine batch_engine;
+  assert(batch_engine.Open(db_path, key, dict_dir));
+  assert(!batch_engine.IsInTransaction());
+  assert(batch_engine.GetUncommittedCount() == 0);
+
+  // Begin batch transaction
+  assert(batch_engine.BeginTransaction());
+  assert(batch_engine.IsInTransaction());
+
+  for (int i = 100; i < 150; ++i) {
+    std::string bname = "batch_doc_" + std::to_string(i) + ".txt";
+    std::string bcontent = "分批测试文档内容 " + std::to_string(i) + " 包含关键词事务优化";
+    assert(batch_engine.IndexDocument(i, "/path/" + bname, bname, "txt", bcontent.size(), 123456, 1, bcontent));
+  }
+  assert(batch_engine.GetUncommittedCount() == 50);
+
+  // Commit batch
+  assert(batch_engine.CommitTransaction());
+  assert(!batch_engine.IsInTransaction());
+  assert(batch_engine.GetUncommittedCount() == 0);
+
+  // Verify search hits from batch
+  auto batch_hits = batch_engine.Search("事务优化", 100, 0);
+  assert(batch_hits.size() == 50);
+
+  // Optimize FTS index
+  assert(batch_engine.OptimizeFtsIndex());
+  std::cout << "[+] 分批事务与 FTS5 段就地优化验证通过 (50篇批量文档写入检索正常)!\n";
+  batch_engine.Close();
+
   std::cout << "\n========================================================\n";
   std::cout << "🎉 所有验证项全部通过! Phase 1 存储与检索底座验证圆满成功!\n";
   std::cout << "========================================================\n";

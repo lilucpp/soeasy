@@ -224,6 +224,7 @@ int main(int argc, char* argv[]) {
   
   // Rebuild index and check discovered files count
   size_t indexed_count = pipeline->PerformInitialScan([](size_t, size_t, const std::string&) {});
+  (void)indexed_count;
   auto hits_git = pipeline->SearchFulltext("commit_message", 10, 0);
   if (!hits_git.empty()) {
     std::cerr << "[-] 错误: .git/ 目录下的文件未被剪枝跳过!\n";

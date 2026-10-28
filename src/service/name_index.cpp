@@ -60,6 +60,22 @@ void NameIndex::RemoveByPath(const std::string& file_path) {
   }
 }
 
+bool NameIndex::GetMetadata(int64_t doc_id, uint64_t* out_file_size,
+                            int64_t* out_mtime) const {
+  std::shared_lock<std::shared_mutex> lock(rw_mutex_);
+  auto it = records_by_id_.find(doc_id);
+  if (it == records_by_id_.end()) {
+    return false;
+  }
+  if (out_file_size) {
+    *out_file_size = it->second.file_size;
+  }
+  if (out_mtime) {
+    *out_mtime = it->second.mtime;
+  }
+  return true;
+}
+
 std::vector<NameMatchResult> NameIndex::Search(
     const std::string& query, int limit, const std::string& path_prefix) const {
   std::vector<NameMatchResult> results;

@@ -51,11 +51,116 @@ StorageEngine::~StorageEngine() {
   Close();
 }
 
+void StorageEngine::FinalizeCachedStatements() {
+  if (stmt_files_insert_) {
+    sqlite3_finalize(stmt_files_insert_);
+    stmt_files_insert_ = nullptr;
+  }
+  if (stmt_contents_insert_) {
+    sqlite3_finalize(stmt_contents_insert_);
+    stmt_contents_insert_ = nullptr;
+  }
+  if (stmt_fts_del_) {
+    sqlite3_finalize(stmt_fts_del_);
+    stmt_fts_del_ = nullptr;
+  }
+  if (stmt_fts_ins_) {
+    sqlite3_finalize(stmt_fts_ins_);
+    stmt_fts_ins_ = nullptr;
+  }
+  if (stmt_meta_select_) {
+    sqlite3_finalize(stmt_meta_select_);
+    stmt_meta_select_ = nullptr;
+  }
+}
+
 void StorageEngine::Close() {
+  FinalizeCachedStatements();
   if (db_) {
     sqlite3_close_v2(db_);
     db_ = nullptr;
   }
+  uncommitted_count_ = 0;
+}
+
+bool StorageEngine::BeginTransaction() {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  if (IsInTransaction()) {
+    return true;  // Transaction already active
+  }
+  char* err = nullptr;
+  int rc = sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "BEGIN TRANSACTION failed";
+    sqlite3_free(err);
+    return false;
+  }
+  uncommitted_count_ = 0;
+  return true;
+}
+
+bool StorageEngine::CommitTransaction() {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  if (!IsInTransaction()) {
+    return true;  // Nothing to commit
+  }
+  char* err = nullptr;
+  int rc = sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, &err);
+  uncommitted_count_ = 0;
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "COMMIT failed";
+    sqlite3_free(err);
+    return false;
+  }
+  return true;
+}
+
+bool StorageEngine::RollbackTransaction() {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  if (!IsInTransaction()) {
+    return true;
+  }
+  char* err = nullptr;
+  int rc = sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, &err);
+  uncommitted_count_ = 0;
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "ROLLBACK failed";
+    sqlite3_free(err);
+    return false;
+  }
+  return true;
+}
+
+bool StorageEngine::IsInTransaction() const {
+  if (!db_) {
+    return false;
+  }
+  return sqlite3_get_autocommit(db_) == 0;
+}
+
+bool StorageEngine::OptimizeFtsIndex() {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  char* err = nullptr;
+  int rc = sqlite3_exec(db_, "INSERT INTO fts_docs(fts_docs) VALUES('optimize');",
+                        nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "OptimizeFtsIndex failed";
+    sqlite3_free(err);
+    return false;
+  }
+  return true;
 }
 
 std::string StorageEngine::GetLastError() const {
@@ -247,112 +352,128 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
     }
   }
 
-  // Begin single transaction
-  sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+  bool is_outer_tx = IsInTransaction();
+  if (!is_outer_tx) {
+    sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+  }
 
   // 2. Insert into files table
-  const char* files_sql = R"SQL(
-    INSERT INTO files (doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)
-    ON CONFLICT(doc_id) DO UPDATE SET
-        file_name=excluded.file_name,
-        file_path=excluded.file_path,
-        ext=excluded.ext,
-        file_size=excluded.file_size,
-        mtime=excluded.mtime,
-        parse_level=excluded.parse_level,
-        parse_stat=excluded.parse_stat;
-  )SQL";
-
-  sqlite3_stmt* stmt_files = nullptr;
-  if (sqlite3_prepare_v2(db_, files_sql, -1, &stmt_files, nullptr) != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(db_);
-    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-    return false;
+  if (!stmt_files_insert_) {
+    const char* files_sql = R"SQL(
+      INSERT INTO files (doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)
+      ON CONFLICT(doc_id) DO UPDATE SET
+          file_name=excluded.file_name,
+          file_path=excluded.file_path,
+          ext=excluded.ext,
+          file_size=excluded.file_size,
+          mtime=excluded.mtime,
+          parse_level=excluded.parse_level,
+          parse_stat=excluded.parse_stat;
+    )SQL";
+    if (sqlite3_prepare_v2(db_, files_sql, -1, &stmt_files_insert_, nullptr) != SQLITE_OK) {
+      last_error_ = sqlite3_errmsg(db_);
+      if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
   }
 
-  sqlite3_bind_int64(stmt_files, 1, doc_id);
-  sqlite3_bind_text(stmt_files, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_files, 3, file_path.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_files, 4, ext.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(stmt_files, 5, static_cast<int64_t>(file_size));
-  sqlite3_bind_int64(stmt_files, 6, mtime);
-  sqlite3_bind_int(stmt_files, 7, parse_level);
+  sqlite3_reset(stmt_files_insert_);
+  sqlite3_clear_bindings(stmt_files_insert_);
+  sqlite3_bind_int64(stmt_files_insert_, 1, doc_id);
+  sqlite3_bind_text(stmt_files_insert_, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_files_insert_, 3, file_path.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_files_insert_, 4, ext.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt_files_insert_, 5, static_cast<int64_t>(file_size));
+  sqlite3_bind_int64(stmt_files_insert_, 6, mtime);
+  sqlite3_bind_int(stmt_files_insert_, 7, parse_level);
 
-  if (sqlite3_step(stmt_files) != SQLITE_DONE) {
+  if (sqlite3_step(stmt_files_insert_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(db_);
-    sqlite3_finalize(stmt_files);
-    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_reset(stmt_files_insert_);
+    if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
   }
-  sqlite3_finalize(stmt_files);
+  sqlite3_reset(stmt_files_insert_);
 
   // 3. Insert into doc_contents table
-  const char* contents_sql = R"SQL(
-    INSERT INTO doc_contents (doc_id, raw_size, summary, zstd_body)
-    VALUES (?1, ?2, ?3, ?4)
-    ON CONFLICT(doc_id) DO UPDATE SET
-        raw_size=excluded.raw_size,
-        summary=excluded.summary,
-        zstd_body=excluded.zstd_body;
-  )SQL";
-
-  sqlite3_stmt* stmt_contents = nullptr;
-  if (sqlite3_prepare_v2(db_, contents_sql, -1, &stmt_contents, nullptr) !=
-      SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(db_);
-    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-    return false;
+  if (!stmt_contents_insert_) {
+    const char* contents_sql = R"SQL(
+      INSERT INTO doc_contents (doc_id, raw_size, summary, zstd_body)
+      VALUES (?1, ?2, ?3, ?4)
+      ON CONFLICT(doc_id) DO UPDATE SET
+          raw_size=excluded.raw_size,
+          summary=excluded.summary,
+          zstd_body=excluded.zstd_body;
+    )SQL";
+    if (sqlite3_prepare_v2(db_, contents_sql, -1, &stmt_contents_insert_, nullptr) !=
+        SQLITE_OK) {
+      last_error_ = sqlite3_errmsg(db_);
+      if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
   }
 
-  sqlite3_bind_int64(stmt_contents, 1, doc_id);
-  sqlite3_bind_int64(stmt_contents, 2, static_cast<int64_t>(raw_size));
-  sqlite3_bind_text(stmt_contents, 3, summary.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_blob(stmt_contents, 4, compressed.data(),
+  sqlite3_reset(stmt_contents_insert_);
+  sqlite3_clear_bindings(stmt_contents_insert_);
+  sqlite3_bind_int64(stmt_contents_insert_, 1, doc_id);
+  sqlite3_bind_int64(stmt_contents_insert_, 2, static_cast<int64_t>(raw_size));
+  sqlite3_bind_text(stmt_contents_insert_, 3, summary.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_blob(stmt_contents_insert_, 4, compressed.data(),
                     static_cast<int>(compressed.size()), SQLITE_TRANSIENT);
 
-  if (sqlite3_step(stmt_contents) != SQLITE_DONE) {
+  if (sqlite3_step(stmt_contents_insert_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(db_);
-    sqlite3_finalize(stmt_contents);
-    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_reset(stmt_contents_insert_);
+    if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
   }
-  sqlite3_finalize(stmt_contents);
+  sqlite3_reset(stmt_contents_insert_);
 
   // 4. Update fts_docs table (delete old rowid if exists, then insert)
-  const char* fts_del_sql = "DELETE FROM fts_docs WHERE rowid = ?1;";
-  sqlite3_stmt* stmt_fts_del = nullptr;
-  if (sqlite3_prepare_v2(db_, fts_del_sql, -1, &stmt_fts_del, nullptr) ==
-      SQLITE_OK) {
-    sqlite3_bind_int64(stmt_fts_del, 1, doc_id);
-    sqlite3_step(stmt_fts_del);
-    sqlite3_finalize(stmt_fts_del);
+  if (!stmt_fts_del_) {
+    const char* fts_del_sql = "DELETE FROM fts_docs WHERE rowid = ?1;";
+    sqlite3_prepare_v2(db_, fts_del_sql, -1, &stmt_fts_del_, nullptr);
+  }
+  if (stmt_fts_del_) {
+    sqlite3_reset(stmt_fts_del_);
+    sqlite3_clear_bindings(stmt_fts_del_);
+    sqlite3_bind_int64(stmt_fts_del_, 1, doc_id);
+    sqlite3_step(stmt_fts_del_);
+    sqlite3_reset(stmt_fts_del_);
   }
 
-  const char* fts_ins_sql =
-      "INSERT INTO fts_docs (rowid, file_name, body) VALUES (?1, ?2, ?3);";
-  sqlite3_stmt* stmt_fts_ins = nullptr;
-  if (sqlite3_prepare_v2(db_, fts_ins_sql, -1, &stmt_fts_ins, nullptr) !=
-      SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(db_);
-    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-    return false;
+  if (!stmt_fts_ins_) {
+    const char* fts_ins_sql =
+        "INSERT INTO fts_docs (rowid, file_name, body) VALUES (?1, ?2, ?3);";
+    if (sqlite3_prepare_v2(db_, fts_ins_sql, -1, &stmt_fts_ins_, nullptr) !=
+        SQLITE_OK) {
+      last_error_ = sqlite3_errmsg(db_);
+      if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
   }
 
-  sqlite3_bind_int64(stmt_fts_ins, 1, doc_id);
-  sqlite3_bind_text(stmt_fts_ins, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_fts_ins, 3, utf8_content.c_str(), -1,
+  sqlite3_reset(stmt_fts_ins_);
+  sqlite3_clear_bindings(stmt_fts_ins_);
+  sqlite3_bind_int64(stmt_fts_ins_, 1, doc_id);
+  sqlite3_bind_text(stmt_fts_ins_, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_fts_ins_, 3, utf8_content.c_str(), -1,
                     SQLITE_TRANSIENT);
 
-  if (sqlite3_step(stmt_fts_ins) != SQLITE_DONE) {
+  if (sqlite3_step(stmt_fts_ins_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(db_);
-    sqlite3_finalize(stmt_fts_ins);
-    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_reset(stmt_fts_ins_);
+    if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
   }
-  sqlite3_finalize(stmt_fts_ins);
+  sqlite3_reset(stmt_fts_ins_);
 
-  sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+  if (is_outer_tx) {
+    uncommitted_count_++;
+  } else {
+    sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+  }
   return true;
 }
 
@@ -361,28 +482,43 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
     return false;
   }
 
-  sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+  bool is_outer_tx = IsInTransaction();
+  if (!is_outer_tx) {
+    sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+  }
 
   sqlite3_stmt* stmt = nullptr;
   sqlite3_prepare_v2(db_, "DELETE FROM files WHERE doc_id = ?1;", -1, &stmt,
                      nullptr);
-  sqlite3_bind_int64(stmt, 1, doc_id);
-  sqlite3_step(stmt);
-  sqlite3_finalize(stmt);
+  if (stmt) {
+    sqlite3_bind_int64(stmt, 1, doc_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+  }
 
+  stmt = nullptr;
   sqlite3_prepare_v2(db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1,
                      &stmt, nullptr);
-  sqlite3_bind_int64(stmt, 1, doc_id);
-  sqlite3_step(stmt);
-  sqlite3_finalize(stmt);
+  if (stmt) {
+    sqlite3_bind_int64(stmt, 1, doc_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+  }
 
+  stmt = nullptr;
   sqlite3_prepare_v2(db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, &stmt,
                      nullptr);
-  sqlite3_bind_int64(stmt, 1, doc_id);
-  sqlite3_step(stmt);
-  sqlite3_finalize(stmt);
+  if (stmt) {
+    sqlite3_bind_int64(stmt, 1, doc_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+  }
 
-  sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+  if (is_outer_tx) {
+    uncommitted_count_++;
+  } else {
+    sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+  }
   return true;
 }
 
@@ -390,6 +526,8 @@ bool StorageEngine::ClearAll() {
   if (!db_) {
     return false;
   }
+
+  FinalizeCachedStatements();
 
   sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
 
@@ -410,6 +548,7 @@ bool StorageEngine::ClearAll() {
   }
 
   sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+  uncommitted_count_ = 0;
   return InitTables();
 }
 
@@ -539,28 +678,31 @@ bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t* out_file_size,
     return false;
   }
 
-  const char* sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(db_);
-    return false;
+  if (!stmt_meta_select_) {
+    const char* sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt_meta_select_, nullptr) != SQLITE_OK) {
+      last_error_ = sqlite3_errmsg(db_);
+      return false;
+    }
   }
 
-  sqlite3_bind_int64(stmt, 1, doc_id);
+  sqlite3_reset(stmt_meta_select_);
+  sqlite3_clear_bindings(stmt_meta_select_);
+  sqlite3_bind_int64(stmt_meta_select_, 1, doc_id);
   bool found = false;
-  if (sqlite3_step(stmt) == SQLITE_ROW) {
+  if (sqlite3_step(stmt_meta_select_) == SQLITE_ROW) {
     if (out_file_size) {
-      *out_file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
+      *out_file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt_meta_select_, 0));
     }
     if (out_mtime) {
-      *out_mtime = sqlite3_column_int64(stmt, 1);
+      *out_mtime = sqlite3_column_int64(stmt_meta_select_, 1);
     }
     if (out_parse_stat) {
-      *out_parse_stat = sqlite3_column_int(stmt, 2);
+      *out_parse_stat = sqlite3_column_int(stmt_meta_select_, 2);
     }
     found = true;
   }
-  sqlite3_finalize(stmt);
+  sqlite3_reset(stmt_meta_select_);
   return found;
 }
 

@@ -65,6 +65,39 @@ class StorageEngine {
   bool is_open() const { return db_ != nullptr; }
 
   /**
+   * @brief Begin an explicit transaction for batch operations.
+   * @return true on success or if transaction already started
+   */
+  bool BeginTransaction();
+
+  /**
+   * @brief Commit the current explicit transaction.
+   * @return true on success or if no transaction was active
+   */
+  bool CommitTransaction();
+
+  /**
+   * @brief Rollback the current explicit transaction.
+   * @return true on success or if no transaction was active
+   */
+  bool RollbackTransaction();
+
+  /**
+   * @brief Check whether an explicit transaction is currently active.
+   */
+  bool IsInTransaction() const;
+
+  /**
+   * @brief Get count of uncommitted indexed documents in current transaction.
+   */
+  size_t GetUncommittedCount() const { return uncommitted_count_; }
+
+  /**
+   * @brief Compact and merge FTS5 index segments.
+   */
+  bool OptimizeFtsIndex();
+
+  /**
    * @brief Index or re-index a single document.
    *
    * @param doc_id Unique document identifier (e.g. 64-bit path hash)
@@ -151,9 +184,17 @@ class StorageEngine {
  private:
   bool ExecutePragmas(const std::string& key);
   bool InitTables();
+  void FinalizeCachedStatements();
 
   sqlite3* db_ = nullptr;
   std::string last_error_;
+  size_t uncommitted_count_ = 0;
+
+  sqlite3_stmt* stmt_files_insert_ = nullptr;
+  sqlite3_stmt* stmt_contents_insert_ = nullptr;
+  sqlite3_stmt* stmt_fts_del_ = nullptr;
+  sqlite3_stmt* stmt_fts_ins_ = nullptr;
+  sqlite3_stmt* stmt_meta_select_ = nullptr;
 };
 
 }  // namespace storage

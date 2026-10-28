@@ -215,6 +215,15 @@ size_t IndexPipeline::PerformInitialScan(
 
   size_t indexed_count = 0;
   size_t processed_count = 0;
+
+  constexpr size_t kBatchSize = 100;
+  constexpr auto kBatchTimeout = std::chrono::seconds(10);
+  auto batch_start_time = std::chrono::steady_clock::now();
+
+  if (storage_engine_) {
+    storage_engine_->BeginTransaction();
+  }
+
   for (const auto& fpath : files_to_index) {
     if (progress_cb) {
       progress_cb(processed_count, total_files, fpath);
@@ -224,6 +233,21 @@ size_t IndexPipeline::PerformInitialScan(
       indexed_count++;
     }
     processed_count++;
+
+    if (storage_engine_) {
+      auto now = std::chrono::steady_clock::now();
+      if (storage_engine_->GetUncommittedCount() >= kBatchSize ||
+          (storage_engine_->GetUncommittedCount() > 0 &&
+           (now - batch_start_time) >= kBatchTimeout)) {
+        storage_engine_->CommitTransaction();
+        batch_start_time = now;
+        storage_engine_->BeginTransaction();
+      }
+    }
+  }
+
+  if (storage_engine_ && storage_engine_->IsInTransaction()) {
+    storage_engine_->CommitTransaction();
   }
 
   if (progress_cb) {
@@ -316,6 +340,15 @@ bool IndexPipeline::RebuildIndex(
 
   size_t indexed_count = 0;
   size_t processed_count = 0;
+
+  constexpr size_t kBatchSize = 100;
+  constexpr auto kBatchTimeout = std::chrono::seconds(10);
+  auto batch_start_time = std::chrono::steady_clock::now();
+
+  if (storage_engine_) {
+    storage_engine_->BeginTransaction();
+  }
+
   for (const auto& fpath : files_to_index) {
     bool ok = IndexSingleFile(fpath);
     if (ok) {
@@ -325,6 +358,26 @@ bool IndexPipeline::RebuildIndex(
     if (progress_cb) {
       progress_cb(processed_count, total_files, fpath);
     }
+
+    if (storage_engine_) {
+      auto now = std::chrono::steady_clock::now();
+      if (storage_engine_->GetUncommittedCount() >= kBatchSize ||
+          (storage_engine_->GetUncommittedCount() > 0 &&
+           (now - batch_start_time) >= kBatchTimeout)) {
+        storage_engine_->CommitTransaction();
+        batch_start_time = now;
+        storage_engine_->BeginTransaction();
+      }
+    }
+  }
+
+  if (storage_engine_ && storage_engine_->IsInTransaction()) {
+    storage_engine_->CommitTransaction();
+  }
+
+  // Optimize FTS5 B-tree segments after full rebuild
+  if (storage_engine_) {
+    storage_engine_->OptimizeFtsIndex();
   }
 
   // 6. Restore watcher if it was running
@@ -376,22 +429,26 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
 
   int64_t doc_id = GenerateDocId(file_path);
 
-  // Fast incremental check: if file is already indexed in StorageEngine with identical size and mtime,
-  // skip expensive DocPrechecker, IPC dispatch, and worker parsing!
+  // Fast incremental check: first check in-memory NameIndex (zero I/O), then fallback to StorageEngine
   uint64_t db_size = 0;
   int64_t db_mtime = 0;
-  if (storage_engine_->GetFileMetadata(doc_id, &db_size, &db_mtime)) {
-    if (db_size == file_size && db_mtime == st.st_mtime) {
-      NameRecord rec;
-      rec.doc_id = doc_id;
-      rec.file_name = filename;
-      rec.file_path = file_path;
-      rec.ext = ext;
-      rec.file_size = file_size;
-      rec.mtime = st.st_mtime;
-      name_index_->Upsert(rec);
-      return true;
-    }
+  bool meta_found = false;
+  if (name_index_ && name_index_->GetMetadata(doc_id, &db_size, &db_mtime)) {
+    meta_found = true;
+  } else if (storage_engine_ && storage_engine_->GetFileMetadata(doc_id, &db_size, &db_mtime)) {
+    meta_found = true;
+  }
+
+  if (meta_found && db_size == file_size && db_mtime == st.st_mtime) {
+    NameRecord rec;
+    rec.doc_id = doc_id;
+    rec.file_name = filename;
+    rec.file_path = file_path;
+    rec.ext = ext;
+    rec.file_size = file_size;
+    rec.mtime = st.st_mtime;
+    name_index_->Upsert(rec);
+    return true;
   }
 
   // 1. Fast sanity check (magic, EOCD, encryption precheck, dynamic timeout)

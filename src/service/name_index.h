@@ -55,6 +55,11 @@ class NameIndex {
   void RemoveByPath(const std::string& file_path);
 
   /**
+   * @brief Retrieve metadata (file_size, mtime) for rapid in-memory incremental check.
+   */
+  bool GetMetadata(int64_t doc_id, uint64_t* out_file_size, int64_t* out_mtime) const;
+
+  /**
    * @brief Instantaneous search by filename query with optional path scope filtering.
    *
    * @param query Search query keyword or pattern
