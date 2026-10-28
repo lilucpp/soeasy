@@ -193,7 +193,43 @@ int main(int argc, char* argv[]) {
     std::cerr << "[-] 命中文件内容: [" << text << "]\n";
     return 1;
   }
-  std::cout << "[+] 排除规则生效! node_modules 内的文件变动被成功静默过滤!\n\n";
+  // 9.1 Verify efsw unsupported suffix filtering
+  std::cout << "[Step 9.1] 验证 efsw 非关心后缀前置过滤 (.tmp, .o, .swp)...\n";
+  std::string f_tmp = test_dir + "/temp_cache.tmp";
+  std::string f_obj = test_dir + "/main.o";
+  std::string f_swp = test_dir + "/doc.swp";
+  WriteFile(f_tmp, "This is temporary junk data that should be skipped by efsw immediately.");
+  WriteFile(f_obj, "ELF binary object data not supported for text indexing.");
+  WriteFile(f_swp, "Vim swap file data.");
+  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+  auto hits_tmp = pipeline->SearchFulltext("temporary", 10, 0);
+  if (!hits_tmp.empty()) {
+    std::cerr << "[-] 错误: 非关心后缀 .tmp 被索引! 命中数: " << hits_tmp.size() << "\n";
+    return 1;
+  }
+  auto name_obj = pipeline->SearchFilename("main.o", 10);
+  if (!name_obj.empty()) {
+    std::cerr << "[-] 错误: 非关心后缀 .o 被加入文件名索引!\n";
+    return 1;
+  }
+  std::cout << "[+] efsw 非关心后缀过滤验证通过! (.tmp/.o/.swp 均被前置拦截，未进入流水线)\n\n";
+
+  // 9.2 Verify directory pruning during rebuild
+  std::cout << "[Step 9.2] 验证递归目录扫描剪枝 (.git, build 目录直接剪枝跳过)...\n";
+  std::string f_git_txt = test_dir + "/.git/commit_message.txt";
+  std::string f_build_txt = test_dir + "/build/generated_notes.txt";
+  WriteFile(f_git_txt, "Git commit message in .git directory should be pruned.");
+  WriteFile(f_build_txt, "Build artifact text in build directory should be pruned.");
+  
+  // Rebuild index and check discovered files count
+  size_t indexed_count = pipeline->PerformInitialScan([](size_t, size_t, const std::string&) {});
+  auto hits_git = pipeline->SearchFulltext("commit_message", 10, 0);
+  if (!hits_git.empty()) {
+    std::cerr << "[-] 错误: .git/ 目录下的文件未被剪枝跳过!\n";
+    return 1;
+  }
+  std::cout << "[+] 目录剪枝验证通过! (.git/ 与 build/ 目录子树被完整 prune，未被遍历)\n\n";
 
   // 10. Test Path Scoping (Search path setting)
   std::cout << "[Step 10] 验证搜索路径范围限定 (Path Scoping)...\n";

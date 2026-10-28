@@ -54,6 +54,20 @@ class IndexConfig {
   std::unordered_set<std::string> GetSupportedExtensions() const;
 
   /**
+   * @brief Check whether a specific extension is supported.
+   *
+   * @param ext Extension with or without leading dot
+   */
+  bool IsExtensionSupported(const std::string& ext) const;
+
+  /**
+   * @brief Check whether a filename has a supported extension.
+   *
+   * @param filename Filename or relative path
+   */
+  bool IsFileSupported(const std::string& filename) const;
+
+  /**
    * @brief Check whether a specific file should be indexed according to rules.
    *
    * @param file_path Canonical filesystem path

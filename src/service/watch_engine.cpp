@@ -120,9 +120,21 @@ void WatchEngine::handleFileAction(efsw::WatchID watchid,
                                    const std::string& filename,
                                    efsw::Action action,
                                    const std::string& old_filename) {
+  // 1. Fast suffix check: skip non-interested extensions directly
+  if (config_) {
+    bool supported = config_->IsFileSupported(filename);
+    if (!supported && !old_filename.empty()) {
+      supported = config_->IsFileSupported(old_filename);
+    }
+    if (!supported) {
+      LOG_DEBUG("[WatchEngine] Ignored unsupported file suffix event: '{}'", filename);
+      return;
+    }
+  }
+
   std::string full_path = CombinePath(dir, filename);
 
-  // Check if directory or file path is excluded by configuration
+  // 2. Check if directory or file path is excluded by configuration
   if (config_ && config_->IsDirectoryExcluded(full_path)) {
     LOG_DEBUG("[WatchEngine] Ignored excluded filesystem event: '{}'", full_path);
     return;
