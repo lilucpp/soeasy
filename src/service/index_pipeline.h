@@ -83,8 +83,9 @@ class IndexPipeline {
    * @brief Perform fast filename search via in-memory NameIndex.
    */
   std::vector<NameMatchResult> SearchFilename(
-      const std::string& query, int limit = 50,
-      const std::string& path_prefix = "") const;
+      const std::string& query, int limit = 50, int offset = 0,
+      const std::string& path_prefix = "",
+      int* out_total_count = nullptr) const;
 
   /**
    * @brief Perform encrypted full-text search via StorageEngine with optional path filter.
@@ -92,7 +93,8 @@ class IndexPipeline {
   std::vector<storage::SearchResultItem> SearchFulltext(
       const std::string& query, int limit = 50, int offset = 0,
       const std::string& path_prefix = "",
-      bool sync_flush = true);
+      bool sync_flush = true,
+      int* out_total_count = nullptr);
 
   /**
    * @brief Block until all background write operations in the async queue are committed.

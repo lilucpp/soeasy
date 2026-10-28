@@ -77,7 +77,11 @@ bool NameIndex::GetMetadata(int64_t doc_id, uint64_t* out_file_size,
 }
 
 std::vector<NameMatchResult> NameIndex::Search(
-    const std::string& query, int limit, const std::string& path_prefix) const {
+    const std::string& query, int limit, int offset,
+    const std::string& path_prefix, int* out_total_count) const {
+  if (out_total_count) {
+    *out_total_count = 0;
+  }
   std::vector<NameMatchResult> results;
   if (query.empty() && path_prefix.empty()) {
     return results;
@@ -107,9 +111,6 @@ std::vector<NameMatchResult> NameIndex::Search(
       res.mtime = rec.mtime;
       res.score = 1.0;
       results.push_back(std::move(res));
-      if (static_cast<int>(results.size()) >= limit) {
-        break;
-      }
       continue;
     }
 
@@ -147,6 +148,17 @@ std::vector<NameMatchResult> NameIndex::Search(
               }
               return a.mtime > b.mtime;
             });
+
+  if (out_total_count) {
+    *out_total_count = static_cast<int>(results.size());
+  }
+
+  if (offset > 0) {
+    if (offset >= static_cast<int>(results.size())) {
+      return {};
+    }
+    results.erase(results.begin(), results.begin() + offset);
+  }
 
   if (static_cast<int>(results.size()) > limit) {
     results.resize(limit);

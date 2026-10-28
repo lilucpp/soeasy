@@ -587,20 +587,58 @@ bool StorageEngine::ClearAll() {
 
 
 std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
-                                                    int limit, int offset) {
+                                                    int limit, int offset,
+                                                    const std::string& path_prefix,
+                                                    int* out_total_count) {
   std::vector<SearchResultItem> results;
+  if (out_total_count) {
+    *out_total_count = 0;
+  }
   if (!db_ || query.empty()) {
     return results;
   }
 
-  const char* search_sql = R"SQL(
-    SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
-    FROM fts_docs AS fts
-    JOIN files AS f ON f.doc_id = fts.rowid
-    WHERE fts_docs MATCH ?1
-    ORDER BY score ASC
-    LIMIT ?2 OFFSET ?3;
-  )SQL";
+  bool has_prefix = !path_prefix.empty();
+  std::string prefix_pattern;
+  if (has_prefix) {
+    prefix_pattern = path_prefix + "%";
+  }
+
+  // Calculate total matched count if requested
+  if (out_total_count) {
+    const char* count_sql = has_prefix
+        ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2;"
+        : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
+    sqlite3_stmt* count_stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, count_sql, -1, &count_stmt, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(count_stmt, 1, query.c_str(), -1, SQLITE_TRANSIENT);
+      if (has_prefix) {
+        sqlite3_bind_text(count_stmt, 2, prefix_pattern.c_str(), -1, SQLITE_TRANSIENT);
+      }
+      if (sqlite3_step(count_stmt) == SQLITE_ROW) {
+        *out_total_count = sqlite3_column_int(count_stmt, 0);
+      }
+      sqlite3_finalize(count_stmt);
+    }
+  }
+
+  const char* search_sql = has_prefix
+      ? R"SQL(
+          SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
+          FROM fts_docs AS fts
+          JOIN files AS f ON f.doc_id = fts.rowid
+          WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?4
+          ORDER BY score ASC
+          LIMIT ?2 OFFSET ?3;
+        )SQL"
+      : R"SQL(
+          SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
+          FROM fts_docs AS fts
+          JOIN files AS f ON f.doc_id = fts.rowid
+          WHERE fts_docs MATCH ?1
+          ORDER BY score ASC
+          LIMIT ?2 OFFSET ?3;
+        )SQL";
 
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db_, search_sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -611,6 +649,9 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
   sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 2, limit);
   sqlite3_bind_int(stmt, 3, offset);
+  if (has_prefix) {
+    sqlite3_bind_text(stmt, 4, prefix_pattern.c_str(), -1, SQLITE_TRANSIENT);
+  }
 
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     SearchResultItem item;

@@ -605,45 +605,34 @@ bool IndexPipeline::HandleFileChange(const DebouncedEvent& event) {
 }
 
 std::vector<NameMatchResult> IndexPipeline::SearchFilename(
-    const std::string& query, int limit,
-    const std::string& path_prefix) const {
+    const std::string& query, int limit, int offset,
+    const std::string& path_prefix,
+    int* out_total_count) const {
   if (!name_index_) {
+    if (out_total_count) {
+      *out_total_count = 0;
+    }
     return {};
   }
-  return name_index_->Search(query, limit, path_prefix);
+  return name_index_->Search(query, limit, offset, path_prefix, out_total_count);
 }
 
 std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(
     const std::string& query, int limit, int offset,
     const std::string& path_prefix,
-    bool sync_flush) {
+    bool sync_flush,
+    int* out_total_count) {
   if (sync_flush) {
     FlushWriteQueue();
   }
   if (!storage_engine_) {
+    if (out_total_count) {
+      *out_total_count = 0;
+    }
     return {};
   }
 
-  // Fetch hits from storage engine
-  int fetch_limit = path_prefix.empty() ? limit : limit * 3;
-  auto raw_hits = storage_engine_->Search(query, fetch_limit, offset);
-
-  if (path_prefix.empty()) {
-    return raw_hits;
-  }
-
-  // Filter hits constrained to path_prefix
-  std::vector<storage::SearchResultItem> filtered;
-  for (auto& hit : raw_hits) {
-    if (hit.file_path.rfind(path_prefix, 0) == 0) {
-      filtered.push_back(std::move(hit));
-      if (static_cast<int>(filtered.size()) >= limit) {
-        break;
-      }
-    }
-  }
-
-  return filtered;
+  return storage_engine_->Search(query, limit, offset, path_prefix, out_total_count);
 }
 
 PipelineStats IndexPipeline::GetStats() const {

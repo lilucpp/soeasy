@@ -34,28 +34,33 @@ ResultView::ResultView(QWidget* parent) : QTableWidget(parent) {
 }
 
 void ResultView::SetupTable() {
-  setColumnCount(5);
+  setColumnCount(6);
   QStringList headers;
-  headers << "文件名称" << "所在路径" << "大小" << "修改时间" << "相关度评分";
+  headers << "序号" << "文件名称" << "所在路径" << "大小" << "修改时间" << "相关度评分";
   setHorizontalHeaderLabels(headers);
 
-  if (auto* item = horizontalHeaderItem(2)) {
-    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  }
-  if (auto* item = horizontalHeaderItem(3)) {
+  if (auto* item = horizontalHeaderItem(0)) {
     item->setTextAlignment(Qt::AlignCenter);
   }
+  if (auto* item = horizontalHeaderItem(3)) {
+    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  }
   if (auto* item = horizontalHeaderItem(4)) {
+    item->setTextAlignment(Qt::AlignCenter);
+  }
+  if (auto* item = horizontalHeaderItem(5)) {
     item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
   }
 
-  horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
-  horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-  horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+  horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
+  horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
   horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
   horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+  horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
 
-  setColumnWidth(0, 260);
+  setColumnWidth(0, 52);
+  setColumnWidth(1, 260);
   verticalHeader()->setVisible(false);
   verticalHeader()->setDefaultSectionSize(34);
   setIconSize(QSize(18, 18));
@@ -154,9 +159,13 @@ void ResultView::SetupTable() {
   scroll_timer_->setSingleShot(true);
   scroll_timer_->setInterval(60);
   connect(scroll_timer_, &QTimer::timeout, this, &ResultView::OnScrollIdle);
-  connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
+  connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value) {
     if (scroll_timer_) {
       scroll_timer_->start(60);
+    }
+    int max_val = verticalScrollBar()->maximum();
+    if (max_val > 0 && value >= max_val - 10) {
+      emit LoadMoreRequested();
     }
   });
 }
@@ -236,41 +245,61 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
   }
 }
 
+void ResultView::PopulateRow(int row, const DisplayResultItem& it) {
+  auto* seq_item = new QTableWidgetItem(QString::number(row + 1));
+  seq_item->setTextAlignment(Qt::AlignCenter);
+  seq_item->setForeground(QColor("#94A3B8"));
+
+  QFileInfo fi(it.file_path);
+  QString ext = it.ext.isEmpty() ? fi.suffix() : it.ext;
+
+  auto* name_item = new QTableWidgetItem(it.file_name);
+  name_item->setIcon(IconProvider::GetFileIcon(ext));
+  name_item->setFont(QFont(font().family(), font().pointSize(), QFont::Normal));
+
+  auto* path_item = new QTableWidgetItem(fi.absolutePath());
+  path_item->setForeground(QColor("#64748B"));
+
+  auto* size_item = new QTableWidgetItem(FormatFileSize(it.file_size));
+  size_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+  QString date_str =
+      QDateTime::fromSecsSinceEpoch(it.mtime).toString("yyyy-MM-dd hh:mm");
+  auto* date_item = new QTableWidgetItem(date_str);
+  date_item->setTextAlignment(Qt::AlignCenter);
+
+  auto* score_item = new QTableWidgetItem(QString::number(it.score, 'f', 2));
+  score_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+  setItem(row, 0, seq_item);
+  setItem(row, 1, name_item);
+  setItem(row, 2, path_item);
+  setItem(row, 3, size_item);
+  setItem(row, 4, date_item);
+  setItem(row, 5, score_item);
+}
+
 void ResultView::SetResults(const std::vector<DisplayResultItem>& items) {
   ClearResults();
   current_items_ = items;
   setRowCount(static_cast<int>(items.size()));
 
   for (size_t i = 0; i < items.size(); ++i) {
-    const auto& it = items[i];
-    int row = static_cast<int>(i);
+    PopulateRow(static_cast<int>(i), items[i]);
+  }
+}
 
-    QFileInfo fi(it.file_path);
-    QString ext = it.ext.isEmpty() ? fi.suffix() : it.ext;
+void ResultView::AppendResults(const std::vector<DisplayResultItem>& items) {
+  if (items.empty()) {
+    return;
+  }
+  int old_count = static_cast<int>(current_items_.size());
+  current_items_.insert(current_items_.end(), items.begin(), items.end());
+  setRowCount(static_cast<int>(current_items_.size()));
 
-    auto* name_item = new QTableWidgetItem(it.file_name);
-    name_item->setIcon(IconProvider::GetFileIcon(ext));
-    name_item->setFont(QFont(font().family(), font().pointSize(), QFont::Normal));
-
-    auto* path_item = new QTableWidgetItem(fi.absolutePath());
-    path_item->setForeground(QColor("#64748B"));
-
-    auto* size_item = new QTableWidgetItem(FormatFileSize(it.file_size));
-    size_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    QString date_str =
-        QDateTime::fromSecsSinceEpoch(it.mtime).toString("yyyy-MM-dd hh:mm");
-    auto* date_item = new QTableWidgetItem(date_str);
-    date_item->setTextAlignment(Qt::AlignCenter);
-
-    auto* score_item = new QTableWidgetItem(QString::number(it.score, 'f', 2));
-    score_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    setItem(row, 0, name_item);
-    setItem(row, 1, path_item);
-    setItem(row, 2, size_item);
-    setItem(row, 3, date_item);
-    setItem(row, 4, score_item);
+  for (size_t i = 0; i < items.size(); ++i) {
+    int row = old_count + static_cast<int>(i);
+    PopulateRow(row, items[i]);
   }
 }
 

@@ -60,6 +60,7 @@ class MainWindow : public QMainWindow {
                       const QString& file_path);
   void OnFileOpenRequested(int64_t doc_id, const QString& file_name,
                            const QString& file_path);
+  void OnLoadMoreRequested();
   void OnTogglePreview();
   void OnOpenSettings();
   void OnSettingsApplied();
@@ -70,7 +71,7 @@ class MainWindow : public QMainWindow {
 
  private:
   void SetupUi();
-  void UpdateStatusBar(int match_count, double cost_ms);
+  void UpdateStatusBar(int total_matches, double cost_ms);
 
   std::shared_ptr<service::IndexPipeline> pipeline_;
 
@@ -87,6 +88,14 @@ class MainWindow : public QMainWindow {
   QLabel* status_latency_label_ = nullptr;
 
   QString current_query_;
+  int current_search_mode_ = 0;
+  QString current_search_path_scope_;
+  int current_search_offset_ = 0;
+  int total_matched_count_ = 0;
+  double last_search_cost_ms_ = 0.0;
+  bool has_more_results_ = false;
+  bool is_loading_more_ = false;
+  static constexpr int kPageSize = 100;
 
   std::thread background_index_thread_;
   std::atomic<bool> is_indexing_{false};

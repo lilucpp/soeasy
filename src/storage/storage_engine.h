@@ -143,10 +143,14 @@ class StorageEngine {
    * @param query FTS5 query string
    * @param limit Max hits to return
    * @param offset Result pagination offset
+   * @param path_prefix Optional path filter: only return hits located under this path
+   * @param out_total_count Optional pointer to receive total number of matching documents
    * @return std::vector<SearchResultItem> List of matching documents
    */
   std::vector<SearchResultItem> Search(const std::string& query,
-                                       int limit = 50, int offset = 0);
+                                       int limit = 50, int offset = 0,
+                                       const std::string& path_prefix = "",
+                                       int* out_total_count = nullptr);
 
   /**
    * @brief Decompress and fetch original UTF-8 content from doc_contents.

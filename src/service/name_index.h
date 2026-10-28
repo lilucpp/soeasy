@@ -64,12 +64,15 @@ class NameIndex {
    *
    * @param query Search query keyword or pattern
    * @param limit Maximum results to return
+   * @param offset Result pagination offset
    * @param path_prefix Optional path filter: only return hits located under this path
+   * @param out_total_count Optional pointer to receive total number of matching documents
    * @return std::vector<NameMatchResult> Ranked results
    */
   std::vector<NameMatchResult> Search(const std::string& query,
-                                      int limit = 50,
-                                      const std::string& path_prefix = "") const;
+                                      int limit = 50, int offset = 0,
+                                      const std::string& path_prefix = "",
+                                      int* out_total_count = nullptr) const;
 
   /**
    * @brief Get total number of indexed files in memory.

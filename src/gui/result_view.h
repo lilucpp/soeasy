@@ -38,6 +38,7 @@ class ResultView : public QTableWidget {
   void SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage);
   void SetCurrentQuery(const QString& query);
   void SetResults(const std::vector<DisplayResultItem>& items);
+  void AppendResults(const std::vector<DisplayResultItem>& items);
   void ClearResults();
 
   void EnsureSnippetForRows(int start_row, int end_row);
@@ -47,6 +48,7 @@ class ResultView : public QTableWidget {
                     const QString& file_path);
   void FileOpenRequested(int64_t doc_id, const QString& file_name,
                          const QString& file_path);
+  void LoadMoreRequested();
 
  protected:
   void mouseMoveEvent(QMouseEvent* event) override;
@@ -59,6 +61,7 @@ class ResultView : public QTableWidget {
 
  private:
   void SetupTable();
+  void PopulateRow(int row, const DisplayResultItem& item);
 
   std::vector<DisplayResultItem> current_items_;
   HoverPreviewPopup* hover_popup_ = nullptr;

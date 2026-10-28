@@ -272,6 +272,86 @@ int main(int argc, char* argv[]) {
               << snapshot_path.toStdString() << "\n";
   }
 
+  // -------------------------------------------------------------
+  // Test 7: ResultView Sequence Number Column & Lazy AppendResults
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 7] 测试 ResultView 序号列显示与懒加载 AppendResults 追加...\n";
+  {
+    soeasy::gui::ResultView rv;
+    CHECK(rv.columnCount() == 6);
+    CHECK(rv.horizontalHeaderItem(0)->text() == "序号");
+
+    std::vector<soeasy::gui::DisplayResultItem> batch1;
+    for (int i = 1; i <= 100; ++i) {
+      soeasy::gui::DisplayResultItem it;
+      it.doc_id = i;
+      it.file_name = QString("file_%1.txt").arg(i);
+      it.file_path = QString("/path/file_%1.txt").arg(i);
+      it.ext = "txt";
+      it.file_size = 2048;
+      it.mtime = 1700000000;
+      it.score = 50.0;
+      batch1.push_back(std::move(it));
+    }
+    rv.SetResults(batch1);
+    CHECK(rv.rowCount() == 100);
+    CHECK(rv.item(0, 0)->text() == "1");
+    CHECK(rv.item(99, 0)->text() == "100");
+
+    // Test Lazy Loading Append next batch (101..150)
+    std::vector<soeasy::gui::DisplayResultItem> batch2;
+    for (int i = 101; i <= 150; ++i) {
+      soeasy::gui::DisplayResultItem it;
+      it.doc_id = i;
+      it.file_name = QString("file_%1.txt").arg(i);
+      it.file_path = QString("/path/file_%1.txt").arg(i);
+      it.ext = "txt";
+      it.file_size = 2048;
+      it.mtime = 1700000000;
+      it.score = 40.0;
+      batch2.push_back(std::move(it));
+    }
+    rv.AppendResults(batch2);
+    CHECK(rv.rowCount() == 150);
+    CHECK(rv.item(100, 0)->text() == "101");
+    CHECK(rv.item(149, 0)->text() == "150");
+    std::cout << "  -> 序号列精准对齐渲染与懒加载数据无缝追加通过 (1..100 -> 101..150)!\n";
+
+    // Test NameIndex pagination with offset
+    soeasy::service::NameIndex name_idx;
+    for (int i = 1; i <= 250; ++i) {
+      soeasy::service::NameRecord rec;
+      rec.doc_id = i;
+      rec.file_name = "doc_" + std::to_string(i) + ".txt";
+      rec.file_path = "/path/" + rec.file_name;
+      rec.ext = "txt";
+      rec.file_size = 1024;
+      rec.mtime = 1700000000;
+      name_idx.Upsert(rec);
+    }
+    int total_name_matches = 0;
+    auto p1 = name_idx.Search("doc", 100, 0, "", &total_name_matches);
+    CHECK(total_name_matches == 250);
+    auto p2 = name_idx.Search("doc", 100, 100, "", &total_name_matches);
+    CHECK(total_name_matches == 250);
+    auto p3 = name_idx.Search("doc", 100, 200, "", &total_name_matches);
+    CHECK(total_name_matches == 250);
+    auto p4 = name_idx.Search("doc", 100, 250, "", &total_name_matches);
+    CHECK(total_name_matches == 250);
+    CHECK(p1.size() == 100);
+    CHECK(p2.size() == 100);
+    CHECK(p3.size() == 50);
+    CHECK(p4.empty());
+    CHECK(p1[0].doc_id != p2[0].doc_id);
+
+    // Test StorageEngine full-text total_count
+    int total_storage_hits = 0;
+    auto st_hits = storage->Search("测试", 10, 0, "", &total_storage_hits);
+    CHECK(total_storage_hits > 0);
+    CHECK(static_cast<int>(st_hits.size()) <= 10);
+    std::cout << "  -> NameIndex 与 StorageEngine 总匹配数与分页逻辑验证完全通过!\n";
+  }
+
   // Cleanup
   pipeline->StopLiveWatch();
   worker_guard.reset();

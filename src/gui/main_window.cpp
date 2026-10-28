@@ -253,18 +253,20 @@ void MainWindow::SetupUi() {
           &MainWindow::OnFileSelected);
   connect(result_view_, &ResultView::FileOpenRequested, this,
           &MainWindow::OnFileOpenRequested);
+  connect(result_view_, &ResultView::LoadMoreRequested, this,
+          &MainWindow::OnLoadMoreRequested);
 }
 
-void MainWindow::UpdateStatusBar(int match_count, double cost_ms) {
+void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
   size_t indexed_files = 0;
   if (pipeline_ && pipeline_->name_index()) {
     indexed_files = pipeline_->name_index()->size();
   }
 
   status_stats_label_->setText(
-      QString("在索引文件: %1 个 | 当前匹配结果: %2 条")
+      QString("在索引文件: %1 个 | 匹配结果: %2 条")
           .arg(indexed_files)
-          .arg(match_count));
+          .arg(total_matches));
 
   if (cost_ms > 0.0) {
     status_latency_label_->setText(
@@ -279,6 +281,13 @@ void MainWindow::UpdateStatusBar(int match_count, double cost_ms) {
 void MainWindow::OnSearchTriggered(const QString& query, int mode,
                                    const QString& path_scope) {
   current_query_ = query;
+  current_search_mode_ = mode;
+  current_search_path_scope_ = path_scope;
+  current_search_offset_ = 0;
+  total_matched_count_ = 0;
+  last_search_cost_ms_ = 0.0;
+  has_more_results_ = false;
+  is_loading_more_ = false;
 
   if (query.isEmpty() && path_scope.isEmpty()) {
     result_view_->ClearResults();
@@ -300,9 +309,13 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
   result_view_->SetCurrentQuery(query);
   auto t0 = std::chrono::high_resolution_clock::now();
 
+  int total_count = 0;
   if (mode == kModeFulltext) {
     // 1. Full-text inverted search (asynchronous non-blocking search on UI thread)
-    auto hits = pipeline_->SearchFulltext(query_std, 100, 0, scope_std, /*sync_flush=*/false);
+    auto hits = pipeline_->SearchFulltext(query_std, kPageSize, 0, scope_std, /*sync_flush=*/false, &total_count);
+    if (static_cast<int>(hits.size()) >= kPageSize && total_count > kPageSize) {
+      has_more_results_ = true;
+    }
     auto keywords = SplitQueryKeywords(query_std);
 
     for (const auto& hit : hits) {
@@ -330,7 +343,10 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
     }
   } else {
     // 2. Instantaneous filename search
-    auto name_hits = pipeline_->SearchFilename(query_std, 100, scope_std);
+    auto name_hits = pipeline_->SearchFilename(query_std, kPageSize, 0, scope_std, &total_count);
+    if (static_cast<int>(name_hits.size()) >= kPageSize && total_count > kPageSize) {
+      has_more_results_ = true;
+    }
     auto keywords = SplitQueryKeywords(query_std);
 
     for (const auto& nh : name_hits) {
@@ -356,13 +372,99 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
   double cost_ms =
       std::chrono::duration<double, std::milli>(t1 - t0).count();
 
+  total_matched_count_ = total_count;
+  last_search_cost_ms_ = cost_ms;
+  current_search_offset_ = static_cast<int>(display_items.size());
   result_view_->SetResults(display_items);
   if (!display_items.empty()) {
     result_view_->selectRow(0);
   } else if (preview_panel_) {
     preview_panel_->ClearPreview();
   }
-  UpdateStatusBar(static_cast<int>(display_items.size()), cost_ms);
+  UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
+}
+
+void MainWindow::OnLoadMoreRequested() {
+  if (is_loading_more_ || !has_more_results_ || current_query_.trimmed().isEmpty() || !pipeline_) {
+    return;
+  }
+  is_loading_more_ = true;
+
+  std::string query_std = current_query_.toStdString();
+  std::string scope_std = current_search_path_scope_.toStdString();
+  std::vector<DisplayResultItem> new_display_items;
+
+  auto t0 = std::chrono::high_resolution_clock::now();
+
+  if (current_search_mode_ == kModeFulltext) {
+    auto hits = pipeline_->SearchFulltext(query_std, kPageSize, current_search_offset_, scope_std, /*sync_flush=*/false);
+    if (static_cast<int>(hits.size()) < kPageSize || current_search_offset_ + static_cast<int>(hits.size()) >= total_matched_count_) {
+      has_more_results_ = false;
+    }
+    auto keywords = SplitQueryKeywords(query_std);
+
+    for (const auto& hit : hits) {
+      DisplayResultItem item;
+      item.doc_id = hit.doc_id;
+      item.file_name = QString::fromStdString(hit.file_name);
+      item.file_path = QString::fromStdString(hit.file_path);
+      item.ext = QString::fromStdString(hit.ext);
+      item.file_size = hit.file_size;
+      item.mtime = hit.mtime;
+      item.score = hit.rank;
+
+      std::string snippet_raw = hit.snippet;
+      item.has_body_snippet = hit.has_body_snippet;
+      if (snippet_raw.empty()) {
+        snippet_raw = storage::StorageEngine::GenerateSnippet(
+            hit.file_name, keywords, 100);
+      }
+      if (snippet_raw.empty()) {
+        snippet_raw = hit.file_name;
+      }
+      item.snippet_html = QString::fromStdString(snippet_raw);
+      new_display_items.push_back(std::move(item));
+    }
+  } else {
+    auto name_hits = pipeline_->SearchFilename(query_std, kPageSize, current_search_offset_, scope_std);
+    if (static_cast<int>(name_hits.size()) < kPageSize || current_search_offset_ + static_cast<int>(name_hits.size()) >= total_matched_count_) {
+      has_more_results_ = false;
+    }
+    auto keywords = SplitQueryKeywords(query_std);
+
+    for (const auto& nh : name_hits) {
+      DisplayResultItem item;
+      item.doc_id = nh.doc_id;
+      item.file_name = QString::fromStdString(nh.file_name);
+      item.file_path = QString::fromStdString(nh.file_path);
+      item.ext = QString::fromStdString(nh.ext);
+      item.file_size = nh.file_size;
+      item.mtime = nh.mtime;
+      item.score = nh.score;
+      std::string name_snippet = storage::StorageEngine::GenerateSnippet(
+          nh.file_name, keywords, 100);
+      if (name_snippet.empty()) {
+        name_snippet = nh.file_name;
+      }
+      item.snippet_html = QString("文件名匹配: %1").arg(QString::fromStdString(name_snippet));
+      new_display_items.push_back(std::move(item));
+    }
+  }
+
+  auto t1 = std::chrono::high_resolution_clock::now();
+  double cost_ms =
+      std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+  if (!new_display_items.empty()) {
+    current_search_offset_ += static_cast<int>(new_display_items.size());
+    result_view_->AppendResults(new_display_items);
+    last_search_cost_ms_ = cost_ms;
+    UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
+  } else {
+    has_more_results_ = false;
+  }
+
+  is_loading_more_ = false;
 }
 
 void MainWindow::OnFileSelected(int64_t doc_id, const QString& file_name,
@@ -627,8 +729,7 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
   // Smoothly restore normal idle statistics after 3.5 seconds
   QTimer::singleShot(3500, this, [this]() {
     if (!is_indexing_.load()) {
-      int match_count = result_view_ ? result_view_->rowCount() : 0;
-      UpdateStatusBar(match_count, 0.0);
+      UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
     }
   });
 
