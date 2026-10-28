@@ -98,6 +98,18 @@ class StorageEngine {
   bool OptimizeFtsIndex();
 
   /**
+   * @brief Toggle bulk mode for high-throughput batch operations (e.g. initial scan, rebuild).
+   *
+   * @param enable If true, optimizes WAL autocheckpoint and cache size; if false, restores defaults and truncates WAL.
+   */
+  bool SetBulkMode(bool enable);
+
+  /**
+   * @brief Checkpoint and truncate the WAL file back into the main database.
+   */
+  bool CheckpointWal();
+
+  /**
    * @brief Index or re-index a single document.
    *
    * @param doc_id Unique document identifier (e.g. 64-bit path hash)

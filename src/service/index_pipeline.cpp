@@ -221,6 +221,7 @@ size_t IndexPipeline::PerformInitialScan(
   auto batch_start_time = std::chrono::steady_clock::now();
 
   if (storage_engine_) {
+    storage_engine_->SetBulkMode(true);
     storage_engine_->BeginTransaction();
   }
 
@@ -248,6 +249,9 @@ size_t IndexPipeline::PerformInitialScan(
 
   if (storage_engine_ && storage_engine_->IsInTransaction()) {
     storage_engine_->CommitTransaction();
+  }
+  if (storage_engine_) {
+    storage_engine_->SetBulkMode(false);
   }
 
   if (progress_cb) {
@@ -346,6 +350,7 @@ bool IndexPipeline::RebuildIndex(
   auto batch_start_time = std::chrono::steady_clock::now();
 
   if (storage_engine_) {
+    storage_engine_->SetBulkMode(true);
     storage_engine_->BeginTransaction();
   }
 
@@ -378,6 +383,7 @@ bool IndexPipeline::RebuildIndex(
   // Optimize FTS5 B-tree segments after full rebuild
   if (storage_engine_) {
     storage_engine_->OptimizeFtsIndex();
+    storage_engine_->SetBulkMode(false);
   }
 
   // 6. Restore watcher if it was running

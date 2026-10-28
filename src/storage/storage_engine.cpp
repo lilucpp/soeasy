@@ -163,6 +163,39 @@ bool StorageEngine::OptimizeFtsIndex() {
   return true;
 }
 
+bool StorageEngine::CheckpointWal() {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  char* err = nullptr;
+  int rc = sqlite3_exec(db_, "PRAGMA wal_checkpoint(TRUNCATE);", nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "PRAGMA wal_checkpoint failed";
+    sqlite3_free(err);
+    return false;
+  }
+  return true;
+}
+
+bool StorageEngine::SetBulkMode(bool enable) {
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  if (enable) {
+    // Elevate autocheckpoint interval to prevent checkpoint stalls during bulk indexing
+    sqlite3_exec(db_, "PRAGMA wal_autocheckpoint = 10000;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db_, "PRAGMA cache_size = -64000;", nullptr, nullptr, nullptr);  // 64MB cache
+  } else {
+    // Restore default autocheckpoint threshold and truncate WAL
+    sqlite3_exec(db_, "PRAGMA wal_autocheckpoint = 1000;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db_, "PRAGMA cache_size = -16000;", nullptr, nullptr, nullptr);  // 16MB cache
+    CheckpointWal();
+  }
+  return true;
+}
+
 std::string StorageEngine::GetLastError() const {
   if (!last_error_.empty()) {
     return last_error_;
