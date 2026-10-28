@@ -282,12 +282,32 @@ void RunDoubleLogBenchmark() {
   test_dual("Level WARN (Console Disabled)", false, spdlog::level::warn);
 }
 
-int main() {
+int main(int argc, char* argv[]) {
   const std::string ds_root = soeasy::test::FindTestDatasetDir();
+
+  bool full_dataset = false;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--full" || arg == "--all-images" || arg == "--full-accuracy") {
+      full_dataset = true;
+    }
+  }
+  const char* env_full = std::getenv("SOEASY_TEST_FULL_IMAGES");
+  if (env_full && (std::string(env_full) == "1" || std::string(env_full) == "true")) {
+    full_dataset = true;
+  }
+
+  size_t text_limit = full_dataset ? 500 : 50;
+  size_t office_limit = full_dataset ? 80 : 5;
+  size_t image_limit = full_dataset ? 50 : 3;
 
   std::cout << "######################################################\n";
   std::cout << "  SoEasy Parser Log Printing Performance Investigation\n";
   std::cout << "  Dataset: " << ds_root << "\n";
+  std::cout << "  Mode: " << (full_dataset ? "FULL DATASET BENCHMARK" : "FAST TEST SUITE (Representative Sample)") << "\n";
+  if (!full_dataset) {
+    std::cout << "  (Tip: Run with --full or SOEASY_TEST_FULL_IMAGES=1 to test all dataset images)\n";
+  }
   std::cout << "######################################################\n";
 
   // 1. Micro-benchmark
@@ -296,15 +316,15 @@ int main() {
   // 2. Dataset Real Files Benchmark
 
   // Batch A: Pure Text Files (Markdown, HTML, Code) - Fast Parsing
-  auto text_files = CollectFiles(ds_root, {"md", "txt", "html", "cpp", "hs"}, 500);
+  auto text_files = CollectFiles(ds_root, {"md", "txt", "html", "cpp", "hs"}, text_limit);
   RunDatasetBenchmark("Fast Text Batch (L1 Parser)", text_files);
 
   // Batch B: Office Documents (DOCX, PPTX, PDF) - Moderate Parsing
-  auto office_files = CollectFiles(ds_root, {"docx", "pptx", "pdf"}, 80);
+  auto office_files = CollectFiles(ds_root, {"docx", "pptx", "pdf"}, office_limit);
   RunDatasetBenchmark("Office Documents Batch (L2 Parser)", office_files);
 
   // Batch C: Images & Vector (PNG, JPG, SVG) - OCR & XML Parsing
-  auto image_files = CollectFiles(ds_root, {"png", "jpg", "svg"}, 50);
+  auto image_files = CollectFiles(ds_root, {"png", "jpg", "svg"}, image_limit);
   RunDatasetBenchmark("Images & Vector Batch (L3 Parser)", image_files);
 
   // 3. Double Logging IPC Simulation
