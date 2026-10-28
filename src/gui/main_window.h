@@ -80,6 +80,7 @@ class MainWindow : public QMainWindow {
 
   std::thread background_index_thread_;
   std::atomic<bool> is_indexing_{false};
+  std::atomic<bool> pending_reindex_{false};
 };
 
 }  // namespace gui

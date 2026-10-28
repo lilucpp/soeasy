@@ -232,7 +232,12 @@ size_t IndexPipeline::PerformInitialScan(
     storage_engine_->SetBulkMode(true);
   }
 
+  cancel_scan_.store(false);
   for (const auto& fpath : files_to_index) {
+    if (cancel_scan_.load()) {
+      LOG_INFO("[IndexPipeline] Initial scan cancelled.");
+      break;
+    }
     if (progress_cb) {
       progress_cb(processed_count, total_files, fpath);
     }
@@ -345,7 +350,12 @@ bool IndexPipeline::RebuildIndex(
     storage_engine_->SetBulkMode(true);
   }
 
+  cancel_scan_.store(false);
   for (const auto& fpath : files_to_index) {
+    if (cancel_scan_.load()) {
+      LOG_INFO("[IndexPipeline] Rebuild cancelled.");
+      break;
+    }
     bool ok = IndexSingleFile(fpath);
     if (ok) {
       indexed_count++;

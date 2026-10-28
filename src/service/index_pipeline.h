@@ -98,6 +98,16 @@ class IndexPipeline {
    */
   void FlushWriteQueue();
 
+  /**
+   * @brief Cancel any currently running initial scan or rebuild.
+   */
+  void CancelScan() { cancel_scan_.store(true); }
+
+  /**
+   * @brief Check whether a scan cancellation has been requested.
+   */
+  bool is_scan_cancelled() const { return cancel_scan_.load(); }
+
   // Accessors
   std::shared_ptr<IndexConfig> config() { return config_; }
   std::shared_ptr<WorkerGuard> worker_guard() { return worker_guard_; }
@@ -126,6 +136,7 @@ class IndexPipeline {
 
   mutable std::mutex stats_mutex_;
   PipelineStats stats_;
+  std::atomic<bool> cancel_scan_{false};
 
   struct FailedFileInfo {
     uint64_t file_size = 0;

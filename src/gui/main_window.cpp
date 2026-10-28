@@ -60,15 +60,18 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
   SetupUi();
 
   connect(this, &MainWindow::IndexProgressUpdated, this,
-          &MainWindow::OnIndexProgressUpdated);
+          &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
   connect(this, &MainWindow::IndexFinished, this,
-          &MainWindow::OnIndexFinished);
+          &MainWindow::OnIndexFinished, Qt::QueuedConnection);
 
   // Initial stats
   UpdateStatusBar(0, 0.0);
 }
 
 MainWindow::~MainWindow() {
+  if (pipeline_) {
+    pipeline_->CancelScan();
+  }
   if (background_index_thread_.joinable()) {
     background_index_thread_.join();
   }
@@ -368,12 +371,29 @@ void MainWindow::OnSettingsApplied() {
           pipeline_->config()->log_sync());
     }
 
-    for (const auto& dir : pipeline_->config()->GetIndexedDirectories()) {
-      pipeline_->AddAndScanDirectory(dir, true);
+    // Synchronize watch engine directories with configured directories
+    if (pipeline_->watch_engine()) {
+      auto configured_dirs = pipeline_->config()->GetIndexedDirectories();
+      auto watched_dirs = pipeline_->watch_engine()->GetWatchedDirectories();
+      std::unordered_set<std::string> active_set(configured_dirs.begin(), configured_dirs.end());
+
+      for (const auto& watched : watched_dirs) {
+        if (active_set.find(watched) == active_set.end()) {
+          pipeline_->watch_engine()->RemoveWatch(watched);
+        }
+      }
+      for (const auto& dir : configured_dirs) {
+        pipeline_->watch_engine()->AddWatch(dir);
+      }
     }
   }
 
-  statusBar()->showMessage("设置已成功应用并生效", 3000);
+  // Clear any temporary statusBar message so progress bar is visible immediately
+  statusBar()->clearMessage();
+
+  // Trigger background indexing for newly added or modified directories
+  StartBackgroundInitialIndex();
+
   // Re-trigger current search
   OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
                     search_bar_->path_scope());
@@ -444,7 +464,13 @@ void MainWindow::OnRebuildIndexRequested() {
 }
 
 void MainWindow::StartBackgroundInitialIndex() {
-  if (is_indexing_.load()) return;
+  if (is_indexing_.load()) {
+    pending_reindex_.store(true);
+    if (pipeline_) {
+      pipeline_->CancelScan();
+    }
+    return;
+  }
   is_indexing_.store(true);
 
   status_progress_bar_->setValue(0);
@@ -479,6 +505,7 @@ void MainWindow::OnIndexProgressUpdated(int indexed, int total, const QString& c
   if (total > 0) {
     int pct = (indexed * 100) / total;
     status_progress_bar_->setValue(pct);
+    status_progress_bar_->setVisible(true);
     status_stats_label_->setText(
         QString("正在建立索引: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
   } else {
@@ -486,6 +513,7 @@ void MainWindow::OnIndexProgressUpdated(int indexed, int total, const QString& c
   }
 
   if (!current_file.isEmpty()) {
+    status_file_label_->setVisible(true);
     QFontMetrics fm(status_file_label_->font());
     QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 380);
     status_file_label_->setText(elided);
@@ -500,6 +528,12 @@ void MainWindow::OnIndexFinished(int total_indexed) {
 
   int match_count = result_view_ ? result_view_->rowCount() : 0;
   UpdateStatusBar(match_count, 0.0);
+
+  // If another re-index was requested while indexing was active, start it now
+  if (pending_reindex_.exchange(false)) {
+    StartBackgroundInitialIndex();
+    return;
+  }
 
   // If search bar has active query, re-run search to surface newly indexed items immediately
   if (search_bar_ && !search_bar_->query().trimmed().isEmpty()) {
