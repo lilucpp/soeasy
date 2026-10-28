@@ -4,6 +4,8 @@ build-*/
 bin/
 lib/
 dist/
+soeasy-gui
+soeasy
 
 # CMake artifacts
 CMakeCache.txt

@@ -40,6 +40,14 @@ class L2OfficeParser {
   bool Parse(const std::string& file_path, const std::string& ext,
              std::string* out_utf8_text, bool* is_scanned_pdf = nullptr);
 
+  /**
+   * @brief Configure DocToText logging. Default disabled. When enabled, verbose logs output to log_file_path.
+   *
+   * @param enable Whether DocToText detailed logging is enabled
+   * @param log_file_path Path to the log file to append DocToText output
+   */
+  static void SetLogging(bool enable, const std::string& log_file_path = "");
+
   // Document format extractors
   static bool ParseDocx(const std::string& file_path, std::string* out_utf8);
   static bool ParseXlsx(const std::string& file_path, std::string* out_utf8);

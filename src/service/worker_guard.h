@@ -116,12 +116,8 @@ class WorkerGuard {
   uint32_t timeout_ms() const { return timeout_ms_; }
   void set_timeout_ms(uint32_t ms) { timeout_ms_ = ms; }
 
-  void SetLoggingOptions(const std::string& level, bool enable_console, bool enable_sync) {
-    std::lock_guard<std::mutex> lock(pool_mutex_);
-    log_level_ = level;
-    log_console_ = enable_console;
-    log_sync_ = enable_sync;
-  }
+  void SetLoggingOptions(const std::string& level, bool enable_console, bool enable_sync,
+                         bool doctotext_logging = false, const std::string& doctotext_log_path = "");
 
  private:
   bool SpawnWorker(size_t index);
@@ -134,6 +130,8 @@ class WorkerGuard {
   std::string log_level_ = "info";
   bool log_console_ = false;
   bool log_sync_ = false;
+  bool doctotext_logging_ = false;
+  std::string doctotext_log_path_;
   common::ShmSlotPool shm_pool_;
 
   std::vector<WorkerInstance> workers_;

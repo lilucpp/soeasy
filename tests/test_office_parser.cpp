@@ -351,6 +351,37 @@ int main(int argc, char* argv[]) {
   std::cout << "  [+] 检索 PPTX 成功: \"路演发布会\" -> 命中: " << hits_roadshow[0].file_name
             << ", 摘要: " << hits_roadshow[0].snippet << "\n";
 
+  // -------------------------------------------------------------
+  // Test 8: DocToText Smart File Logging Mode (Disabled vs Enabled)
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 8] 测试 DocToText 智能日志开关与文件重定向...\n";
+  const std::string dt_log_file = test_dir + "/doctotext_test.log";
+  std::filesystem::remove(dt_log_file);
+
+  // 1. Verify default disabled: no log file should be generated
+  soeasy::worker::L2OfficeParser::SetLogging(false, dt_log_file);
+  std::string dummy_pdf_text;
+  parser.Parse(pdf_path, "pdf", &dummy_pdf_text);
+  CHECK(!std::filesystem::exists(dt_log_file));
+  std::cout << "  [+] 默认关闭模式验证通过: 无任何日志文件生成且控制台完全静音\n";
+
+  // 2. Verify enabled: logs are cleanly captured to file
+  soeasy::worker::L2OfficeParser::SetLogging(true, dt_log_file);
+  parser.Parse(pdf_path, "pdf", &dummy_pdf_text);
+  CHECK(std::filesystem::exists(dt_log_file));
+  CHECK(std::filesystem::file_size(dt_log_file) > 0);
+
+  std::ifstream log_ifs(dt_log_file);
+  std::string log_content((std::istreambuf_iterator<char>(log_ifs)),
+                          std::istreambuf_iterator<char>());
+  CHECK(log_content.find("[DocToText Session Started]") != std::string::npos);
+  CHECK(log_content.find("sample.pdf") != std::string::npos);
+  std::cout << "  [+] 开启落盘模式验证通过: 成功捕获 DocToText 底层解析日志至文件! 大小: "
+            << log_content.size() << " 字节\n";
+
+  // Turn off logging after test
+  soeasy::worker::L2OfficeParser::SetLogging(false);
+
   // Cleanup
   worker_guard.reset();
   storage->Close();

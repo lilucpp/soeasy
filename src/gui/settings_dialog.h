@@ -37,6 +37,7 @@ class SettingsDialog : public QDialog {
   void OnAddExtension();
   void OnRemoveExtension();
   void OnResetExtensionsToDefault();
+  void OnBrowseDocToTextLogPath();
   void OnSaveAndApply();
   void OnRebuildIndex();
 
@@ -70,6 +71,9 @@ class SettingsDialog : public QDialog {
   QComboBox* log_level_combo_ = nullptr;
   QCheckBox* log_console_check_ = nullptr;
   QCheckBox* log_sync_check_ = nullptr;
+  QCheckBox* doctotext_log_check_ = nullptr;
+  QLineEdit* doctotext_log_path_edit_ = nullptr;
+  QPushButton* dt_browse_btn_ = nullptr;
 };
 
 }  // namespace gui

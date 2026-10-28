@@ -299,6 +299,14 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
       log_sync_ = j["log_sync"].get<bool>();
     }
 
+    if (j.contains("doctotext_logging") && j["doctotext_logging"].is_boolean()) {
+      doctotext_logging_ = j["doctotext_logging"].get<bool>();
+    }
+
+    if (j.contains("doctotext_log_path") && j["doctotext_log_path"].is_string()) {
+      doctotext_log_path_ = j["doctotext_log_path"].get<std::string>();
+    }
+
     LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)",
              file_path, indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
     return true;
@@ -326,6 +334,8 @@ bool IndexConfig::SaveToFile(const std::string& file_path) const {
       j["log_level"] = log_level_;
       j["log_console"] = log_console_;
       j["log_sync"] = log_sync_;
+      j["doctotext_logging"] = doctotext_logging_;
+      j["doctotext_log_path"] = doctotext_log_path_;
     }
 
     std::string temp_path = file_path + ".tmp";

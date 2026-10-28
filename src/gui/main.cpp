@@ -84,6 +84,22 @@ int main(int argc, char* argv[]) {
       "Enable debug mode (equivalent to --log-level=debug --log-console --log-sync).");
   parser.addOption(debug_option);
 
+  QCommandLineOption dt_log_option(
+      QStringList() << "doctotext-logging",
+      "Enable DocToText verbose logging to file.");
+  parser.addOption(dt_log_option);
+
+  QCommandLineOption no_dt_log_option(
+      QStringList() << "no-doctotext-logging",
+      "Disable DocToText verbose logging.");
+  parser.addOption(no_dt_log_option);
+
+  QCommandLineOption dt_log_path_option(
+      QStringList() << "doctotext-log-path",
+      "Set path for DocToText verbose log file.",
+      "path");
+  parser.addOption(dt_log_path_option);
+
   parser.process(app);
 
   // Determine data storage directory: ~/.local/share/soeasy or ~/.config/soeasy
@@ -112,6 +128,21 @@ int main(int argc, char* argv[]) {
       config->AddIndexedDirectory(desktop.toStdString());
     }
     config->SaveToFile(config_path.toStdString());
+  }
+
+  // Ensure default doctotext log path is populated if empty
+  if (config->doctotext_log_path().empty()) {
+    config->set_doctotext_log_path((app_data_dir + "/logs/doctotext.log").toStdString());
+  }
+
+  // CLI override for doctotext logging
+  if (parser.isSet(dt_log_option)) {
+    config->set_doctotext_logging(true);
+  } else if (parser.isSet(no_dt_log_option)) {
+    config->set_doctotext_logging(false);
+  }
+  if (parser.isSet(dt_log_path_option)) {
+    config->set_doctotext_log_path(parser.value(dt_log_path_option).toStdString());
   }
 
   // Determine effective logging settings (CLI parameters take precedence over persistent config)
@@ -217,7 +248,8 @@ int main(int argc, char* argv[]) {
   // 3. Initialize Worker Guard with configured worker count and 15s base timeout
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
   worker_guard->SetLoggingOptions(
-      soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync);
+      soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync,
+      config->doctotext_logging(), config->doctotext_log_path());
   if (!worker_guard->Init(worker_bin.toStdString(), config->worker_count(),
                           soeasy::service::WorkerGuard::kDefaultTimeoutMs)) {
     std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "

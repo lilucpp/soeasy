@@ -11,9 +11,11 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -26,6 +28,19 @@ namespace soeasy {
 namespace worker {
 
 namespace {
+
+class NullStreamBuf : public std::streambuf {
+ public:
+  int overflow(int c) override { return c; }
+};
+
+static NullStreamBuf g_null_buf;
+static std::ostream g_null_stream(&g_null_buf);
+
+static std::mutex g_dt_mutex;
+static bool g_dt_logging_enabled = false;
+static std::string g_dt_log_path = "";
+static std::unique_ptr<std::ofstream> g_dt_file_stream;
 
 std::string RunCommandCaptureStdout(const std::string& cmd) {
   std::array<char, 4096> buffer;
@@ -64,6 +79,36 @@ bool L2OfficeParser::IsSupported(const std::string& ext) const {
   return supported_exts_.find(lower) != supported_exts_.end();
 }
 
+void L2OfficeParser::SetLogging(bool enable, const std::string& log_file_path) {
+  std::lock_guard<std::mutex> lock(g_dt_mutex);
+  g_dt_logging_enabled = enable;
+  if (!log_file_path.empty()) {
+    g_dt_log_path = log_file_path;
+  }
+  if (g_dt_file_stream && g_dt_file_stream->is_open()) {
+    g_dt_file_stream->close();
+  }
+  g_dt_file_stream.reset();
+
+  if (g_dt_logging_enabled && !g_dt_log_path.empty()) {
+    try {
+      std::filesystem::path p(g_dt_log_path);
+      if (p.has_parent_path()) {
+        std::filesystem::create_directories(p.parent_path());
+      }
+      g_dt_file_stream = std::make_unique<std::ofstream>(g_dt_log_path, std::ios::app);
+      if (g_dt_file_stream->is_open()) {
+        *g_dt_file_stream << "\n========================================================\n"
+                          << "[DocToText Session Started]\n"
+                          << "========================================================\n"
+                          << std::flush;
+      }
+    } catch (...) {
+      g_dt_file_stream.reset();
+    }
+  }
+}
+
 bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
                            std::string* out_utf8_text, bool* is_scanned_pdf) {
   if (!out_utf8_text) return false;
@@ -73,14 +118,34 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
   std::string lower = ext;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
+  // Fast-path for formats natively and robustly handled by our internal OOXML extractors
+  if (lower == "xlsx") {
+    return ParseXlsx(file_path, out_utf8_text);
+  }
+  if (lower == "pptx") {
+    return ParsePptx(file_path, out_utf8_text);
+  }
+
   // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
   try {
     doctotext::PlainTextExtractor extractor;
+    bool enable_logging = false;
+    std::ostream* target_stream = &g_null_stream;
+    {
+      std::lock_guard<std::mutex> lock(g_dt_mutex);
+      if (g_dt_logging_enabled && g_dt_file_stream && g_dt_file_stream->is_open()) {
+        enable_logging = true;
+        target_stream = g_dt_file_stream.get();
+        *target_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower << ")\n"
+                       << std::flush;
+      }
+    }
+    extractor.setVerboseLogging(enable_logging);
+    extractor.setLogStream(*target_stream);
     doctotext::PlainTextExtractor::ParserType ptype =
         extractor.parserTypeByFileExtension(lower);
     if (ptype == doctotext::PlainTextExtractor::PARSER_AUTO) {
-      if (lower == "docx" || lower == "xlsx" || lower == "pptx" ||
-          lower == "odt" || lower == "ods" || lower == "odp") {
+      if (lower == "docx" || lower == "odt" || lower == "ods" || lower == "odp") {
         ptype = doctotext::PlainTextExtractor::PARSER_ODF_OOXML;
       } else if (lower == "doc") {
         ptype = doctotext::PlainTextExtractor::PARSER_DOC;
@@ -106,6 +171,12 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
       if (extractor.processFile(ptype, false, file_path, doctotext_out) &&
           !doctotext_out.empty()) {
         *out_utf8_text = std::move(doctotext_out);
+      }
+    }
+    if (enable_logging) {
+      std::lock_guard<std::mutex> lock(g_dt_mutex);
+      if (g_dt_file_stream && g_dt_file_stream->is_open()) {
+        g_dt_file_stream->flush();
       }
     }
   } catch (...) {

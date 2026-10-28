@@ -89,6 +89,22 @@ exec "${APP_DIR}/bin/soeasy-gui" --dict "${APP_DIR}/dict" --worker "${APP_DIR}/b
 EOF
 chmod +x "${STAGE_DIR}/run.sh"
 
+# 创建根目录可执行软链接与桌面启动项 (支持直接在分发根目录下双击运行)
+ln -sf bin/soeasy-gui "${STAGE_DIR}/soeasy-gui"
+ln -sf bin/soeasy-gui "${STAGE_DIR}/soeasy"
+
+cat << 'EOF' > "${STAGE_DIR}/SoEasy.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SoEasy
+Comment=SoEasy Desktop Search Engine - 让电脑没有难搜的文件
+Exec=./run.sh
+Terminal=false
+Categories=Utility;Office;
+EOF
+chmod +x "${STAGE_DIR}/SoEasy.desktop"
+
 # 创建命令行版本快速查询引导脚本 soeasy-cli.sh (可选便捷调用)
 cat << 'EOF' > "${STAGE_DIR}/soeasy-worker.sh"
 #!/usr/bin/env bash

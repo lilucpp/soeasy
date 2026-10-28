@@ -79,6 +79,24 @@ class IndexConfig {
     return log_sync_;
   }
 
+  void set_doctotext_logging(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    doctotext_logging_ = enable;
+  }
+  bool doctotext_logging() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return doctotext_logging_;
+  }
+
+  void set_doctotext_log_path(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    doctotext_log_path_ = path;
+  }
+  std::string doctotext_log_path() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return doctotext_log_path_;
+  }
+
   std::vector<std::string> GetIndexedDirectories() const;
   std::vector<std::string> GetExcludedPatterns() const;
   std::unordered_set<std::string> GetSupportedExtensions() const;
@@ -173,6 +191,8 @@ class IndexConfig {
   std::string log_level_ = kDefaultLogLevel;
   bool log_console_ = kDefaultLogConsole;
   bool log_sync_ = kDefaultLogSync;
+  bool doctotext_logging_ = false;
+  std::string doctotext_log_path_;
 };
 
 }  // namespace service

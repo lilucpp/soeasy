@@ -3,6 +3,7 @@
 #include <string>
 
 #include "common/logger.h"
+#include "worker/l2_office_parser.h"
 #include "worker/worker_loop.h"
 
 int main(int argc, char* argv[]) {
@@ -14,6 +15,8 @@ int main(int argc, char* argv[]) {
   std::string log_level_str = "info";
   bool enable_console = false;
   bool enable_sync = false;
+  bool doctotext_logging = false;
+  std::string doctotext_log_path = "";
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -37,12 +40,21 @@ int main(int argc, char* argv[]) {
       enable_sync = false;
     } else if (arg.rfind("--log-file=", 0) == 0) {
       log_file = arg.substr(11);
+    } else if (arg == "--doctotext-logging") {
+      doctotext_logging = true;
+    } else if (arg == "--no-doctotext-logging") {
+      doctotext_logging = false;
+    } else if (arg.rfind("--doctotext-log-path=", 0) == 0) {
+      doctotext_log_path = arg.substr(21);
     }
   }
 
   auto level = soeasy::common::Logger::ParseLevel(log_level_str);
   soeasy::common::Logger::Init(log_file, 10 * 1024 * 1024, 3, enable_console, level);
   soeasy::common::Logger::SetSyncMode(enable_sync);
+
+  // Configure DocToText logging in this worker process
+  soeasy::worker::L2OfficeParser::SetLogging(doctotext_logging, doctotext_log_path);
 
   if (socket_fd < 0 || shm_name.empty()) {
     std::cerr << "Usage: soeasy-worker --socket-fd=<fd> --shm-name=<name> "

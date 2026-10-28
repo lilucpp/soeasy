@@ -24,6 +24,7 @@
 #include "common/logger.h"
 #include "common/shm_pool.h"
 #include "soeasy_ipc.capnp.h"
+#include "worker/l2_office_parser.h"
 #include "worker/worker_loop.h"
 
 namespace soeasy {
@@ -99,11 +100,21 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     // Ensure child dies when parent dies
     prctl(PR_SET_PDEATHSIG, SIGKILL);
 
+    if (!log_console_) {
+      int devnull = open("/dev/null", O_WRONLY);
+      if (devnull >= 0) {
+        dup2(devnull, STDOUT_FILENO);
+        dup2(devnull, STDERR_FILENO);
+        close(devnull);
+      }
+    }
+
     if (worker_bin_path_.empty()) {
       // In-process child execution mode
       common::Logger::SetLevel(log_level_);
       common::Logger::SetConsoleEnabled(log_console_);
       common::Logger::SetSyncMode(log_sync_);
+      worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
       int ret = worker::RunWorkerLoop(fds[1], shm_pool_.shm_name(),
                                       shm_pool_.slot_count(),
                                       shm_pool_.slot_capacity());
@@ -120,6 +131,8 @@ bool WorkerGuard::SpawnWorker(size_t index) {
       std::string level_arg = "--log-level=" + log_level_;
       std::string console_arg = log_console_ ? "--log-console" : "--no-log-console";
       std::string sync_arg = log_sync_ ? "--log-sync" : "--no-log-sync";
+      std::string dt_log_arg = doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging";
+      std::string dt_path_arg = "--doctotext-log-path=" + doctotext_log_path_;
 
       char* const argv[] = {
           const_cast<char*>(worker_bin_path_.c_str()),
@@ -130,6 +143,8 @@ bool WorkerGuard::SpawnWorker(size_t index) {
           const_cast<char*>(level_arg.c_str()),
           const_cast<char*>(console_arg.c_str()),
           const_cast<char*>(sync_arg.c_str()),
+          const_cast<char*>(dt_log_arg.c_str()),
+          const_cast<char*>(dt_path_arg.c_str()),
           nullptr};
       execv(worker_bin_path_.c_str(), argv);
       _exit(127);
@@ -405,6 +420,35 @@ void WorkerGuard::Shutdown() {
   }
   workers_.clear();
   shm_pool_.Close();
+}
+
+void WorkerGuard::SetLoggingOptions(const std::string& level, bool enable_console,
+                                    bool enable_sync, bool doctotext_logging,
+                                    const std::string& doctotext_log_path) {
+  std::lock_guard<std::mutex> lock(pool_mutex_);
+  bool changed = (log_level_ != level || log_console_ != enable_console ||
+                  log_sync_ != enable_sync ||
+                  doctotext_logging_ != doctotext_logging ||
+                  doctotext_log_path_ != doctotext_log_path);
+  log_level_ = level;
+  log_console_ = enable_console;
+  log_sync_ = enable_sync;
+  doctotext_logging_ = doctotext_logging;
+  doctotext_log_path_ = doctotext_log_path;
+
+  // In in-process mode, apply directly
+  if (worker_bin_path_.empty()) {
+    worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
+  }
+
+  if (changed) {
+    // Respawn idle workers with new arguments
+    for (size_t i = 0; i < workers_.size(); ++i) {
+      if (!workers_[i].is_busy() && workers_[i].pid > 0) {
+        KillWorker(i, TaskStatus::kSuccess, "Logging options changed");
+      }
+    }
+  }
 }
 
 }  // namespace service

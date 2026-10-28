@@ -156,6 +156,20 @@ void SettingsDialog::SetupUi() {
   log_sync_check_ = new QCheckBox("同步即时落盘模式 (Sync Flush，每条日志即刻刷盘，排查异常卡死)", tab_perf);
   form_perf->addRow("落盘同步模式:", log_sync_check_);
 
+  doctotext_log_check_ = new QCheckBox("启用 DocToText 详细文档解析日志 (默认关闭，用于排查 Office/PDF 解析问题)", tab_perf);
+  form_perf->addRow("DocToText 日志:", doctotext_log_check_);
+
+  auto* dt_path_layout = new QHBoxLayout();
+  doctotext_log_path_edit_ = new QLineEdit(tab_perf);
+  doctotext_log_path_edit_->setPlaceholderText("留空则默认输出至 logs/doctotext.log");
+  dt_browse_btn_ = new QPushButton("浏览...", tab_perf);
+  dt_browse_btn_->setFixedWidth(70);
+  dt_path_layout->addWidget(doctotext_log_path_edit_);
+  dt_path_layout->addWidget(dt_browse_btn_);
+  form_perf->addRow("日志输出文件路径:", dt_path_layout);
+
+  connect(dt_browse_btn_, &QPushButton::clicked, this, &SettingsDialog::OnBrowseDocToTextLogPath);
+
   tab_widget_->addTab(tab_perf, "性能与日志");
 
   main_layout->addWidget(tab_widget_);
@@ -232,6 +246,8 @@ void SettingsDialog::PopulateFromConfig() {
   }
   log_console_check_->setChecked(config_->log_console());
   log_sync_check_->setChecked(config_->log_sync());
+  doctotext_log_check_->setChecked(config_->doctotext_logging());
+  doctotext_log_path_edit_->setText(QString::fromStdString(config_->doctotext_log_path()));
 }
 
 void SettingsDialog::OnAddDirectory() {
@@ -307,6 +323,19 @@ void SettingsDialog::OnResetExtensionsToDefault() {
   }
 }
 
+void SettingsDialog::OnBrowseDocToTextLogPath() {
+  QString cur_path = doctotext_log_path_edit_->text().trimmed();
+  if (cur_path.isEmpty()) {
+    cur_path = QDir::homePath() + "/doctotext.log";
+  }
+  QString file = QFileDialog::getSaveFileName(
+      this, "选择 DocToText 日志输出文件", cur_path,
+      "Log Files (*.log);;Text Files (*.txt);;All Files (*)");
+  if (!file.isEmpty()) {
+    doctotext_log_path_edit_->setText(file);
+  }
+}
+
 void SettingsDialog::OnSaveAndApply() {
   if (!config_) {
     accept();
@@ -348,6 +377,8 @@ void SettingsDialog::OnSaveAndApply() {
   config_->set_log_level(chosen_level);
   config_->set_log_console(chosen_console);
   config_->set_log_sync(chosen_sync);
+  config_->set_doctotext_logging(doctotext_log_check_->isChecked());
+  config_->set_doctotext_log_path(doctotext_log_path_edit_->text().trimmed().toStdString());
 
   // Apply immediately to current process
   common::Logger::SetLevel(chosen_level);
