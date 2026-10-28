@@ -19,6 +19,8 @@
 #include <thread>
 #include <vector>
 
+#include "common/logger.h"
+
 namespace soeasy {
 namespace gui {
 
@@ -356,6 +358,16 @@ void MainWindow::OnOpenSettings() {
 
 void MainWindow::OnSettingsApplied() {
   if (pipeline_ && pipeline_->config()) {
+    common::Logger::SetLevel(pipeline_->config()->log_level());
+    common::Logger::SetConsoleEnabled(pipeline_->config()->log_console());
+    common::Logger::SetSyncMode(pipeline_->config()->log_sync());
+    if (pipeline_->worker_guard()) {
+      pipeline_->worker_guard()->SetLoggingOptions(
+          pipeline_->config()->log_level(),
+          pipeline_->config()->log_console(),
+          pipeline_->config()->log_sync());
+    }
+
     for (const auto& dir : pipeline_->config()->GetIndexedDirectories()) {
       pipeline_->AddAndScanDirectory(dir, true);
     }

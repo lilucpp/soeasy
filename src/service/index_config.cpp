@@ -255,6 +255,18 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
       filter_cache_thumbnails_ = j["filter_cache_thumbnails"].get<bool>();
     }
 
+    if (j.contains("log_level") && j["log_level"].is_string()) {
+      log_level_ = j["log_level"].get<std::string>();
+    }
+
+    if (j.contains("log_console") && j["log_console"].is_boolean()) {
+      log_console_ = j["log_console"].get<bool>();
+    }
+
+    if (j.contains("log_sync") && j["log_sync"].is_boolean()) {
+      log_sync_ = j["log_sync"].get<bool>();
+    }
+
     LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)",
              file_path, indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
     return true;
@@ -279,6 +291,9 @@ bool IndexConfig::SaveToFile(const std::string& file_path) const {
       j["worker_count"] = worker_count_;
       j["min_image_text_length"] = min_image_text_length_;
       j["filter_cache_thumbnails"] = filter_cache_thumbnails_;
+      j["log_level"] = log_level_;
+      j["log_console"] = log_console_;
+      j["log_sync"] = log_sync_;
     }
 
     std::string temp_path = file_path + ".tmp";

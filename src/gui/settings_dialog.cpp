@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "common/logger.h"
+
 namespace soeasy {
 namespace gui {
 
@@ -141,7 +143,20 @@ void SettingsDialog::SetupUi() {
   filter_thumbs_check_ = new QCheckBox("自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)", tab_perf);
   form_perf->addRow("", filter_thumbs_check_);
 
-  tab_widget_->addTab(tab_perf, "性能与过滤");
+  log_level_combo_ = new QComboBox(tab_perf);
+  log_level_combo_->addItem("DEBUG (详细调试与耗时跟踪)", "debug");
+  log_level_combo_->addItem("INFO  (标准运行信息，默认)", "info");
+  log_level_combo_->addItem("WARN  (生产精简模式，仅警告/错误)", "warn");
+  log_level_combo_->addItem("ERROR (仅严重故障记录)", "error");
+  form_perf->addRow("运行日志详细级别:", log_level_combo_);
+
+  log_console_check_ = new QCheckBox("输出控制台实时镜像 (Console stdout，用于终端调试)", tab_perf);
+  form_perf->addRow("终端输出调试:", log_console_check_);
+
+  log_sync_check_ = new QCheckBox("同步即时落盘模式 (Sync Flush，每条日志即刻刷盘，排查异常卡死)", tab_perf);
+  form_perf->addRow("落盘同步模式:", log_sync_check_);
+
+  tab_widget_->addTab(tab_perf, "性能与日志");
 
   main_layout->addWidget(tab_widget_);
 
@@ -208,6 +223,15 @@ void SettingsDialog::PopulateFromConfig() {
   worker_count_spin_->setValue(static_cast<int>(config_->worker_count()));
   min_img_chars_spin_->setValue(static_cast<int>(config_->min_image_text_length()));
   filter_thumbs_check_->setChecked(config_->filter_cache_thumbnails());
+
+  int log_idx = log_level_combo_->findData(QString::fromStdString(config_->log_level()));
+  if (log_idx >= 0) {
+    log_level_combo_->setCurrentIndex(log_idx);
+  } else {
+    log_level_combo_->setCurrentIndex(1);  // default info
+  }
+  log_console_check_->setChecked(config_->log_console());
+  log_sync_check_->setChecked(config_->log_sync());
 }
 
 void SettingsDialog::OnAddDirectory() {
@@ -316,6 +340,19 @@ void SettingsDialog::OnSaveAndApply() {
   config_->set_worker_count(static_cast<size_t>(worker_count_spin_->value()));
   config_->set_min_image_text_length(static_cast<uint32_t>(min_img_chars_spin_->value()));
   config_->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
+
+  // Save logging settings
+  std::string chosen_level = log_level_combo_->currentData().toString().toStdString();
+  bool chosen_console = log_console_check_->isChecked();
+  bool chosen_sync = log_sync_check_->isChecked();
+  config_->set_log_level(chosen_level);
+  config_->set_log_console(chosen_console);
+  config_->set_log_sync(chosen_sync);
+
+  // Apply immediately to current process
+  common::Logger::SetLevel(chosen_level);
+  common::Logger::SetConsoleEnabled(chosen_console);
+  common::Logger::SetSyncMode(chosen_sync);
 
   // Persist to disk
   config_->Save();

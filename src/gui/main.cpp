@@ -58,6 +58,32 @@ int main(int argc, char* argv[]) {
       "path");
   parser.addOption(dict_option);
 
+  QCommandLineOption log_level_option(
+      QStringList() << "log-level",
+      "Set logging level (trace, debug, info, warn, error).",
+      "level");
+  parser.addOption(log_level_option);
+
+  QCommandLineOption log_console_option(
+      QStringList() << "log-console",
+      "Mirror logs to console stdout (debugging).");
+  parser.addOption(log_console_option);
+
+  QCommandLineOption no_log_console_option(
+      QStringList() << "no-log-console",
+      "Disable console stdout logging for maximum performance.");
+  parser.addOption(no_log_console_option);
+
+  QCommandLineOption log_sync_option(
+      QStringList() << "log-sync",
+      "Enable synchronous log flushing (flush immediately on each write).");
+  parser.addOption(log_sync_option);
+
+  QCommandLineOption debug_option(
+      QStringList() << "debug",
+      "Enable debug mode (equivalent to --log-level=debug --log-console --log-sync).");
+  parser.addOption(debug_option);
+
   parser.process(app);
 
   // Determine data storage directory: ~/.local/share/soeasy or ~/.config/soeasy
@@ -68,14 +94,71 @@ int main(int argc, char* argv[]) {
   }
   QDir().mkpath(app_data_dir);
 
+  // 2. Initialize Index Config from persistent JSON file
+  auto config = std::make_shared<soeasy::service::IndexConfig>();
+  QString config_path = app_data_dir + "/config.json";
+  config->set_config_path(config_path.toStdString());
+
+  bool config_loaded = config->LoadFromFile(config_path.toStdString());
+  if (!config_loaded || config->GetIndexedDirectories().empty()) {
+    QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    QString desktop =
+        QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    if (!docs.isEmpty() && QDir(docs).exists()) {
+      config->AddIndexedDirectory(docs.toStdString());
+    }
+    if (!desktop.isEmpty() && QDir(desktop).exists()) {
+      config->AddIndexedDirectory(desktop.toStdString());
+    }
+    config->SaveToFile(config_path.toStdString());
+  }
+
+  // Determine effective logging settings (CLI parameters take precedence over persistent config)
+  std::string log_level_str = config->log_level();
+  bool enable_console = config->log_console();
+  bool enable_sync = config->log_sync();
+
+  if (parser.isSet(debug_option)) {
+    log_level_str = "debug";
+    enable_console = true;
+    enable_sync = true;
+  } else {
+    if (parser.isSet(log_level_option)) {
+      log_level_str = parser.value(log_level_option).toStdString();
+    }
+    if (parser.isSet(log_console_option)) {
+      enable_console = true;
+    } else if (parser.isSet(no_log_console_option)) {
+      enable_console = false;
+    }
+    if (parser.isSet(log_sync_option)) {
+      enable_sync = true;
+    }
+  }
+
+  auto level_enum = soeasy::common::Logger::ParseLevel(log_level_str);
+
   // Initialize spdlog rotating file logger (3 files, 10MB each)
   QString log_path = app_data_dir + "/logs/soeasy.log";
-  soeasy::common::Logger::Init(log_path.toStdString(), 10 * 1024 * 1024, 3, true);
+  soeasy::common::Logger::Init(log_path.toStdString(), 10 * 1024 * 1024, 3, enable_console, level_enum);
+  soeasy::common::Logger::SetSyncMode(enable_sync);
+
   LOG_INFO("========================================================");
   LOG_INFO("   SoEasy Desktop Search Engine Starting (v1.0.0)");
   LOG_INFO("   AppData Directory: {}", app_data_dir.toStdString());
   LOG_INFO("   Rolling Log File:  {} (3 files x 10MB)", log_path.toStdString());
+  LOG_INFO("   Logging Level:     {} | Console: {} | Sync Flush: {}",
+           soeasy::common::Logger::LevelToString(level_enum),
+           enable_console ? "ENABLED" : "DISABLED",
+           enable_sync ? "ENABLED" : "DISABLED");
   LOG_INFO("========================================================");
+
+  if (!config_loaded) {
+    LOG_INFO("[Config] Created initial persistent config at: {}", config_path.toStdString());
+  } else {
+    LOG_INFO("[Config] Successfully loaded persistent config from: {}", config_path.toStdString());
+  }
 
   QString db_path = parser.value(db_option);
   if (db_path.isEmpty()) {
@@ -131,31 +214,10 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // 2. Initialize Index Config from persistent JSON file
-  auto config = std::make_shared<soeasy::service::IndexConfig>();
-  QString config_path = app_data_dir + "/config.json";
-  config->set_config_path(config_path.toStdString());
-
-  bool config_loaded = config->LoadFromFile(config_path.toStdString());
-  if (!config_loaded || config->GetIndexedDirectories().empty()) {
-    QString docs =
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    QString desktop =
-        QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
-    if (!docs.isEmpty() && QDir(docs).exists()) {
-      config->AddIndexedDirectory(docs.toStdString());
-    }
-    if (!desktop.isEmpty() && QDir(desktop).exists()) {
-      config->AddIndexedDirectory(desktop.toStdString());
-    }
-    config->SaveToFile(config_path.toStdString());
-    LOG_INFO("[Config] Created initial persistent config at: {}", config_path.toStdString());
-  } else {
-    LOG_INFO("[Config] Successfully loaded persistent config from: {}", config_path.toStdString());
-  }
-
   // 3. Initialize Worker Guard with configured worker count and 15s base timeout
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
+  worker_guard->SetLoggingOptions(
+      soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync);
   if (!worker_guard->Init(worker_bin.toStdString(), config->worker_count(),
                           soeasy::service::WorkerGuard::kDefaultTimeoutMs)) {
     std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "

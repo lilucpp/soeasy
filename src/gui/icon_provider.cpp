@@ -1,5 +1,6 @@
 #include "gui/icon_provider.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
@@ -247,7 +248,7 @@ QIcon IconProvider::GetAppIcon() {
 }
 
 QString IconProvider::GetDownArrowImagePath() {
-  const QString path = "/tmp/soeasy_arrow_down.png";
+  const QString path = QDir::tempPath() + "/soeasy_arrow_down.png";
   if (QFile::exists(path)) {
     return path;
   }

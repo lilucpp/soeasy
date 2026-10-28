@@ -94,6 +94,7 @@ class IndexPipeline {
 
   // Accessors
   std::shared_ptr<IndexConfig> config() { return config_; }
+  std::shared_ptr<WorkerGuard> worker_guard() { return worker_guard_; }
   std::shared_ptr<NameIndex> name_index() { return name_index_; }
   std::shared_ptr<WatchEngine> watch_engine() { return watch_engine_; }
   std::shared_ptr<storage::StorageEngine> storage_engine() { return storage_engine_; }

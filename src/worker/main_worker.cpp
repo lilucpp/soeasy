@@ -6,11 +6,14 @@
 #include "worker/worker_loop.h"
 
 int main(int argc, char* argv[]) {
-  soeasy::common::Logger::Init("logs/soeasy_worker.log", 10 * 1024 * 1024, 3, true);
   int socket_fd = -1;
   std::string shm_name;
   size_t slot_count = 8;
   size_t slot_capacity = 8 * 1024 * 1024;
+  std::string log_file = "logs/soeasy_worker.log";
+  std::string log_level_str = "info";
+  bool enable_console = false;
+  bool enable_sync = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -22,8 +25,24 @@ int main(int argc, char* argv[]) {
       slot_count = std::stoull(arg.substr(13));
     } else if (arg.rfind("--slot-capacity=", 0) == 0) {
       slot_capacity = std::stoull(arg.substr(16));
+    } else if (arg.rfind("--log-level=", 0) == 0) {
+      log_level_str = arg.substr(12);
+    } else if (arg == "--log-console") {
+      enable_console = true;
+    } else if (arg == "--no-log-console") {
+      enable_console = false;
+    } else if (arg == "--log-sync") {
+      enable_sync = true;
+    } else if (arg == "--no-log-sync") {
+      enable_sync = false;
+    } else if (arg.rfind("--log-file=", 0) == 0) {
+      log_file = arg.substr(11);
     }
   }
+
+  auto level = soeasy::common::Logger::ParseLevel(log_level_str);
+  soeasy::common::Logger::Init(log_file, 10 * 1024 * 1024, 3, enable_console, level);
+  soeasy::common::Logger::SetSyncMode(enable_sync);
 
   if (socket_fd < 0 || shm_name.empty()) {
     std::cerr << "Usage: soeasy-worker --socket-fd=<fd> --shm-name=<name> "

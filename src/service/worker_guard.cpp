@@ -21,6 +21,7 @@
 #include <capnp/serialize.h>
 #include <kj/io.h>
 
+#include "common/logger.h"
 #include "common/shm_pool.h"
 #include "soeasy_ipc.capnp.h"
 #include "worker/worker_loop.h"
@@ -100,6 +101,9 @@ bool WorkerGuard::SpawnWorker(size_t index) {
 
     if (worker_bin_path_.empty()) {
       // In-process child execution mode
+      common::Logger::SetLevel(log_level_);
+      common::Logger::SetConsoleEnabled(log_console_);
+      common::Logger::SetSyncMode(log_sync_);
       int ret = worker::RunWorkerLoop(fds[1], shm_pool_.shm_name(),
                                       shm_pool_.slot_count(),
                                       shm_pool_.slot_capacity());
@@ -113,6 +117,9 @@ bool WorkerGuard::SpawnWorker(size_t index) {
           "--slot-count=" + std::to_string(shm_pool_.slot_count());
       std::string cap_arg =
           "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity());
+      std::string level_arg = "--log-level=" + log_level_;
+      std::string console_arg = log_console_ ? "--log-console" : "--no-log-console";
+      std::string sync_arg = log_sync_ ? "--log-sync" : "--no-log-sync";
 
       char* const argv[] = {
           const_cast<char*>(worker_bin_path_.c_str()),
@@ -120,6 +127,9 @@ bool WorkerGuard::SpawnWorker(size_t index) {
           const_cast<char*>(shm_arg.c_str()),
           const_cast<char*>(count_arg.c_str()),
           const_cast<char*>(cap_arg.c_str()),
+          const_cast<char*>(level_arg.c_str()),
+          const_cast<char*>(console_arg.c_str()),
+          const_cast<char*>(sync_arg.c_str()),
           nullptr};
       execv(worker_bin_path_.c_str(), argv);
       _exit(127);

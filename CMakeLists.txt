@@ -325,6 +325,17 @@ if(BUILD_TESTS)
   )
 endif()
 
+# Test & Benchmark: Investigation of Log Printing Impact on Parser
+add_executable(test_log_impact
+    tests/test_log_impact.cpp
+)
+target_link_libraries(test_log_impact PRIVATE
+    soeasy_worker_lib
+    soeasy_service
+    soeasy_storage
+    soeasy_common
+)
+
 # -------------------------------------------------------------
 # 11. Packaging Target (One-click Standalone Zip Generation)
 # -------------------------------------------------------------

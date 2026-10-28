@@ -2,6 +2,7 @@
 #define SOEASY_SRC_GUI_SETTINGS_DIALOG_H_
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QLineEdit>
 #include <QListWidget>
@@ -64,6 +65,11 @@ class SettingsDialog : public QDialog {
   QSpinBox* worker_count_spin_ = nullptr;
   QSpinBox* min_img_chars_spin_ = nullptr;
   QCheckBox* filter_thumbs_check_ = nullptr;
+
+  // Logging & Debugging options
+  QComboBox* log_level_combo_ = nullptr;
+  QCheckBox* log_console_check_ = nullptr;
+  QCheckBox* log_sync_check_ = nullptr;
 };
 
 }  // namespace gui

@@ -15,6 +15,9 @@ class IndexConfig {
   static constexpr uint64_t kDefaultMaxFileSize = 50 * 1024 * 1024;  // 50MB
   static constexpr uint32_t kDefaultDebounceMs = 300;                // 300ms
   static constexpr size_t kDefaultWorkerCount = 2;                   // 2 workers default
+  static constexpr const char* kDefaultLogLevel = "info";
+  static constexpr bool kDefaultLogConsole = false;
+  static constexpr bool kDefaultLogSync = false;
 
   IndexConfig();
   ~IndexConfig() = default;
@@ -47,6 +50,33 @@ class IndexConfig {
   size_t worker_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return worker_count_;
+  }
+
+  void set_log_level(const std::string& level) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    log_level_ = level;
+  }
+  std::string log_level() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return log_level_;
+  }
+
+  void set_log_console(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    log_console_ = enable;
+  }
+  bool log_console() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return log_console_;
+  }
+
+  void set_log_sync(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    log_sync_ = enable;
+  }
+  bool log_sync() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return log_sync_;
   }
 
   std::vector<std::string> GetIndexedDirectories() const;
@@ -126,6 +156,9 @@ class IndexConfig {
   size_t worker_count_ = kDefaultWorkerCount;
   uint32_t min_image_text_length_ = 4;
   bool filter_cache_thumbnails_ = true;
+  std::string log_level_ = kDefaultLogLevel;
+  bool log_console_ = kDefaultLogConsole;
+  bool log_sync_ = kDefaultLogSync;
 };
 
 }  // namespace service
