@@ -134,10 +134,42 @@ std::unordered_set<std::string> IndexConfig::GetSupportedExtensions() const {
   return supported_exts_;
 }
 
+bool IndexConfig::IsExtensionSupported(const std::string& ext) const {
+  if (ext.empty()) {
+    return false;
+  }
+  std::string lower_ext = ext;
+  if (lower_ext.front() == '.') {
+    lower_ext.erase(0, 1);
+  }
+  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
+  std::lock_guard<std::mutex> lock(mutex_);
+  return supported_exts_.find(lower_ext) != supported_exts_.end();
+}
+
+bool IndexConfig::IsFileSupported(const std::string& filename) const {
+  size_t dot_pos = filename.find_last_of('.');
+  if (dot_pos == std::string::npos || dot_pos == filename.length() - 1) {
+    return false;
+  }
+  return IsExtensionSupported(filename.substr(dot_pos + 1));
+}
+
 bool IndexConfig::IsDirectoryExcluded(const std::string& dir_path) const {
+  if (dir_path.empty()) {
+    return false;
+  }
+  std::string normalized = dir_path;
+  if (normalized.front() != '/') {
+    normalized = "/" + normalized;
+  }
+  if (normalized.back() != '/') {
+    normalized += "/";
+  }
+
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& pattern : excluded_patterns_) {
-    if (dir_path.find(pattern) != std::string::npos) {
+    if (normalized.find(pattern) != std::string::npos) {
       return true;
     }
   }

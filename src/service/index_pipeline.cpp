@@ -131,17 +131,24 @@ bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
 
 void IndexPipeline::ScanDirectoryRecursive(const std::string& dir_path) {
   try {
-    for (const auto& entry :
-         std::filesystem::recursive_directory_iterator(
-             dir_path, std::filesystem::directory_options::skip_permission_denied)) {
-      if (entry.is_regular_file()) {
-        std::string file_path = entry.path().string();
-        std::string filename = entry.path().filename().string();
+    for (auto it = std::filesystem::recursive_directory_iterator(
+             dir_path, std::filesystem::directory_options::skip_permission_denied);
+         it != std::filesystem::recursive_directory_iterator(); ++it) {
+      if (it->is_directory()) {
+        std::string sub_dir = it->path().string();
+        if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
+          it.disable_recursion_pending();
+          continue;
+        }
+      }
+      if (it->is_regular_file()) {
+        std::string file_path = it->path().string();
+        std::string filename = it->path().filename().string();
         std::string ext = ExtractExtension(filename);
 
         uint64_t fsize = 0;
         try {
-          fsize = entry.file_size();
+          fsize = it->file_size();
         } catch (...) {
           fsize = 0;
         }
@@ -174,16 +181,23 @@ size_t IndexPipeline::PerformInitialScan(
   std::vector<std::string> files_to_index;
   for (const auto& dir : watched_dirs) {
     try {
-      for (const auto& entry :
-           std::filesystem::recursive_directory_iterator(
-               dir, std::filesystem::directory_options::skip_permission_denied)) {
-        if (entry.is_regular_file()) {
-          std::string fpath = entry.path().string();
-          std::string fname = entry.path().filename().string();
+      for (auto it = std::filesystem::recursive_directory_iterator(
+               dir, std::filesystem::directory_options::skip_permission_denied);
+           it != std::filesystem::recursive_directory_iterator(); ++it) {
+        if (it->is_directory()) {
+          std::string sub_dir = it->path().string();
+          if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
+            it.disable_recursion_pending();
+            continue;
+          }
+        }
+        if (it->is_regular_file()) {
+          std::string fpath = it->path().string();
+          std::string fname = it->path().filename().string();
           std::string ext = ExtractExtension(fname);
           uint64_t fsize = 0;
           try {
-            fsize = entry.file_size();
+            fsize = it->file_size();
           } catch (...) {}
           if (config_->ShouldIndex(fpath, ext, fsize)) {
             files_to_index.push_back(fpath);
@@ -267,16 +281,23 @@ bool IndexPipeline::RebuildIndex(
   std::vector<std::string> files_to_index;
   for (const auto& dir : watched_dirs) {
     try {
-      for (const auto& entry :
-           std::filesystem::recursive_directory_iterator(
-               dir, std::filesystem::directory_options::skip_permission_denied)) {
-        if (entry.is_regular_file()) {
-          std::string fpath = entry.path().string();
-          std::string fname = entry.path().filename().string();
+      for (auto it = std::filesystem::recursive_directory_iterator(
+               dir, std::filesystem::directory_options::skip_permission_denied);
+           it != std::filesystem::recursive_directory_iterator(); ++it) {
+        if (it->is_directory()) {
+          std::string sub_dir = it->path().string();
+          if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
+            it.disable_recursion_pending();
+            continue;
+          }
+        }
+        if (it->is_regular_file()) {
+          std::string fpath = it->path().string();
+          std::string fname = it->path().filename().string();
           std::string ext = ExtractExtension(fname);
           uint64_t fsize = 0;
           try {
-            fsize = entry.file_size();
+            fsize = it->file_size();
           } catch (...) {}
 
           if (config_->ShouldIndex(fpath, ext, fsize)) {
