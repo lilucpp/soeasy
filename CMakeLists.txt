@@ -215,6 +215,7 @@ if(NOT WIN32)
         third_party/sysroot/usr/include
     )
 endif()
+find_package(Iconv REQUIRED)
 find_library(XML2_LIB NAMES xml2 libxml2.so.2 libxml2 REQUIRED)
 find_library(Z_LIB NAMES z libz.so.1 libz REQUIRED)
 
@@ -229,6 +230,7 @@ target_link_libraries(soeasy_worker_lib PUBLIC
     ${Z_LIB}
     onnxruntime
     ${OpenCV_LIBS}
+    Iconv::Iconv
 )
 
 add_executable(soeasy-worker
@@ -274,6 +276,7 @@ if(WIN32)
         pthread
         psapi
         ws2_32
+        Iconv::Iconv
     )
 else()
     target_link_libraries(soeasy_service PUBLIC

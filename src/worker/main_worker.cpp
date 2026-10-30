@@ -75,6 +75,7 @@ int main(int argc, char* argv[]) {
   soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr);
 
 #ifdef _WIN32
+  (void)socket_fd;
   if (pipe_name.empty() || shm_name.empty()) {
     std::cerr << "Usage: soeasy-worker --pipe-name=<name> --shm-name=<name> "
               << "[--slot-count=<N>] [--slot-capacity=<bytes>]\n";

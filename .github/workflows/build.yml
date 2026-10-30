@@ -72,6 +72,7 @@ jobs:
             mingw-w64-x86_64-libxml2
             mingw-w64-x86_64-zlib
             mingw-w64-x86_64-uchardet
+            mingw-w64-x86_64-libiconv
             zip
           update: true
 
@@ -116,6 +117,7 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libopencv*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libuchardet*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libxml2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libiconv*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/zlib1.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libgcc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
