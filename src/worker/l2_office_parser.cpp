@@ -177,14 +177,6 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
   std::string lower = ext;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-  // Fast-path for formats natively and robustly handled by our internal OOXML extractors
-  if (lower == "xlsx") {
-    return ParseXlsx(file_path, out_utf8_text);
-  }
-  if (lower == "pptx") {
-    return ParsePptx(file_path, out_utf8_text);
-  }
-
   // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
   try {
     bool enable_logging = false;
@@ -200,7 +192,7 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
     }
 
     int ptype = DOCTOTEXT_PARSER_AUTO;
-    if (lower == "docx" || lower == "odt" || lower == "ods" || lower == "odp") {
+    if (lower == "docx" || lower == "xlsx" || lower == "pptx" || lower == "odt" || lower == "ods" || lower == "odp") {
       ptype = DOCTOTEXT_PARSER_ODF_OOXML;
     } else if (lower == "doc") {
       ptype = DOCTOTEXT_PARSER_DOC;
