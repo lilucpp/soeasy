@@ -20,7 +20,7 @@ else()
 endif()
 
 if(WIN32)
-    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _Frees_ptr_opt_=)
 endif()
 
 option(BUILD_TESTS "Build test suite" ON)

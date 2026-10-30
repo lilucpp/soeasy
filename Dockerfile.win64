@@ -1,0 +1,50 @@
+FROM fedora:40
+
+# 配置国内高速镜像源（阿里云），加速下载并避免国际镜像连接超时
+RUN sed -e 's|^metalink=|#metalink=|g' \
+        -e 's|^#baseurl=http://download.example/pub/fedora/linux|baseurl=https://mirrors.aliyun.com/fedora|g' \
+        -i.bak /etc/yum.repos.d/fedora*.repo
+
+# 1. 安装基础开发工具、主机端 Cap'n Proto 及 Fedora 官方 MinGW-w64 预编译生态
+RUN dnf install -y \
+    git \
+    make \
+    cmake \
+    ninja-build \
+    capnproto \
+    capnproto-devel \
+    zip \
+    mingw64-gcc \
+    mingw64-gcc-c++ \
+    mingw64-binutils \
+    mingw64-filesystem \
+    mingw64-qt5-qtbase \
+    mingw64-qt5-qtbase-devel \
+    mingw64-qt5-qttools-tools \
+    mingw64-opencv \
+    mingw64-libxml2 \
+    mingw64-zlib \
+    mingw64-win-iconv \
+    && dnf clean all \
+    && ln -s /usr/bin/mingw64-cmake /usr/bin/x86_64-w64-mingw32-cmake \
+    && sed -i 's|/../../../../../../../|/../../..|g' /usr/x86_64-w64-mingw32/sys-root/mingw/lib/cmake/OpenCV/OpenCVConfig.cmake
+
+# 2. 交叉编译并安装 Windows 版 uchardet 到 MinGW sysroot
+RUN git clone --depth 1 https://gitlab.freedesktop.org/uchardet/uchardet.git /tmp/uchardet && \
+    mingw64-cmake -B /tmp/uchardet/build -S /tmp/uchardet -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_BINARY=OFF \
+      -DBUILD_STATIC=ON && \
+    ninja -C /tmp/uchardet/build install && \
+    rm -rf /tmp/uchardet
+
+# 3. 交叉编译并安装 Windows 版 Cap'n Proto v1.0.1 静态库到 MinGW sysroot
+RUN git clone --depth 1 --branch v1.0.1 https://github.com/capnproto/capnproto.git /tmp/capnproto && \
+    mingw64-cmake -B /tmp/capnproto/build -S /tmp/capnproto/c++ -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_TESTING=OFF \
+      -DBUILD_SHARED_LIBS=OFF && \
+    ninja -C /tmp/capnproto/build install && \
+    rm -rf /tmp/capnproto
+
+WORKDIR /workspace

@@ -81,12 +81,50 @@ export LD_LIBRARY_PATH=./third_party/sysroot/usr/lib/x86_64-linux-gnu:$LD_LIBRAR
 ./build/test_gui_smoke
 ```
 
-### 打包分发
+### 打包分发 (Linux)
 
 ```bash
 bash scripts/package.sh
 ```
-打包输出产物位于 `dist/soeasy-v1.0.0-linux-x86_64.zip`。
+打包输出产物位于 `dist/soeasy-v0.1.0-linux-x86_64.zip`。
+
+---
+
+## Windows (x64) 交叉编译与打包 (基于 Docker)
+
+本项目支持在 Linux 宿主机上通过 Docker 容器化 MinGW-w64 工具链一键交叉编译并打包 Windows 64位桌面应用（包含完整的 Qt5、OpenCV、PP-OCRv6 与 DocToText 运行时）。
+
+### 1. 制作交叉编译镜像
+
+镜像基于 `Fedora 40`，集成了官方 MinGW-w64 预编译开发套件（GCC 14、Qt 5.15、OpenCV 4.7）及静态 Cap'n Proto 和 uchardet 库：
+
+```bash
+docker build -f Dockerfile.win64 -t soeasy-win64-cross .
+```
+
+### 2. 启动容器编译项目
+
+挂载项目目录并指定实例名 `--name soeasy-win64-builder`，调用 `mingw64-cmake` 进行跨平台构建：
+
+```bash
+# 生成 CMake 构建配置 (Windows x64 Release)
+docker run --name soeasy-win64-builder --rm -v "$PWD":/workspace -w /workspace soeasy-win64-cross \
+  mingw64-cmake -B build-win64 -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
+
+# 编译生成 soeasy-gui.exe 与 soeasy-worker.exe
+docker run --name soeasy-win64-builder --rm -v "$PWD":/workspace -w /workspace soeasy-win64-cross \
+  ninja -C build-win64 soeasy-gui soeasy-worker -j$(nproc)
+```
+
+### 3. 一键打包 Windows 发行版
+
+项目提供了自动化打包脚本，会自动检测镜像、执行编译并从容器 sysroot 中提取所有必需的 MinGW DLL（Qt5 核心与平台插件、OpenCV、Uchardet、Iconv 等），打包为即开即用的 zip 发行包：
+
+```bash
+./scripts/package_win64_docker.sh
+```
+
+打包产物位于 `dist/soeasy-v0.1.0-windows-x64.zip`，解压至任意 Windows 64位机器即可直接运行 `bin/soeasy-gui.exe`。
 
 ## 目录结构
 

@@ -37,6 +37,8 @@ qrc_*.cpp
 # Preserve vendored sysroot dependencies, onnxruntime, and OCR models
 !third_party/sysroot/**
 !third_party/onnxruntime/**
+third_party/onnxruntime/lib/*.dll
+third_party/onnxruntime/lib/*.lib
 !models/**
 !third_party/doctotext/doctotext.cmake
 third_party/doctotext/lib/

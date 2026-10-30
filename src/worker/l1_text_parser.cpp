@@ -81,15 +81,18 @@ bool L1TextParser::ConvertToUtf8(const char* in_bytes, size_t in_size,
   }
 
   size_t in_left = in_size;
-  char* in_ptr = const_cast<char*>(in_bytes);
-
-  // Allocate 4x buffer to accommodate expansion
   size_t out_capacity = in_size * 4 + 64;
   std::vector<char> out_buf(out_capacity);
   char* out_ptr = out_buf.data();
   size_t out_left = out_capacity;
 
+#ifdef _WIN32
+  const char* in_ptr = in_bytes;
   size_t res = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
+#else
+  char* in_ptr = const_cast<char*>(in_bytes);
+  size_t res = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
+#endif
   iconv_close(cd);
 
   if (res == static_cast<size_t>(-1) && out_left == out_capacity) {

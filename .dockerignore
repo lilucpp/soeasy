@@ -1,0 +1,6 @@
+build
+build-*
+dist
+.git
+models
+third_party
