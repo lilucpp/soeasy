@@ -15,6 +15,42 @@
 namespace soeasy {
 namespace worker {
 
+namespace {
+
+// 跨平台适配 iconv 的入参类型差异：
+// - POSIX / glibc / MSYS2 GNU libiconv 期望 `char** inbuf`
+// - WinIconv / BSD 等期望 `const char** inbuf`
+template <typename T>
+struct IconvCaller;
+
+template <typename CdType>
+struct IconvCaller<size_t (*)(CdType, char**, size_t*, char**, size_t*)> {
+  static size_t Call(size_t (*func)(CdType, char**, size_t*, char**, size_t*),
+                     CdType cd, const char* in_bytes, size_t* in_left,
+                     char** out_ptr, size_t* out_left) {
+    char* in_ptr = const_cast<char*>(in_bytes);
+    return func(cd, &in_ptr, in_left, out_ptr, out_left);
+  }
+};
+
+template <typename CdType>
+struct IconvCaller<size_t (*)(CdType, const char**, size_t*, char**, size_t*)> {
+  static size_t Call(size_t (*func)(CdType, const char**, size_t*, char**, size_t*),
+                     CdType cd, const char* in_bytes, size_t* in_left,
+                     char** out_ptr, size_t* out_left) {
+    const char* in_ptr = in_bytes;
+    return func(cd, &in_ptr, in_left, out_ptr, out_left);
+  }
+};
+
+template <typename Fn, typename CdType>
+inline size_t SafeIconv(Fn func, CdType cd, const char* in_bytes, size_t* in_left,
+                        char** out_ptr, size_t* out_left) {
+  return IconvCaller<Fn>::Call(func, cd, in_bytes, in_left, out_ptr, out_left);
+}
+
+}  // namespace
+
 L1TextParser::L1TextParser() = default;
 L1TextParser::~L1TextParser() = default;
 
@@ -86,13 +122,7 @@ bool L1TextParser::ConvertToUtf8(const char* in_bytes, size_t in_size,
   char* out_ptr = out_buf.data();
   size_t out_left = out_capacity;
 
-#ifdef _WIN32
-  const char* in_ptr = in_bytes;
-  size_t res = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
-#else
-  char* in_ptr = const_cast<char*>(in_bytes);
-  size_t res = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
-#endif
+  size_t res = SafeIconv(&iconv, cd, in_bytes, &in_left, &out_ptr, &out_left);
   iconv_close(cd);
 
   if (res == static_cast<size_t>(-1) && out_left == out_capacity) {
