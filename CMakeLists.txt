@@ -22,18 +22,20 @@ endif()
 option(BUILD_TESTS "Build test suite" ON)
 
 # Configure portable transitive RPATH (using DT_RPATH instead of DT_RUNPATH for transitive dependency lookup)
-add_link_options("-Wl,--disable-new-dtags")
-set(CMAKE_SKIP_BUILD_RPATH FALSE)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-set(CMAKE_BUILD_RPATH
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/lib"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib"
-    "\$ORIGIN/../lib"
-    "\$ORIGIN/lib"
-)
-set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib;\$ORIGIN/lib")
+if(UNIX AND NOT APPLE)
+    add_link_options("-Wl,--disable-new-dtags")
+    set(CMAKE_SKIP_BUILD_RPATH FALSE)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    set(CMAKE_BUILD_RPATH
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/lib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib"
+        "\$ORIGIN/../lib"
+        "\$ORIGIN/lib"
+    )
+    set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib;\$ORIGIN/lib")
+endif()
 
 # DocToText prebuilt binary dependency
 include(third_party/doctotext/doctotext.cmake)
@@ -81,7 +83,11 @@ target_compile_definitions(sqlite3mc PUBLIC
     SQLITE_THREADSAFE=1
     SQLITE_ENABLE_DBSTAT_VTAB=1
 )
-target_link_libraries(sqlite3mc PRIVATE dl pthread)
+if(WIN32)
+    target_link_libraries(sqlite3mc PRIVATE pthread)
+else()
+    target_link_libraries(sqlite3mc PRIVATE dl pthread)
+endif()
 
 # -------------------------------------------------------------
 # 3. Third-party: efsw (Entropia File System Watcher)
@@ -102,9 +108,11 @@ target_include_directories(soeasy_common PUBLIC
     src
     third_party/spdlog/include
 )
-target_link_libraries(soeasy_common PUBLIC
-    rt pthread
-)
+if(WIN32)
+    target_link_libraries(soeasy_common PUBLIC pthread)
+else()
+    target_link_libraries(soeasy_common PUBLIC rt pthread)
+endif()
 
 # -------------------------------------------------------------
 # 5. Cap'n Proto Schema Library
@@ -206,17 +214,30 @@ target_include_directories(soeasy_service PUBLIC
     third_party/efsw/include
     third_party/sysroot/usr/include
 )
-target_link_libraries(soeasy_service PUBLIC
-    soeasy_common
-    soeasy_schema
-    soeasy_worker_lib
-    soeasy_storage
-    efsw-static
-    capnp
-    kj
-    pthread
-    rt
-)
+if(WIN32)
+    target_link_libraries(soeasy_service PUBLIC
+        soeasy_common
+        soeasy_schema
+        soeasy_worker_lib
+        soeasy_storage
+        efsw-static
+        capnp
+        kj
+        pthread
+    )
+else()
+    target_link_libraries(soeasy_service PUBLIC
+        soeasy_common
+        soeasy_schema
+        soeasy_worker_lib
+        soeasy_storage
+        efsw-static
+        capnp
+        kj
+        pthread
+        rt
+    )
+endif()
 
 # -------------------------------------------------------------
 # 9. Test Targets

@@ -1,0 +1,149 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-linux-x86_64:
+    name: Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            qtbase5-dev \
+            libopencv-dev \
+            libxml2-dev \
+            zlib1g-dev \
+            libuchardet-dev \
+            libcapnp-dev \
+            capnproto \
+            zip
+
+      - name: Build and Package Linux Release
+        run: |
+          chmod +x scripts/package.sh
+          ./scripts/package.sh
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: soeasy-linux-x86_64
+          path: dist/soeasy-*-linux-x86_64.zip
+
+  build-windows:
+    name: Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: win64
+            msystem: MINGW64
+            toolchain: mingw-w64-x86_64-toolchain
+            pkg_prefix: mingw-w64-x86_64
+            artifact: soeasy-windows-x64
+          - arch: win32
+            msystem: MINGW32
+            toolchain: mingw-w64-i686-toolchain
+            pkg_prefix: mingw-w64-i686
+            artifact: soeasy-windows-x86
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          install: >-
+            git
+            base-devel
+            ${{ matrix.toolchain }}
+            ${{ matrix.pkg_prefix }}-cmake
+            ${{ matrix.pkg_prefix }}-ninja
+            ${{ matrix.pkg_prefix }}-qt5-base
+            ${{ matrix.pkg_prefix }}-opencv
+            ${{ matrix.pkg_prefix }}-libxml2
+            ${{ matrix.pkg_prefix }}-zlib
+            ${{ matrix.pkg_prefix }}-uchardet
+            ${{ matrix.pkg_prefix }}-capnproto
+            zip
+          update: true
+
+      - name: Build SoEasy
+        run: |
+          cmake -B build -S . -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF
+          cmake --build build --target soeasy-gui soeasy-worker -j4
+
+      - name: Package Windows Artifacts
+        shell: bash
+        run: |
+          STAGE_DIR="dist/${{ matrix.artifact }}"
+          mkdir -p "${STAGE_DIR}/bin" "${STAGE_DIR}/dict" "${STAGE_DIR}/models"
+          
+          # Copy binaries
+          cp -p build/soeasy-gui.exe "${STAGE_DIR}/bin/" 2>/dev/null || cp -p build/soeasy-gui "${STAGE_DIR}/bin/" || true
+          cp -p build/soeasy-worker.exe "${STAGE_DIR}/bin/" 2>/dev/null || cp -p build/soeasy-worker "${STAGE_DIR}/bin/" || true
+          
+          # Copy dictionaries and models
+          cp -rp third_party/cppjieba/dict/* "${STAGE_DIR}/dict/" 2>/dev/null || true
+          cp -rp models/ppocr_v6 "${STAGE_DIR}/models/" 2>/dev/null || true
+          cp -p README.md "${STAGE_DIR}/" 2>/dev/null || true
+          
+          # Bundle third-party runtime libraries if present
+          if [ -d "third_party/doctotext/lib" ]; then
+            mkdir -p "${STAGE_DIR}/bin"
+            cp -d third_party/doctotext/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          fi
+          
+          cd dist && zip -r -q "../${{ matrix.artifact }}.zip" "${{ matrix.artifact }}"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-linux-x86_64, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+          generate_release_notes: true
