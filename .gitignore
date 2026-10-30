@@ -38,6 +38,9 @@ qrc_*.cpp
 !third_party/sysroot/**
 !third_party/onnxruntime/**
 !models/**
+!third_party/doctotext/doctotext.cmake
+third_party/doctotext/lib/
+third_party/doctotext/.installed_*
 
 # Database and test artifacts
 *.db

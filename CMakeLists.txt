@@ -27,12 +27,16 @@ set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(CMAKE_BUILD_RPATH
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/lib"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib"
     "\$ORIGIN/../lib"
     "\$ORIGIN/lib"
 )
 set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib;\$ORIGIN/lib")
+
+# DocToText prebuilt binary dependency
+include(third_party/doctotext/doctotext.cmake)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -43,8 +47,10 @@ include_directories(
 include_directories(SYSTEM
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/include
 )
 link_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/lib
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib
 )

@@ -51,12 +51,15 @@ SYSROOT_LIB="${PROJECT_ROOT}/third_party/sysroot/usr/lib/x86_64-linux-gnu"
 cp -d "${SYSROOT_LIB}"/libcapnp* "${STAGE_DIR}/lib/" 2>/dev/null || true
 cp -d "${SYSROOT_LIB}"/libkj* "${STAGE_DIR}/lib/" 2>/dev/null || true
 cp -d "${SYSROOT_LIB}"/libuchardet* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libdoctotext* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libwv2* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libhtmlcxx* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libmimetic* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libcharsetdetect* "${STAGE_DIR}/lib/" 2>/dev/null || true
 cp -d "${SYSROOT_LIB}"/libminizip* "${STAGE_DIR}/lib/" 2>/dev/null || true
+
+# 收集 DocToText 及其依赖运行库
+DT_LIB="${PROJECT_ROOT}/third_party/doctotext/lib"
+cp -d "${DT_LIB}"/libdoctotext* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libwv2* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libhtmlcxx* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libmimetic* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libcharsetdetect* "${STAGE_DIR}/lib/" 2>/dev/null || true
 
 # 收集 ONNX Runtime 运行库
 ORT_LIB="${PROJECT_ROOT}/third_party/onnxruntime/lib"

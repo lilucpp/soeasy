@@ -20,12 +20,22 @@
 #include <string>
 #include <vector>
 
+#include <opencv2/imgcodecs.hpp>
+
+#include "doctotext_c_api.h"
 #include "miniz.h"
-#include "plain_text_extractor.h"
 #include "utf8.h"
+#include "worker/ocr/image_filter.h"
+#include "worker/ocr/ocr_engine_factory.h"
 
 namespace soeasy {
 namespace worker {
+
+#ifdef _WIN32
+static const char* kDevNull = "NUL";
+#else
+static const char* kDevNull = "/dev/null";
+#endif
 
 namespace {
 
@@ -62,6 +72,55 @@ uint64_t GetFileSize(const std::string& path) {
     return static_cast<uint64_t>(st.st_size);
   }
   return 0;
+}
+
+std::string DocToTextImageParserCallback(
+    const std::string& image_name,
+    const char* image_buffer,
+    size_t image_size,
+    void* user_data) {
+  if (!image_buffer || image_size == 0) return "";
+  try {
+    std::vector<uint8_t> buf(
+        reinterpret_cast<const uint8_t*>(image_buffer),
+        reinterpret_cast<const uint8_t*>(image_buffer) + image_size);
+    cv::Mat img = cv::imdecode(buf, cv::IMREAD_COLOR);
+    if (img.empty()) return "";
+
+    ocr::ImageFilter filter;
+    if (filter.CheckDecodedImage(img) != ocr::FilterDecision::kPass) {
+      return "";
+    }
+
+    static std::mutex s_ocr_mutex;
+    static std::unique_ptr<ocr::IOcrEngine> s_ocr_engine;
+    std::lock_guard<std::mutex> lock(s_ocr_mutex);
+    if (!s_ocr_engine) {
+      s_ocr_engine = ocr::OcrEngineFactory::CreateDefaultEngine();
+    }
+    if (!s_ocr_engine) return "";
+
+    auto ocr_res = s_ocr_engine->Recognize(img);
+    if (ocr_res.success && !ocr_res.full_text.empty()) {
+      return ocr_res.full_text;
+    }
+  } catch (...) {
+  }
+  return "";
+}
+
+const char* DocToTextImageParserCallbackC(
+    const char* image_name,
+    const char* image_buffer,
+    size_t image_size,
+    void* user_data) {
+  static thread_local std::string tls_ocr_result;
+  tls_ocr_result = DocToTextImageParserCallback(
+      image_name ? image_name : "",
+      image_buffer,
+      image_size,
+      user_data);
+  return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
 }
 
 }  // namespace
@@ -128,51 +187,82 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
 
   // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
   try {
-    doctotext::PlainTextExtractor extractor;
     bool enable_logging = false;
-    std::ostream* target_stream = &g_null_stream;
+    std::string log_file_path;
     {
       std::lock_guard<std::mutex> lock(g_dt_mutex);
       if (g_dt_logging_enabled && g_dt_file_stream && g_dt_file_stream->is_open()) {
         enable_logging = true;
-        target_stream = g_dt_file_stream.get();
-        *target_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower << ")\n"
-                       << std::flush;
-      }
-    }
-    extractor.setVerboseLogging(enable_logging);
-    extractor.setLogStream(*target_stream);
-    doctotext::PlainTextExtractor::ParserType ptype =
-        extractor.parserTypeByFileExtension(lower);
-    if (ptype == doctotext::PlainTextExtractor::PARSER_AUTO) {
-      if (lower == "docx" || lower == "odt" || lower == "ods" || lower == "odp") {
-        ptype = doctotext::PlainTextExtractor::PARSER_ODF_OOXML;
-      } else if (lower == "doc") {
-        ptype = doctotext::PlainTextExtractor::PARSER_DOC;
-      } else if (lower == "xls") {
-        ptype = doctotext::PlainTextExtractor::PARSER_XLS;
-      } else if (lower == "ppt") {
-        ptype = doctotext::PlainTextExtractor::PARSER_PPT;
-      } else if (lower == "rtf") {
-        ptype = doctotext::PlainTextExtractor::PARSER_RTF;
-      } else if (lower == "pdf") {
-        ptype = doctotext::PlainTextExtractor::PARSER_PDF;
-      } else if (lower == "xlsb") {
-        ptype = doctotext::PlainTextExtractor::PARSER_XLSB;
-      } else if (lower == "eml") {
-        ptype = doctotext::PlainTextExtractor::PARSER_EML;
-      } else if (lower == "pages" || lower == "numbers" || lower == "key") {
-        ptype = doctotext::PlainTextExtractor::PARSER_IWORK;
+        log_file_path = g_dt_log_path;
+        *g_dt_file_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower << ")\n"
+                          << std::flush;
       }
     }
 
-    if (ptype != doctotext::PlainTextExtractor::PARSER_AUTO) {
-      std::string doctotext_out;
-      if (extractor.processFile(ptype, false, file_path, doctotext_out) &&
-          !doctotext_out.empty()) {
-        *out_utf8_text = std::move(doctotext_out);
+    int ptype = DOCTOTEXT_PARSER_AUTO;
+    if (lower == "docx" || lower == "odt" || lower == "ods" || lower == "odp") {
+      ptype = DOCTOTEXT_PARSER_ODF_OOXML;
+    } else if (lower == "doc") {
+      ptype = DOCTOTEXT_PARSER_DOC;
+    } else if (lower == "xls") {
+      ptype = DOCTOTEXT_PARSER_XLS;
+    } else if (lower == "ppt") {
+      ptype = DOCTOTEXT_PARSER_PPT;
+    } else if (lower == "rtf") {
+      ptype = DOCTOTEXT_PARSER_RTF;
+    } else if (lower == "pdf") {
+      ptype = DOCTOTEXT_PARSER_PDF;
+    } else if (lower == "xlsb") {
+      ptype = DOCTOTEXT_PARSER_XLSB;
+    } else if (lower == "eml") {
+      ptype = DOCTOTEXT_PARSER_AUTO;
+    } else if (lower == "pages" || lower == "numbers" || lower == "key") {
+      ptype = DOCTOTEXT_PARSER_IWORK;
+    }
+
+    DocToTextExtractorParams* params = doctotext_create_extractor_params();
+    if (params) {
+      doctotext_extractor_params_set_verbose_logging(params, enable_logging ? 1 : 0);
+      std::string tmp_log_path;
+      if (enable_logging && !log_file_path.empty()) {
+        tmp_log_path = log_file_path + ".dt.tmp";
+        doctotext_extractor_params_set_log_file(params, tmp_log_path.c_str());
+      } else {
+        doctotext_extractor_params_set_log_file(params, kDevNull);
+      }
+      doctotext_extractor_params_set_parser_type(params, ptype);
+      doctotext_extractor_params_set_image_parser_callback(params, &DocToTextImageParserCallbackC, nullptr);
+
+      DocToTextException* exc = nullptr;
+      DocToTextExtractedData* data = doctotext_process_file(file_path.c_str(), params, &exc);
+      if (data) {
+        const char* txt = doctotext_extracted_data_get_text(data);
+        if (txt && *txt) {
+          *out_utf8_text = txt;
+        }
+        doctotext_free_extracted_data(data);
+      }
+      if (exc) {
+        doctotext_free_exception(exc);
+      }
+      doctotext_free_extractor_params(params);
+
+      if (!tmp_log_path.empty() && std::filesystem::exists(tmp_log_path)) {
+        std::ifstream tmp_ifs(tmp_log_path);
+        if (tmp_ifs.is_open()) {
+          std::string dt_logs((std::istreambuf_iterator<char>(tmp_ifs)),
+                              std::istreambuf_iterator<char>());
+          tmp_ifs.close();
+          std::lock_guard<std::mutex> lock(g_dt_mutex);
+          if (g_dt_file_stream && g_dt_file_stream->is_open()) {
+            *g_dt_file_stream << dt_logs;
+          }
+        }
+        std::error_code ec;
+        std::filesystem::remove(tmp_log_path, ec);
       }
     }
+
     if (enable_logging) {
       std::lock_guard<std::mutex> lock(g_dt_mutex);
       if (g_dt_file_stream && g_dt_file_stream->is_open()) {
