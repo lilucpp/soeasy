@@ -1,11 +1,9 @@
 #ifndef SOEASY_SRC_SERVICE_WORKER_GUARD_H_
 #define SOEASY_SRC_SERVICE_WORKER_GUARD_H_
 
-#ifndef _WIN32
 #include <sys/types.h>
-#else
+#ifdef _WIN32
 #include <windows.h>
-using pid_t = DWORD;
 #endif
 
 #include <atomic>
