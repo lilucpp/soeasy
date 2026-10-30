@@ -85,7 +85,6 @@ jobs:
           cmake --build /tmp/capnproto/build --target install
 
       - name: Build SoEasy (Windows x64)
-        continue-on-error: true
         run: |
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
@@ -93,25 +92,34 @@ jobs:
           cmake --build build --target soeasy-gui soeasy-worker -j4
 
       - name: Package Windows Artifacts
-        continue-on-error: true
-        shell: bash
         run: |
           STAGE_DIR="dist/soeasy-windows-x64"
           mkdir -p "${STAGE_DIR}/bin" "${STAGE_DIR}/dict" "${STAGE_DIR}/models"
           
-          # Copy binaries if built
-          cp -p build/soeasy-gui.exe "${STAGE_DIR}/bin/" 2>/dev/null || cp -p build/soeasy-gui "${STAGE_DIR}/bin/" || true
-          cp -p build/soeasy-worker.exe "${STAGE_DIR}/bin/" 2>/dev/null || cp -p build/soeasy-worker "${STAGE_DIR}/bin/" || true
+          # Copy binaries
+          cp -p build/soeasy-gui.exe "${STAGE_DIR}/bin/"
+          cp -p build/soeasy-worker.exe "${STAGE_DIR}/bin/"
+          
+          # Deploy Qt dependencies using windeployqt
+          windeployqt --release --no-translations "${STAGE_DIR}/bin/soeasy-gui.exe" || true
           
           # Copy dictionaries and models
           cp -rp third_party/cppjieba/dict/* "${STAGE_DIR}/dict/" 2>/dev/null || true
           cp -rp models/ppocr_v6 "${STAGE_DIR}/models/" 2>/dev/null || true
           cp -p README.md "${STAGE_DIR}/" 2>/dev/null || true
           
-          # Bundle third-party runtime libraries if present
-          if [ -d "third_party/doctotext/lib" ]; then
-            cp -d third_party/doctotext/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          fi
+          # Bundle third-party runtime libraries
+          cp -p third_party/doctotext/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p third_party/onnxruntime/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          
+          # MinGW system libraries that might be dynamically linked
+          cp -p ${MINGW_PREFIX}/bin/libopencv*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libuchardet*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libxml2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/zlib1.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libgcc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           
           cd dist && zip -r -q "../soeasy-windows-x64.zip" "soeasy-windows-x64"
 
@@ -120,7 +128,6 @@ jobs:
         with:
           name: soeasy-windows-x64
           path: soeasy-windows-x64.zip
-          if-no-files-found: warn
 
   release:
     name: Publish GitHub Release

@@ -40,6 +40,32 @@ endif()
 # DocToText prebuilt binary dependency
 include(third_party/doctotext/doctotext.cmake)
 
+# ONNX Runtime Windows dependency download if missing
+if(WIN32 AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.lib")
+    message(STATUS "[ONNXRuntime] Downloading official Microsoft ONNX Runtime Windows x64 v1.20.0...")
+    set(ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-win-x64-1.20.0.zip")
+    set(ORT_ZIP "${CMAKE_BINARY_DIR}/onnxruntime-win-x64-1.20.0.zip")
+    file(DOWNLOAD "${ORT_URL}" "${ORT_ZIP}" SHOW_PROGRESS STATUS ORT_DL_STATUS TIMEOUT 120)
+    list(GET ORT_DL_STATUS 0 ORT_DL_RET)
+    if(ORT_DL_RET EQUAL 0)
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ort_unpack")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E tar xvf "${ORT_ZIP}"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/ort_unpack"
+        )
+        file(GLOB_RECURSE ORT_FOUND_LIBS
+            "${CMAKE_BINARY_DIR}/ort_unpack/*.lib"
+            "${CMAKE_BINARY_DIR}/ort_unpack/*.dll"
+        )
+        foreach(f ${ORT_FOUND_LIBS})
+            file(COPY "${f}" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib/")
+        endforeach()
+        message(STATUS "[ONNXRuntime] Windows x64 binaries installed successfully.")
+    else()
+        message(WARNING "[ONNXRuntime] Failed to download Windows ONNX Runtime binaries.")
+    endif()
+endif()
+
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -224,6 +250,8 @@ if(WIN32)
         capnp
         kj
         pthread
+        psapi
+        ws2_32
     )
 else()
     target_link_libraries(soeasy_service PUBLIC

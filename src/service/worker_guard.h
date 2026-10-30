@@ -1,7 +1,12 @@
 #ifndef SOEASY_SRC_SERVICE_WORKER_GUARD_H_
 #define SOEASY_SRC_SERVICE_WORKER_GUARD_H_
 
+#ifndef _WIN32
 #include <sys/types.h>
+#else
+#include <windows.h>
+using pid_t = DWORD;
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -53,8 +58,13 @@ enum class WorkerState {
 };
 
 struct WorkerInstance {
-  pid_t pid = -1;
+  pid_t pid = 0;
+#ifdef _WIN32
+  HANDLE process_handle = nullptr;
+  HANDLE pipe_handle = nullptr;
+#else
   int socket_fd = -1;
+#endif
   WorkerState state = WorkerState::kIdle;
   int64_t current_doc_id = 0;
   uint32_t current_slot_id = 0;
@@ -142,6 +152,9 @@ class WorkerGuard {
 
   std::atomic<bool> is_running_{false};
   std::thread watchdog_thread_;
+#ifdef _WIN32
+  HANDLE job_handle_ = nullptr;
+#endif
 };
 
 }  // namespace service

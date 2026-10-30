@@ -1,9 +1,13 @@
 #include "common/shm_pool.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -72,6 +76,35 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
   total_shm_size_ = slot_count_ * GetSlotStride();
   is_creator_ = true;
 
+#ifdef _WIN32
+  std::string win_name = shm_name_;
+  for (char& c : win_name) {
+    if (c == '/') c = '_';
+  }
+  if (win_name.rfind("Local\\", 0) != 0 && win_name.rfind("Global\\", 0) != 0) {
+    win_name = "Local\\" + win_name;
+  }
+
+  DWORD size_high = static_cast<DWORD>((total_shm_size_ >> 32) & 0xFFFFFFFF);
+  DWORD size_low = static_cast<DWORD>(total_shm_size_ & 0xFFFFFFFF);
+
+  HANDLE hMap = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+                                   size_high, size_low, win_name.c_str());
+  if (!hMap) {
+    return false;
+  }
+  win_map_handle_ = hMap;
+
+  void* addr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, total_shm_size_);
+  if (!addr) {
+    CloseHandle(hMap);
+    win_map_handle_ = nullptr;
+    return false;
+  }
+
+  base_addr_ = static_cast<uint8_t*>(addr);
+  std::memset(base_addr_, 0, total_shm_size_);
+#else
   // Remove stale shm segment if leftover from a crash
   shm_unlink(shm_name_.c_str());
 
@@ -98,6 +131,7 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
 
   base_addr_ = static_cast<uint8_t*>(addr);
   std::memset(base_addr_, 0, total_shm_size_);
+#endif
 
   for (uint32_t i = 0; i < slot_count_; ++i) {
     SlotHeader* header = GetSlotHeader(i);
@@ -120,6 +154,30 @@ bool ShmSlotPool::Attach(const std::string& shm_name, size_t slot_count,
   total_shm_size_ = slot_count_ * GetSlotStride();
   is_creator_ = false;
 
+#ifdef _WIN32
+  std::string win_name = shm_name_;
+  for (char& c : win_name) {
+    if (c == '/') c = '_';
+  }
+  if (win_name.rfind("Local\\", 0) != 0 && win_name.rfind("Global\\", 0) != 0) {
+    win_name = "Local\\" + win_name;
+  }
+
+  HANDLE hMap = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, win_name.c_str());
+  if (!hMap) {
+    return false;
+  }
+  win_map_handle_ = hMap;
+
+  void* addr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, total_shm_size_);
+  if (!addr) {
+    CloseHandle(hMap);
+    win_map_handle_ = nullptr;
+    return false;
+  }
+
+  base_addr_ = static_cast<uint8_t*>(addr);
+#else
   shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0660);
   if (shm_fd_ < 0) {
     return false;
@@ -134,10 +192,21 @@ bool ShmSlotPool::Attach(const std::string& shm_name, size_t slot_count,
   }
 
   base_addr_ = static_cast<uint8_t*>(addr);
+#endif
   return true;
 }
 
 void ShmSlotPool::Close() {
+#ifdef _WIN32
+  if (base_addr_) {
+    UnmapViewOfFile(base_addr_);
+    base_addr_ = nullptr;
+  }
+  if (win_map_handle_) {
+    CloseHandle(reinterpret_cast<HANDLE>(win_map_handle_));
+    win_map_handle_ = nullptr;
+  }
+#else
   if (base_addr_) {
     munmap(base_addr_, total_shm_size_);
     base_addr_ = nullptr;
@@ -148,8 +217,9 @@ void ShmSlotPool::Close() {
   }
   if (is_creator_ && !shm_name_.empty()) {
     shm_unlink(shm_name_.c_str());
-    is_creator_ = false;
   }
+#endif
+  is_creator_ = false;
   shm_name_.clear();
   slot_count_ = 0;
   slot_capacity_ = 0;

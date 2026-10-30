@@ -138,6 +138,9 @@ class ShmSlotPool {
   size_t slot_capacity_ = 0;
   size_t total_shm_size_ = 0;
   int shm_fd_ = -1;
+#ifdef _WIN32
+  void* win_map_handle_ = nullptr;
+#endif
   uint8_t* base_addr_ = nullptr;
   bool is_creator_ = false;
 };

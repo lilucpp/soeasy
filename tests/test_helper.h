@@ -11,6 +11,7 @@
 namespace soeasy {
 namespace test {
 
+#ifndef _WIN32
 inline std::filesystem::path GetExecutableDir() {
   std::error_code ec;
   auto p = std::filesystem::read_symlink("/proc/self/exe", ec);
@@ -19,6 +20,14 @@ inline std::filesystem::path GetExecutableDir() {
   }
   return std::filesystem::current_path();
 }
+#else
+#include <windows.h>
+inline std::filesystem::path GetExecutableDir() {
+  char path[MAX_PATH];
+  GetModuleFileNameA(NULL, path, MAX_PATH);
+  return std::filesystem::path(path).parent_path();
+}
+#endif
 
 inline std::filesystem::path GetProjectRootDir() {
   auto exe_dir = GetExecutableDir();

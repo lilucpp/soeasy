@@ -4,7 +4,14 @@
 #include "worker/l2_office_parser.h"
 
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#else
+#include <io.h>
+#include <direct.h>
+#define popen _popen
+#define pclose _pclose
+#endif
 
 #include <algorithm>
 #include <array>

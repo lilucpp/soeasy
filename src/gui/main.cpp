@@ -199,11 +199,16 @@ int main(int argc, char* argv[]) {
   // Locate worker binary
   QString worker_bin = parser.value(worker_option);
   if (worker_bin.isEmpty()) {
+#ifdef _WIN32
+    QString exe_suffix = ".exe";
+#else
+    QString exe_suffix = "";
+#endif
     QString candidate1 =
-        QCoreApplication::applicationDirPath() + "/soeasy-worker";
+        QCoreApplication::applicationDirPath() + "/soeasy-worker" + exe_suffix;
     QString candidate2 =
-        QCoreApplication::applicationDirPath() + "/../bin/soeasy-worker";
-    QString candidate3 = "./soeasy-worker";
+        QCoreApplication::applicationDirPath() + "/../bin/soeasy-worker" + exe_suffix;
+    QString candidate3 = "./soeasy-worker" + exe_suffix;
 
     if (QFileInfo::exists(candidate1)) {
       worker_bin = candidate1;

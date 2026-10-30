@@ -1,6 +1,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -50,7 +51,7 @@ int main(int argc, char* argv[]) {
   // Test 1: Normal large document zero-copy extraction via SHM
   // -------------------------------------------------------------
   std::cout << "[Step 2] 验证大文档跨进程零拷贝解析与数据保真度...\n";
-  std::string large_doc_path = "/tmp/soeasy_test_large.txt";
+  std::string large_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_large.txt").string();
   std::string expected_content;
   expected_content.reserve(2 * 1024 * 1024);
   for (int i = 0; i < 5000; ++i) {
@@ -100,7 +101,7 @@ int main(int argc, char* argv[]) {
   // Test 2: Multi-encoding and HTML tag stripping
   // -------------------------------------------------------------
   std::cout << "[Step 3] 验证字符集自动探测、转码与 HTML 标签剥离...\n";
-  std::string html_doc_path = "/tmp/soeasy_test_page.html";
+  std::string html_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_page.html").string();
   std::string html_content =
       "<!DOCTYPE html><html><head><title>测试标题</title></head>"
       "<body><h1>SoEasy 全文检索</h1><p>这是一段包含<b>加粗</b>和<i>斜体</i>的 HTML 正文内容。</p>"
@@ -136,8 +137,9 @@ int main(int argc, char* argv[]) {
   // -------------------------------------------------------------
   std::cout << "[Step 4] 验证死循环文档超时熔断强杀与自愈 (Watchdog SIGKILL)...\n";
   std::cout << "    (向 Worker 下发死循环恶意任务，设定熔断阈值: 1500 ms)...\n";
+  std::string hang_doc_path = (std::filesystem::temp_directory_path() / "TEST_TRIGGER_HANG_malicious.txt").string();
   soeasy::service::ParseTask task_hang{
-      103, "/tmp/TEST_TRIGGER_HANG_malicious.txt", "txt", 1};
+      103, hang_doc_path, "txt", 1};
   soeasy::service::ParseTaskResult res_hang;
 
   auto t_hang_start = std::chrono::high_resolution_clock::now();
@@ -161,8 +163,9 @@ int main(int argc, char* argv[]) {
   // -------------------------------------------------------------
   std::cout << "[Step 5] 验证段错误异常崩溃自愈与 Worker 自动拉起...\n";
   std::cout << "    (向 Worker 下发触发 SIGSEGV 的畸形任务)...\n";
+  std::string crash_doc_path = (std::filesystem::temp_directory_path() / "TEST_TRIGGER_CRASH_exploit.bin").string();
   soeasy::service::ParseTask task_crash{
-      104, "/tmp/TEST_TRIGGER_CRASH_exploit.bin", "bin", 1};
+      104, crash_doc_path, "bin", 1};
   soeasy::service::ParseTaskResult res_crash;
 
   guard.ExecuteTask(task_crash, &res_crash);
