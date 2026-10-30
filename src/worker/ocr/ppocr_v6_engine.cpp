@@ -6,10 +6,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <thread>
 
+#include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -47,8 +49,15 @@ bool PPOCRv6Engine::Initialize(const OcrConfig& config) {
     Ort::SessionOptions session_opts;
     ApplySessionThreads(session_opts, config_.mode);
 
+#ifdef _WIN32
+    std::wstring det_path = std::filesystem::u8path(config_.det_model_path).wstring();
+    std::wstring rec_path = std::filesystem::u8path(config_.rec_model_path).wstring();
+    det_session_ = std::make_unique<Ort::Session>(*env_, det_path.c_str(), session_opts);
+    rec_session_ = std::make_unique<Ort::Session>(*env_, rec_path.c_str(), session_opts);
+#else
     det_session_ = std::make_unique<Ort::Session>(*env_, config_.det_model_path.c_str(), session_opts);
     rec_session_ = std::make_unique<Ort::Session>(*env_, config_.rec_model_path.c_str(), session_opts);
+#endif
 
     // Load dictionary
     dict_.clear();

@@ -19,6 +19,10 @@ else()
     add_compile_options(-O3 -Wall)
 endif()
 
+if(WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 option(BUILD_TESTS "Build test suite" ON)
 
 # Configure portable transitive RPATH (using DT_RPATH instead of DT_RUNPATH for transitive dependency lookup)
@@ -72,14 +76,20 @@ include_directories(
 )
 
 # Sysroot include and link paths
+if(NOT WIN32)
+    include_directories(SYSTEM
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/include
+    )
+    link_directories(
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu
+    )
+endif()
 include_directories(SYSTEM
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/include
 )
 link_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext/lib
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sysroot/usr/lib/x86_64-linux-gnu
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib
 )
 
@@ -148,8 +158,12 @@ add_library(soeasy_schema STATIC
 )
 target_include_directories(soeasy_schema PUBLIC
     schema
-    third_party/sysroot/usr/include
 )
+if(NOT WIN32)
+    target_include_directories(soeasy_schema PUBLIC
+        third_party/sysroot/usr/include
+    )
+endif()
 target_link_libraries(soeasy_schema PUBLIC
     capnp kj
 )
@@ -193,10 +207,14 @@ target_include_directories(soeasy_worker_lib PUBLIC
     third_party/miniz
     third_party/doctotext/include
     third_party/utfcpp/source
-    third_party/sysroot/usr/include
     third_party/onnxruntime/include
     ${OpenCV_INCLUDE_DIRS}
 )
+if(NOT WIN32)
+    target_include_directories(soeasy_worker_lib PUBLIC
+        third_party/sysroot/usr/include
+    )
+endif()
 find_library(XML2_LIB NAMES xml2 libxml2.so.2 libxml2 REQUIRED)
 find_library(Z_LIB NAMES z libz.so.1 libz REQUIRED)
 
@@ -238,8 +256,12 @@ target_include_directories(soeasy_service PUBLIC
     schema
     third_party
     third_party/efsw/include
-    third_party/sysroot/usr/include
 )
+if(NOT WIN32)
+    target_include_directories(soeasy_service PUBLIC
+        third_party/sysroot/usr/include
+    )
+endif()
 if(WIN32)
     target_link_libraries(soeasy_service PUBLIC
         soeasy_common

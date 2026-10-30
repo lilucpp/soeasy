@@ -9,8 +9,10 @@
 #include <string>
 #include <vector>
 
-#include <onnxruntime_cxx_api.h>
 #include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <onnxruntime_cxx_api.h>
 
 #include "worker/ocr/i_ocr_engine.h"
 
