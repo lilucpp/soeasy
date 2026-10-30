@@ -14,6 +14,10 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
+#if __has_include(<opencv2/geometry.hpp>)
+#include <opencv2/geometry.hpp>
+#endif
 
 #include "common/logger.h"
 
