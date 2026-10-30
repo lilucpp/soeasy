@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) {
   bool enable_sync = false;
   bool doctotext_logging = false;
   std::string doctotext_log_path = "";
+  bool embedded_image_ocr = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -46,6 +47,10 @@ int main(int argc, char* argv[]) {
       doctotext_logging = false;
     } else if (arg.rfind("--doctotext-log-path=", 0) == 0) {
       doctotext_log_path = arg.substr(21);
+    } else if (arg == "--embedded-image-ocr") {
+      embedded_image_ocr = true;
+    } else if (arg == "--no-embedded-image-ocr") {
+      embedded_image_ocr = false;
     }
   }
 
@@ -53,8 +58,9 @@ int main(int argc, char* argv[]) {
   soeasy::common::Logger::Init(log_file, 10 * 1024 * 1024, 3, enable_console, level);
   soeasy::common::Logger::SetSyncMode(enable_sync);
 
-  // Configure DocToText logging in this worker process
+  // Configure DocToText logging and embedded image OCR in this worker process
   soeasy::worker::L2OfficeParser::SetLogging(doctotext_logging, doctotext_log_path);
+  soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr);
 
   if (socket_fd < 0 || shm_name.empty()) {
     std::cerr << "Usage: soeasy-worker --socket-fd=<fd> --shm-name=<name> "

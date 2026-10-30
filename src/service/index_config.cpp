@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "common/format_categories.h"
 #include "common/logger.h"
 #include "nlohmann/json.hpp"
 
@@ -34,14 +35,7 @@ IndexConfig::IndexConfig() {
 }
 
 std::unordered_set<std::string> IndexConfig::GetDefaultSupportedExtensions() {
-  return {
-      "txt", "md", "markdown", "log", "rtf", "ini", "conf", "cfg", "toml",
-      "yaml", "yml", "json", "xml", "html", "htm", "css", "sql", "sh", "bat",
-      "cpp", "c", "cc", "cxx", "h", "hpp", "hxx", "py", "java", "go", "rs",
-      "js", "ts", "jsx", "tsx", "php", "rb", "swift", "kt", "scala",
-      "docx", "pdf", "pptx", "xlsx", "doc", "ppt", "xls",
-      "png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"
-  };
+  return common::GetDefaultSupportedExtensions();
 }
 
 void IndexConfig::ResetSupportedExtensionsToDefault() {
@@ -132,6 +126,38 @@ std::vector<std::string> IndexConfig::GetExcludedPatterns() const {
 std::unordered_set<std::string> IndexConfig::GetSupportedExtensions() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return supported_exts_;
+}
+
+void IndexConfig::SetCustomExtensions(const std::vector<std::string>& exts) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  custom_exts_ = exts;
+}
+
+std::vector<std::string> IndexConfig::GetCustomExtensions() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return custom_exts_;
+}
+
+void IndexConfig::AddCustomExtension(const std::string& ext) {
+  if (ext.empty()) return;
+  std::string lower = ext;
+  if (lower.front() == '.') lower = lower.substr(1);
+  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (std::find(custom_exts_.begin(), custom_exts_.end(), lower) == custom_exts_.end()) {
+    custom_exts_.push_back(lower);
+  }
+}
+
+void IndexConfig::RemoveCustomExtension(const std::string& ext) {
+  if (ext.empty()) return;
+  std::string lower = ext;
+  if (lower.front() == '.') lower = lower.substr(1);
+  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+  std::lock_guard<std::mutex> lock(mutex_);
+  custom_exts_.erase(
+      std::remove(custom_exts_.begin(), custom_exts_.end(), lower),
+      custom_exts_.end());
 }
 
 bool IndexConfig::IsExtensionSupported(const std::string& ext) const {
@@ -307,6 +333,19 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
       doctotext_log_path_ = j["doctotext_log_path"].get<std::string>();
     }
 
+    if (j.contains("enable_embedded_image_ocr") && j["enable_embedded_image_ocr"].is_boolean()) {
+      enable_embedded_image_ocr_ = j["enable_embedded_image_ocr"].get<bool>();
+    }
+
+    if (j.contains("custom_extensions") && j["custom_extensions"].is_array()) {
+      custom_exts_.clear();
+      for (const auto& item : j["custom_extensions"]) {
+        if (item.is_string()) {
+          custom_exts_.push_back(item.get<std::string>());
+        }
+      }
+    }
+
     LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)",
              file_path, indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
     return true;
@@ -336,6 +375,8 @@ bool IndexConfig::SaveToFile(const std::string& file_path) const {
       j["log_sync"] = log_sync_;
       j["doctotext_logging"] = doctotext_logging_;
       j["doctotext_log_path"] = doctotext_log_path_;
+      j["enable_embedded_image_ocr"] = enable_embedded_image_ocr_;
+      j["custom_extensions"] = custom_exts_;
     }
 
     std::string temp_path = file_path + ".tmp";

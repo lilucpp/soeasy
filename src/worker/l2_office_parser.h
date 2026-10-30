@@ -48,6 +48,15 @@ class L2OfficeParser {
    */
   static void SetLogging(bool enable, const std::string& log_file_path = "");
 
+  /**
+   * @brief Configure whether embedded images in Office / PDF documents are extracted and OCR'd.
+   * Default is false (disabled for performance).
+   *
+   * @param enable Whether embedded image OCR is enabled
+   */
+  static void SetEmbeddedImageOcr(bool enable);
+  static bool embedded_image_ocr();
+
   // Document format extractors
   static bool ParseDocx(const std::string& file_path, std::string* out_utf8);
   static bool ParseXlsx(const std::string& file_path, std::string* out_utf8);

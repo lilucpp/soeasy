@@ -518,7 +518,8 @@ void MainWindow::OnSettingsApplied() {
           pipeline_->config()->log_console(),
           pipeline_->config()->log_sync(),
           pipeline_->config()->doctotext_logging(),
-          pipeline_->config()->doctotext_log_path());
+          pipeline_->config()->doctotext_log_path(),
+          pipeline_->config()->enable_embedded_image_ocr());
     }
   }
 

@@ -117,7 +117,8 @@ class WorkerGuard {
   void set_timeout_ms(uint32_t ms) { timeout_ms_ = ms; }
 
   void SetLoggingOptions(const std::string& level, bool enable_console, bool enable_sync,
-                         bool doctotext_logging = false, const std::string& doctotext_log_path = "");
+                         bool doctotext_logging = false, const std::string& doctotext_log_path = "",
+                         bool embedded_image_ocr = false);
 
  private:
   bool SpawnWorker(size_t index);
@@ -132,6 +133,7 @@ class WorkerGuard {
   bool log_sync_ = false;
   bool doctotext_logging_ = false;
   std::string doctotext_log_path_;
+  bool embedded_image_ocr_ = false;
   common::ShmSlotPool shm_pool_;
 
   std::vector<WorkerInstance> workers_;

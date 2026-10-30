@@ -97,6 +97,20 @@ class IndexConfig {
     return doctotext_log_path_;
   }
 
+  void set_enable_embedded_image_ocr(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    enable_embedded_image_ocr_ = enable;
+  }
+  bool enable_embedded_image_ocr() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return enable_embedded_image_ocr_;
+  }
+
+  void SetCustomExtensions(const std::vector<std::string>& exts);
+  std::vector<std::string> GetCustomExtensions() const;
+  void AddCustomExtension(const std::string& ext);
+  void RemoveCustomExtension(const std::string& ext);
+
   std::vector<std::string> GetIndexedDirectories() const;
   std::vector<std::string> GetExcludedPatterns() const;
   std::unordered_set<std::string> GetSupportedExtensions() const;
@@ -193,6 +207,8 @@ class IndexConfig {
   bool log_sync_ = kDefaultLogSync;
   bool doctotext_logging_ = false;
   std::string doctotext_log_path_;
+  bool enable_embedded_image_ocr_ = false;
+  std::vector<std::string> custom_exts_;
 };
 
 }  // namespace service

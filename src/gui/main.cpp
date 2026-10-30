@@ -249,7 +249,8 @@ int main(int argc, char* argv[]) {
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
   worker_guard->SetLoggingOptions(
       soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync,
-      config->doctotext_logging(), config->doctotext_log_path());
+      config->doctotext_logging(), config->doctotext_log_path(),
+      config->enable_embedded_image_ocr());
   if (!worker_guard->Init(worker_bin.toStdString(), config->worker_count(),
                           soeasy::service::WorkerGuard::kDefaultTimeoutMs)) {
     std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "

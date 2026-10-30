@@ -4,10 +4,14 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 
 #include <memory>
 #include <string>
@@ -34,9 +38,12 @@ class SettingsDialog : public QDialog {
   void OnRemoveDirectory();
   void OnAddPattern();
   void OnRemovePattern();
-  void OnAddExtension();
-  void OnRemoveExtension();
+  void OnAddCustomExtension();
+  void OnRemoveCustomExtension();
+  void OnSelectAllExtensions();
+  void OnDeselectAllExtensions();
   void OnResetExtensionsToDefault();
+  void OnTreeItemChanged(QTreeWidgetItem* item, int column);
   void OnBrowseDocToTextLogPath();
   void OnSaveAndApply();
   void OnRebuildIndex();
@@ -44,6 +51,7 @@ class SettingsDialog : public QDialog {
  private:
   void SetupUi();
   void PopulateFromConfig();
+  void UpdateExtensionsCount();
 
   std::shared_ptr<service::IndexConfig> config_;
 
@@ -56,9 +64,15 @@ class SettingsDialog : public QDialog {
   QListWidget* patterns_list_ = nullptr;
   QLineEdit* new_pattern_edit_ = nullptr;
 
-  // Tab 3: Custom file extensions
-  QListWidget* exts_list_ = nullptr;
-  QLineEdit* new_ext_edit_ = nullptr;
+  // Tab 3: File categories & Custom extensions
+  QCheckBox* embedded_image_ocr_check_ = nullptr;
+  QTreeWidget* exts_tree_ = nullptr;
+  QTreeWidgetItem* custom_category_item_ = nullptr;
+  QLineEdit* new_custom_ext_edit_ = nullptr;
+  QPushButton* btn_add_custom_ext_ = nullptr;
+  QPushButton* btn_rm_custom_ext_ = nullptr;
+  QLabel* exts_count_label_ = nullptr;
+  bool is_updating_tree_ = false;
 
   // Tab 4: Performance & Scheduling
   QSpinBox* debounce_spin_ = nullptr;

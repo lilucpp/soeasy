@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-VERSION="1.0.0"
+VERSION="0.1.0"
 PLATFORM="linux-x86_64"
 DIST_NAME="soeasy-v${VERSION}-${PLATFORM}"
 BUILD_DIR="${PROJECT_ROOT}/build"

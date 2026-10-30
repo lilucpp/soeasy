@@ -1,18 +1,23 @@
 #include "gui/settings_dialog.h"
 
 #include <QFileDialog>
+#include <QFont>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
+#include "common/format_categories.h"
 #include "common/logger.h"
 
 namespace soeasy {
@@ -22,7 +27,7 @@ SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config,
                                QWidget* parent)
     : QDialog(parent), config_(std::move(config)) {
   setWindowTitle("SoEasy - 索引配置与设置中心");
-  resize(640, 480);
+  resize(750, 600);
   SetupUi();
   PopulateFromConfig();
 }
@@ -82,33 +87,107 @@ void SettingsDialog::SetupUi() {
   connect(btn_rm_pattern, &QPushButton::clicked, this, &SettingsDialog::OnRemovePattern);
 
   // -------------------------------------------------------------
-  // Tab 3: 支持与自定义文件格式 (File Extensions)
+  // Tab 3: 支持与自定义文件格式 (File Extensions & Categories)
   // -------------------------------------------------------------
   auto* tab_exts = new QWidget();
   auto* layout_exts = new QVBoxLayout(tab_exts);
 
-  auto* label_exts = new QLabel("允许被解析与索引的文件扩展名格式列表：", tab_exts);
-  exts_list_ = new QListWidget(tab_exts);
+  // Group 1: 嵌入图片解析选项
+  auto* group_ocr = new QGroupBox("高级解析能力", tab_exts);
+  auto* layout_ocr = new QVBoxLayout(group_ocr);
+  embedded_image_ocr_check_ = new QCheckBox(
+      "提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)", group_ocr);
+  QFont ocr_font = embedded_image_ocr_check_->font();
+  ocr_font.setBold(true);
+  embedded_image_ocr_check_->setFont(ocr_font);
+  auto* label_ocr_tip = new QLabel(
+      "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n"
+      "    不勾选可获得极致解析性能（纯文本毫秒级完成索引）。", group_ocr);
+  label_ocr_tip->setStyleSheet("color: #666; font-size: 12px; margin-left: 20px;");
+  layout_ocr->addWidget(embedded_image_ocr_check_);
+  layout_ocr->addWidget(label_ocr_tip);
+  layout_exts->addWidget(group_ocr);
 
-  auto* add_ext_layout = new QHBoxLayout();
-  new_ext_edit_ = new QLineEdit(tab_exts);
-  new_ext_edit_->setPlaceholderText("例如: log 或 v");
-  auto* btn_add_ext = new QPushButton("添加格式", tab_exts);
-  auto* btn_rm_ext = new QPushButton("移除所选", tab_exts);
-  auto* btn_reset_exts = new QPushButton("恢复默认推荐格式", tab_exts);
-  add_ext_layout->addWidget(new_ext_edit_);
-  add_ext_layout->addWidget(btn_add_ext);
-  add_ext_layout->addWidget(btn_rm_ext);
-  add_ext_layout->addWidget(btn_reset_exts);
+  // Group 2: 文件分类树
+  auto* label_tree_title = new QLabel("支持与索引的文件格式分类（勾选以启用全文索引）：", tab_exts);
+  layout_exts->addWidget(label_tree_title);
 
-  layout_exts->addWidget(label_exts);
-  layout_exts->addWidget(exts_list_);
-  layout_exts->addLayout(add_ext_layout);
-  tab_widget_->addTab(tab_exts, "文件格式");
+  exts_tree_ = new QTreeWidget(tab_exts);
+  exts_tree_->setColumnCount(2);
+  exts_tree_->setHeaderLabels({"分类 / 格式扩展名", "说明与处理引擎"});
+  exts_tree_->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+  exts_tree_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+  exts_tree_->setAlternatingRowColors(true);
+  layout_exts->addWidget(exts_tree_);
 
-  connect(btn_add_ext, &QPushButton::clicked, this, &SettingsDialog::OnAddExtension);
-  connect(btn_rm_ext, &QPushButton::clicked, this, &SettingsDialog::OnRemoveExtension);
+  // Populate preset categories into tree
+  for (const auto& cat : common::GetPresetCategories()) {
+    auto* cat_item = new QTreeWidgetItem(exts_tree_);
+    cat_item->setText(0, cat.name);
+    cat_item->setText(1, cat.desc);
+    cat_item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
+    QFont cat_font = cat_item->font(0);
+    cat_font.setBold(true);
+    cat_item->setFont(0, cat_font);
+
+    for (const auto& fmt : cat.formats) {
+      auto* fmt_item = new QTreeWidgetItem(cat_item);
+      fmt_item->setText(0, QString::fromLatin1(fmt.ext));
+      fmt_item->setText(1, QString::fromUtf8(fmt.desc));
+      fmt_item->setData(0, Qt::UserRole, QString::fromLatin1(fmt.ext));
+      fmt_item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
+      fmt_item->setCheckState(0, fmt.default_enabled ? Qt::Checked : Qt::Unchecked);
+    }
+  }
+
+  // Custom category item
+  custom_category_item_ = new QTreeWidgetItem(exts_tree_);
+  custom_category_item_->setText(0, "用户自定义格式 (Custom)");
+  custom_category_item_->setText(1, "用户手动添加的专有文件后缀与提取规则");
+  custom_category_item_->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
+  QFont custom_font = custom_category_item_->font(0);
+  custom_font.setBold(true);
+  custom_category_item_->setFont(0, custom_font);
+
+  exts_tree_->expandAll();
+
+  // Custom extension management bar
+  auto* add_custom_layout = new QHBoxLayout();
+  auto* label_custom = new QLabel("添加自定义扩展名:", tab_exts);
+  new_custom_ext_edit_ = new QLineEdit(tab_exts);
+  new_custom_ext_edit_->setPlaceholderText("例如: vue 或 proto (无需加点)");
+  btn_add_custom_ext_ = new QPushButton("添加格式", tab_exts);
+  btn_rm_custom_ext_ = new QPushButton("移除所选自定义", tab_exts);
+
+  add_custom_layout->addWidget(label_custom);
+  add_custom_layout->addWidget(new_custom_ext_edit_);
+  add_custom_layout->addWidget(btn_add_custom_ext_);
+  add_custom_layout->addWidget(btn_rm_custom_ext_);
+  layout_exts->addLayout(add_custom_layout);
+
+  // Bottom action bar
+  auto* bottom_exts_layout = new QHBoxLayout();
+  auto* btn_select_all = new QPushButton("全选", tab_exts);
+  auto* btn_deselect_all = new QPushButton("全不选", tab_exts);
+  auto* btn_reset_exts = new QPushButton("恢复推荐默认", tab_exts);
+  exts_count_label_ = new QLabel("已启用: 0 种文件格式", tab_exts);
+  exts_count_label_->setStyleSheet("font-weight: bold; color: #1976D2;");
+
+  bottom_exts_layout->addWidget(btn_select_all);
+  bottom_exts_layout->addWidget(btn_deselect_all);
+  bottom_exts_layout->addWidget(btn_reset_exts);
+  bottom_exts_layout->addStretch();
+  bottom_exts_layout->addWidget(exts_count_label_);
+  layout_exts->addLayout(bottom_exts_layout);
+
+  tab_widget_->addTab(tab_exts, "文件格式与解析");
+
+  connect(btn_add_custom_ext_, &QPushButton::clicked, this, &SettingsDialog::OnAddCustomExtension);
+  connect(btn_rm_custom_ext_, &QPushButton::clicked, this, &SettingsDialog::OnRemoveCustomExtension);
+  connect(btn_select_all, &QPushButton::clicked, this, &SettingsDialog::OnSelectAllExtensions);
+  connect(btn_deselect_all, &QPushButton::clicked, this, &SettingsDialog::OnDeselectAllExtensions);
   connect(btn_reset_exts, &QPushButton::clicked, this, &SettingsDialog::OnResetExtensionsToDefault);
+  connect(exts_tree_, &QTreeWidget::itemChanged, this, &SettingsDialog::OnTreeItemChanged);
 
   // -------------------------------------------------------------
   // Tab 4: 性能与调度参数 (Performance)
@@ -222,15 +301,44 @@ void SettingsDialog::PopulateFromConfig() {
     patterns_list_->addItem(QString::fromStdString(pat));
   }
 
-  exts_list_->clear();
-  std::vector<std::string> sorted_exts;
-  for (const auto& ext : config_->GetSupportedExtensions()) {
-    sorted_exts.push_back(ext);
+  // Populate Tab 3: Embedded image OCR check and extensions tree
+  embedded_image_ocr_check_->setChecked(config_->enable_embedded_image_ocr());
+
+  is_updating_tree_ = true;
+  auto supported_exts = config_->GetSupportedExtensions();
+  auto custom_exts = config_->GetCustomExtensions();
+
+  // Clear existing custom items from custom_category_item_
+  while (custom_category_item_->childCount() > 0) {
+    delete custom_category_item_->takeChild(0);
   }
-  std::sort(sorted_exts.begin(), sorted_exts.end());
-  for (const auto& ext : sorted_exts) {
-    exts_list_->addItem(QString::fromStdString(ext));
+
+  // Populate custom extensions
+  for (const auto& c_ext : custom_exts) {
+    auto* item = new QTreeWidgetItem(custom_category_item_);
+    QString q_ext = QString::fromStdString(c_ext);
+    item->setText(0, q_ext);
+    item->setText(1, "用户自定义格式");
+    item->setData(0, Qt::UserRole, q_ext);
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
+    bool is_checked = (supported_exts.find(c_ext) != supported_exts.end());
+    item->setCheckState(0, is_checked ? Qt::Checked : Qt::Unchecked);
   }
+
+  // Match check states across all categories in tree
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    if (cat_item == custom_category_item_) continue;
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      auto* fmt_item = cat_item->child(j);
+      std::string ext = fmt_item->data(0, Qt::UserRole).toString().toStdString();
+      bool is_checked = (supported_exts.find(ext) != supported_exts.end());
+      fmt_item->setCheckState(0, is_checked ? Qt::Checked : Qt::Unchecked);
+    }
+  }
+
+  is_updating_tree_ = false;
+  UpdateExtensionsCount();
 
   debounce_spin_->setValue(static_cast<int>(config_->debounce_ms()));
   max_size_spin_->setValue(static_cast<int>(config_->max_file_size() / (1024 * 1024)));
@@ -287,39 +395,137 @@ void SettingsDialog::OnRemovePattern() {
   }
 }
 
-void SettingsDialog::OnAddExtension() {
-  QString ext = new_ext_edit_->text().trimmed().toLower();
-  if (ext.startsWith('.')) {
-    ext = ext.mid(1);
-  }
-  if (!ext.isEmpty()) {
-    // Check duplicate
-    for (int i = 0; i < exts_list_->count(); ++i) {
-      if (exts_list_->item(i)->text() == ext) {
-        return;
+void SettingsDialog::UpdateExtensionsCount() {
+  int total_formats = 0;
+  int enabled_formats = 0;
+
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      total_formats++;
+      if (cat_item->child(j)->checkState(0) == Qt::Checked) {
+        enabled_formats++;
       }
     }
-    exts_list_->addItem(ext);
-    new_ext_edit_->clear();
+  }
+
+  if (exts_count_label_) {
+    exts_count_label_->setText(QString("已启用: %1 / %2 种文件格式")
+                                   .arg(enabled_formats)
+                                   .arg(total_formats));
   }
 }
 
-void SettingsDialog::OnRemoveExtension() {
-  int row = exts_list_->currentRow();
-  if (row >= 0) {
-    delete exts_list_->takeItem(row);
+void SettingsDialog::OnTreeItemChanged(QTreeWidgetItem* item, int column) {
+  if (column != 0 || is_updating_tree_) return;
+  is_updating_tree_ = true;
+
+  if (item->childCount() > 0) {
+    // If parent category item was clicked/toggled, sync state to all its children
+    Qt::CheckState state = item->checkState(0);
+    if (state == Qt::Checked || state == Qt::Unchecked) {
+      for (int i = 0; i < item->childCount(); ++i) {
+        item->child(i)->setCheckState(0, state);
+      }
+    }
   }
+
+  is_updating_tree_ = false;
+  UpdateExtensionsCount();
+}
+
+void SettingsDialog::OnSelectAllExtensions() {
+  is_updating_tree_ = true;
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    cat_item->setCheckState(0, Qt::Checked);
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      cat_item->child(j)->setCheckState(0, Qt::Checked);
+    }
+  }
+  is_updating_tree_ = false;
+  UpdateExtensionsCount();
+}
+
+void SettingsDialog::OnDeselectAllExtensions() {
+  is_updating_tree_ = true;
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    cat_item->setCheckState(0, Qt::Unchecked);
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      cat_item->child(j)->setCheckState(0, Qt::Unchecked);
+    }
+  }
+  is_updating_tree_ = false;
+  UpdateExtensionsCount();
 }
 
 void SettingsDialog::OnResetExtensionsToDefault() {
-  exts_list_->clear();
-  std::vector<std::string> sorted_exts;
-  for (const auto& ext : service::IndexConfig::GetDefaultSupportedExtensions()) {
-    sorted_exts.push_back(ext);
+  is_updating_tree_ = true;
+  embedded_image_ocr_check_->setChecked(false);
+  auto default_exts = service::IndexConfig::GetDefaultSupportedExtensions();
+
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      auto* fmt_item = cat_item->child(j);
+      std::string ext = fmt_item->data(0, Qt::UserRole).toString().toStdString();
+      bool is_def = (default_exts.find(ext) != default_exts.end());
+      fmt_item->setCheckState(0, is_def ? Qt::Checked : Qt::Unchecked);
+    }
   }
-  std::sort(sorted_exts.begin(), sorted_exts.end());
-  for (const auto& ext : sorted_exts) {
-    exts_list_->addItem(QString::fromStdString(ext));
+  is_updating_tree_ = false;
+  UpdateExtensionsCount();
+}
+
+void SettingsDialog::OnAddCustomExtension() {
+  QString ext = new_custom_ext_edit_->text().trimmed().toLower();
+  if (ext.startsWith('.')) {
+    ext = ext.mid(1);
+  }
+  if (ext.isEmpty()) return;
+
+  // Check if extension already exists in tree
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      if (cat_item->child(j)->data(0, Qt::UserRole).toString().toLower() == ext) {
+        cat_item->child(j)->setCheckState(0, Qt::Checked);
+        exts_tree_->setCurrentItem(cat_item->child(j));
+        exts_tree_->scrollToItem(cat_item->child(j));
+        new_custom_ext_edit_->clear();
+        UpdateExtensionsCount();
+        return;
+      }
+    }
+  }
+
+  is_updating_tree_ = true;
+  auto* item = new QTreeWidgetItem(custom_category_item_);
+  item->setText(0, ext);
+  item->setText(1, "用户自定义格式");
+  item->setData(0, Qt::UserRole, ext);
+  item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
+  item->setCheckState(0, Qt::Checked);
+
+  custom_category_item_->setExpanded(true);
+  is_updating_tree_ = false;
+  new_custom_ext_edit_->clear();
+  UpdateExtensionsCount();
+}
+
+void SettingsDialog::OnRemoveCustomExtension() {
+  auto* current = exts_tree_->currentItem();
+  if (!current) {
+    QMessageBox::information(this, "提示", "请先在分类列表中选择要删除的自定义格式。");
+    return;
+  }
+
+  if (current->parent() == custom_category_item_) {
+    delete current;
+    UpdateExtensionsCount();
+  } else {
+    QMessageBox::information(this, "提示", "预置的标准格式无法删除；如需停用，请取消该格式前的勾选框。");
   }
 }
 
@@ -356,12 +562,27 @@ void SettingsDialog::OnSaveAndApply() {
   }
   config_->SetExcludedPatterns(patterns);
 
-  // Save extensions
+  // Save extensions from tree
   std::vector<std::string> exts;
-  for (int i = 0; i < exts_list_->count(); ++i) {
-    exts.push_back(exts_list_->item(i)->text().toStdString());
+  std::vector<std::string> custom_exts;
+
+  for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
+    auto* cat_item = exts_tree_->topLevelItem(i);
+    bool is_custom = (cat_item == custom_category_item_);
+    for (int j = 0; j < cat_item->childCount(); ++j) {
+      auto* fmt_item = cat_item->child(j);
+      std::string ext = fmt_item->data(0, Qt::UserRole).toString().toStdString();
+      if (fmt_item->checkState(0) == Qt::Checked) {
+        exts.push_back(ext);
+      }
+      if (is_custom) {
+        custom_exts.push_back(ext);
+      }
+    }
   }
   config_->SetSupportedExtensions(exts);
+  config_->SetCustomExtensions(custom_exts);
+  config_->set_enable_embedded_image_ocr(embedded_image_ocr_check_->isChecked());
 
   // Save performance and filtering
   config_->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));

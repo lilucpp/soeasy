@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -51,6 +52,7 @@ static std::mutex g_dt_mutex;
 static bool g_dt_logging_enabled = false;
 static std::string g_dt_log_path = "";
 static std::unique_ptr<std::ofstream> g_dt_file_stream;
+static std::atomic<bool> s_embedded_image_ocr{false};
 
 std::string RunCommandCaptureStdout(const std::string& cmd) {
   std::array<char, 4096> buffer;
@@ -168,6 +170,14 @@ void L2OfficeParser::SetLogging(bool enable, const std::string& log_file_path) {
   }
 }
 
+void L2OfficeParser::SetEmbeddedImageOcr(bool enable) {
+  s_embedded_image_ocr.store(enable, std::memory_order_relaxed);
+}
+
+bool L2OfficeParser::embedded_image_ocr() {
+  return s_embedded_image_ocr.load(std::memory_order_relaxed);
+}
+
 bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
                            std::string* out_utf8_text, bool* is_scanned_pdf) {
   if (!out_utf8_text) return false;
@@ -223,7 +233,11 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
         doctotext_extractor_params_set_log_file(params, kDevNull);
       }
       doctotext_extractor_params_set_parser_type(params, ptype);
-      doctotext_extractor_params_set_image_parser_callback(params, &DocToTextImageParserCallbackC, nullptr);
+      if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {
+        doctotext_extractor_params_set_image_parser_callback(params, &DocToTextImageParserCallbackC, nullptr);
+      } else {
+        doctotext_extractor_params_set_image_parser_callback(params, nullptr, nullptr);
+      }
 
       DocToTextException* exc = nullptr;
       DocToTextExtractedData* data = doctotext_process_file(file_path.c_str(), params, &exc);
