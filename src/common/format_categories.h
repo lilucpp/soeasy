@@ -15,12 +15,14 @@ struct FormatDef {
   const char* ext;
   const char* desc;
   bool default_enabled;
+  bool disabled = false;
 };
 
 struct CategoryDef {
   const char* name;
   const char* desc;
   std::vector<FormatDef> formats;
+  bool disabled = false;
 };
 
 inline const std::vector<CategoryDef>& GetPresetCategories() {
@@ -51,6 +53,7 @@ inline const std::vector<CategoryDef>& GetPresetCategories() {
         {"odt", "OpenDocument 文本文档", true},
         {"ods", "OpenDocument 电子表格", true},
         {"odp", "OpenDocument 演示文稿", true},
+        {"odg", "OpenDocument 绘图文档", true},
         {"fodt", "Flat XML ODF 文本文档", true},
         {"fods", "Flat XML ODF 电子表格", true},
         {"fodp", "Flat XML ODF 演示文稿", true},
@@ -78,8 +81,6 @@ inline const std::vector<CategoryDef>& GetPresetCategories() {
       "MIME 规范电子邮件及附件",
       {
         {"eml", "RFC 822 电子邮件消息与附件", false},
-        {"pst", "Outlook 个人文件夹存储", false},
-        {"ost", "Outlook 离线存储数据", false},
       }
     },
     {
@@ -200,22 +201,17 @@ inline const std::vector<CategoryDef>& GetPresetCategories() {
     },
     {
       "压缩归档格式 (Archives)",
-      "打包与压缩文件容器",
+      "打包与压缩文件容器 (正文递归检索规划中)",
       {
-        {"zip", "ZIP 压缩文件", false},
-        {"tar", "Tape Archive 归档包", false},
-        {"rar", "WinRAR 压缩包", false},
-        {"gz", "Gzip 压缩文件", false},
-        {"bz2", "Bzip2 压缩文件", false},
-        {"xz", "XZ 压缩文件", false},
-      }
-    },
-    {
-      "医学数字成像 (DICOM)",
-      "医疗设备图像与患者元数据规范",
-      {
-        {"dcm", "DICOM 医学数字成像文件", false},
-      }
+        {"zip", "ZIP 压缩文件", false, true},
+        {"tar", "Tape Archive 归档包", false, true},
+        {"rar", "WinRAR 压缩包", false, true},
+        {"7z", "7-Zip 压缩包", false, true},
+        {"gz", "Gzip 压缩文件", false, true},
+        {"bz2", "Bzip2 压缩文件", false, true},
+        {"xz", "XZ 压缩文件", false, true},
+      },
+      true  // 暂未支持，界面默认 disable，后续支持后直接设为 false 即可启用
     }
   };
   return kCategories;
@@ -224,8 +220,9 @@ inline const std::vector<CategoryDef>& GetPresetCategories() {
 inline std::unordered_set<std::string> GetDefaultSupportedExtensions() {
   std::unordered_set<std::string> defaults;
   for (const auto& cat : GetPresetCategories()) {
+    if (cat.disabled) continue;
     for (const auto& fmt : cat.formats) {
-      if (fmt.default_enabled) {
+      if (fmt.default_enabled && !fmt.disabled) {
         defaults.insert(fmt.ext);
       }
     }

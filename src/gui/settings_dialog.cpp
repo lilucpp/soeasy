@@ -133,10 +133,28 @@ void SettingsDialog::SetupUi() {
     for (const auto& fmt : cat.formats) {
       auto* fmt_item = new QTreeWidgetItem(cat_item);
       fmt_item->setText(0, QString::fromLatin1(fmt.ext));
-      fmt_item->setText(1, QString::fromUtf8(fmt.desc));
+      QString desc = QString::fromUtf8(fmt.desc);
+      if (fmt.disabled || cat.disabled) {
+        desc += " (规划中，暂未支持)";
+      }
+      fmt_item->setText(1, desc);
       fmt_item->setData(0, Qt::UserRole, QString::fromLatin1(fmt.ext));
       fmt_item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable);
       fmt_item->setCheckState(0, fmt.default_enabled ? Qt::Checked : Qt::Unchecked);
+
+      if (fmt.disabled || cat.disabled) {
+        fmt_item->setDisabled(true);
+        fmt_item->setCheckState(0, Qt::Unchecked);
+        fmt_item->setToolTip(0, "该格式正文检索功能规划中，暂未支持");
+        fmt_item->setToolTip(1, "该格式正文检索功能规划中，暂未支持");
+      }
+    }
+
+    if (cat.disabled) {
+      cat_item->setDisabled(true);
+      cat_item->setCheckState(0, Qt::Unchecked);
+      cat_item->setToolTip(0, "该分类正文检索功能规划中，暂未支持");
+      cat_item->setToolTip(1, "该分类正文检索功能规划中，暂未支持");
     }
   }
 
@@ -331,6 +349,10 @@ void SettingsDialog::PopulateFromConfig() {
     if (cat_item == custom_category_item_) continue;
     for (int j = 0; j < cat_item->childCount(); ++j) {
       auto* fmt_item = cat_item->child(j);
+      if (fmt_item->isDisabled()) {
+        fmt_item->setCheckState(0, Qt::Unchecked);
+        continue;
+      }
       std::string ext = fmt_item->data(0, Qt::UserRole).toString().toStdString();
       bool is_checked = (supported_exts.find(ext) != supported_exts.end());
       fmt_item->setCheckState(0, is_checked ? Qt::Checked : Qt::Unchecked);
@@ -425,7 +447,9 @@ void SettingsDialog::OnTreeItemChanged(QTreeWidgetItem* item, int column) {
     Qt::CheckState state = item->checkState(0);
     if (state == Qt::Checked || state == Qt::Unchecked) {
       for (int i = 0; i < item->childCount(); ++i) {
-        item->child(i)->setCheckState(0, state);
+        if (!item->child(i)->isDisabled()) {
+          item->child(i)->setCheckState(0, state);
+        }
       }
     }
   }
@@ -438,9 +462,14 @@ void SettingsDialog::OnSelectAllExtensions() {
   is_updating_tree_ = true;
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
     auto* cat_item = exts_tree_->topLevelItem(i);
-    cat_item->setCheckState(0, Qt::Checked);
+    if (!cat_item->isDisabled()) {
+      cat_item->setCheckState(0, Qt::Checked);
+    }
     for (int j = 0; j < cat_item->childCount(); ++j) {
-      cat_item->child(j)->setCheckState(0, Qt::Checked);
+      auto* child = cat_item->child(j);
+      if (!child->isDisabled()) {
+        child->setCheckState(0, Qt::Checked);
+      }
     }
   }
   is_updating_tree_ = false;
@@ -469,6 +498,10 @@ void SettingsDialog::OnResetExtensionsToDefault() {
     auto* cat_item = exts_tree_->topLevelItem(i);
     for (int j = 0; j < cat_item->childCount(); ++j) {
       auto* fmt_item = cat_item->child(j);
+      if (fmt_item->isDisabled()) {
+        fmt_item->setCheckState(0, Qt::Unchecked);
+        continue;
+      }
       std::string ext = fmt_item->data(0, Qt::UserRole).toString().toStdString();
       bool is_def = (default_exts.find(ext) != default_exts.end());
       fmt_item->setCheckState(0, is_def ? Qt::Checked : Qt::Unchecked);
@@ -571,6 +604,9 @@ void SettingsDialog::OnSaveAndApply() {
     bool is_custom = (cat_item == custom_category_item_);
     for (int j = 0; j < cat_item->childCount(); ++j) {
       auto* fmt_item = cat_item->child(j);
+      if (fmt_item->isDisabled()) {
+        continue;
+      }
       std::string ext = fmt_item->data(0, Qt::UserRole).toString().toStdString();
       if (fmt_item->checkState(0) == Qt::Checked) {
         exts.push_back(ext);

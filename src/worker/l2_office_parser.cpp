@@ -137,7 +137,8 @@ const char* DocToTextImageParserCallbackC(
 L2OfficeParser::L2OfficeParser() {
   supported_exts_ = {
       "docx", "xlsx", "pptx", "pdf", "doc", "xls", "ppt", "rtf",
-      "odt", "ods", "odp", "xlsb", "eml", "pages", "numbers", "key"
+      "odt", "ods", "odp", "odg", "fodt", "fods", "fodp", "xlsb",
+      "eml", "pages", "numbers", "key", "keynote"
   };
 }
 
@@ -209,7 +210,7 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
     }
 
     int ptype = DOCTOTEXT_PARSER_AUTO;
-    if (lower == "docx" || lower == "xlsx" || lower == "pptx" || lower == "odt" || lower == "ods" || lower == "odp") {
+    if (lower == "docx" || lower == "xlsx" || lower == "pptx" || lower == "odt" || lower == "ods" || lower == "odp" || lower == "odg") {
       ptype = DOCTOTEXT_PARSER_ODF_OOXML;
     } else if (lower == "doc") {
       ptype = DOCTOTEXT_PARSER_DOC;
@@ -223,9 +224,9 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
       ptype = DOCTOTEXT_PARSER_PDF;
     } else if (lower == "xlsb") {
       ptype = DOCTOTEXT_PARSER_XLSB;
-    } else if (lower == "eml") {
+    } else if (lower == "eml" || lower == "fodt" || lower == "fods" || lower == "fodp") {
       ptype = DOCTOTEXT_PARSER_AUTO;
-    } else if (lower == "pages" || lower == "numbers" || lower == "key") {
+    } else if (lower == "pages" || lower == "numbers" || lower == "key" || lower == "keynote") {
       ptype = DOCTOTEXT_PARSER_IWORK;
     }
 
