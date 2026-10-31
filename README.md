@@ -112,7 +112,7 @@ cmake --build build -j$(nproc)
 ```bash
 bash scripts/package.sh
 ```
-Output artifact: `dist/soeasy-v0.1.0-linux-x86_64.zip`.
+Output artifact: `dist/soeasy-linux-x86_64.zip`.
 
 ### Windows (x64) Cross-Compilation via Docker
 
@@ -126,7 +126,7 @@ docker build -f Dockerfile.win64 -t soeasy-win64-cross .
 ./scripts/package_win64_docker.sh
 ```
 
-Output artifact: `dist/soeasy-v0.1.0-windows-x64.zip`. Extract on any 64-bit Windows machine and run `bin/soeasy-gui.exe`.
+Output artifact: `dist/soeasy-windows-x64.zip`. Extract on any 64-bit Windows machine and run `bin/soeasy-gui.exe`.
 
 ---
 

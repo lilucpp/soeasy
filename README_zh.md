@@ -112,7 +112,7 @@ cmake --build build -j$(nproc)
 ```bash
 bash scripts/package.sh
 ```
-打包输出产物位于 `dist/soeasy-v0.1.0-linux-x86_64.zip`。
+打包输出产物位于 `dist/soeasy-linux-x86_64.zip`。
 
 ### Windows (x64) 容器化交叉编译
 
@@ -126,7 +126,7 @@ docker build -f Dockerfile.win64 -t soeasy-win64-cross .
 ./scripts/package_win64_docker.sh
 ```
 
-生成的 Windows 发行包位于 `dist/soeasy-v0.1.0-windows-x64.zip`，解压至任意 64 位 Windows 机器即可直接运行 `bin/soeasy-gui.exe`。
+生成的 Windows 发行包位于 `dist/soeasy-windows-x64.zip`，解压至任意 64 位 Windows 机器即可直接运行 `bin/soeasy-gui.exe`。
 
 ---
 

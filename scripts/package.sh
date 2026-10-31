@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-VERSION="0.1.0"
+VERSION="${1:-${VERSION:-$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.2.0")}}"
 PLATFORM="linux-x86_64"
 DIST_NAME="soeasy-v${VERSION}-${PLATFORM}"
 BUILD_DIR="${PROJECT_ROOT}/build"
@@ -121,6 +121,7 @@ chmod +x "${STAGE_DIR}/soeasy-worker.sh"
 echo "[6/6] 生成独立 ZIP 压缩分发包..."
 cd "${DIST_DIR}"
 zip -r -q "${ZIP_FILE}" "${DIST_NAME}"
+cp -f "${ZIP_FILE}" "${DIST_DIR}/soeasy-linux-x86_64.zip"
 cd "${PROJECT_ROOT}"
 
 ZIP_SIZE=$(du -h "${ZIP_FILE}" | cut -f1)

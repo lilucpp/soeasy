@@ -37,13 +37,17 @@ jobs:
       - name: Build and Package Linux Release
         run: |
           chmod +x scripts/package.sh
-          ./scripts/package.sh
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            ./scripts/package.sh "${GITHUB_REF_NAME#v}"
+          else
+            ./scripts/package.sh
+          fi
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
           name: soeasy-linux-x86_64
-          path: dist/soeasy-*-linux-x86_64.zip
+          path: dist/soeasy-*.zip
 
   build-windows-x64:
     name: Windows (x64)
@@ -124,12 +128,15 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           
           cd dist && zip -r -q "../soeasy-windows-x64.zip" "soeasy-windows-x64"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            cp "../soeasy-windows-x64.zip" "../soeasy-${GITHUB_REF_NAME}-windows-x64.zip"
+          fi
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: soeasy-windows-x64
-          path: soeasy-windows-x64.zip
+          path: soeasy-*.zip
 
   release:
     name: Publish GitHub Release
