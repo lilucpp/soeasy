@@ -24,8 +24,8 @@ SoEasy 是一款追求极速、安全与稳定的原生跨平台桌面全文检�
 - **纯本地透明密态存储**  
   零网络依赖，杜绝任何数据上云。索引数据库与正文缓存均采用 SQLite3MultipleCiphers 进行透明页级 AES-128 加密，结合 Zstandard (Zstd) 高效压缩落盘，保障个人与企业数据隐私安全。
 
-- **完备的格式覆盖能力**  
-  集成 DocToText (v5.1.2) 与专用抽取器，开箱支持纯文本、主流编程源码、Office 新老版本格式（Word, Excel, PowerPoint）、开放文档 (ODF)、苹果 iWork、PDF、RTF 与 EML 邮件。对扫描版 PDF 与独立图像自动流转至内置的深度学习引擎（PP-OCRv6）进行光学字符识别补全。
+- **完备的格式覆盖与图文原位抽取**  
+  Office 与 PDF 解析由深度优化的 [DocToText (v5.1.2+)](https://github.com/lilucpp/doctotext) 驱动，支持文档内嵌图片的流式 OCR、PDF 图文按自然排版顺序提取、纯图片扫描件自动识别补全与防重复识别。原生支持纯文本、主流编程源码、开放文档 (ODF)、苹果 iWork、RTF 及 EML 邮件，对独立图像自动调用内置 PP-OCRv6 深度学习引擎。
 
 - **双栏式原生桌面体验**  
   采用经典 Master-Detail 双栏视图，支持实时高亮预览与键盘快捷跳转；底层接入 `efsw` 监听文件变动，具备事件去抖合并与平滑增量热更新能力。
@@ -144,6 +144,17 @@ docker build -f Dockerfile.win64 -t soeasy-win64-cross .
 # 解析日志输出对系统吞吐的影响分析
 ./build/test_log_impact
 ```
+
+---
+
+## 核心依赖与致谢
+
+SoEasy 的极速与稳健构建于优秀的底层开源基石之上：
+- **[DocToText (lilucpp 增强版)](https://github.com/lilucpp/doctotext)**：承担 Office 与 PDF 深度文本抽取。相比原版，新增了文档内嵌图片流式 OCR、PDF 图文按自然排版顺序提取、纯图片扫描件自动识别补全与防重复识别机制，并提供跨编译器的稳定纯 C ABI。
+- **[SQLite3MultipleCiphers](https://github.com/utelle/SQLite3MultipleCiphers)**：透明页级 AES-128 索引数据库加密。
+- **[CppJieba](https://github.com/yanyiwu/cppjieba)**：SQLite FTS5 毫秒级中文分词引擎。
+- **[Zstandard](https://github.com/facebook/zstd)**：高压缩比文档全文实时压缩缓存。
+- **[efsw](https://github.com/SpartanJ/efsw)**：跨平台多后端目录事件异步监控器。
 
 ---
 

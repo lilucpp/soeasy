@@ -24,8 +24,8 @@ No Electron runtime. No telemetry. Sub-millisecond queries powered by an isolate
 - **Zero Cloud / Purely Local Security**  
   Fully offline operation. Inverted indices and content caches are secured locally with transparent page-level AES-128 encryption (SQLite3MultipleCiphers) and Zstandard (Zstd) compression.
 
-- **Broad Format Coverage**  
-  Powered by DocToText (v5.1.2) and specialized extractors for developer code, Office documents (Word, Excel, PowerPoint), OpenDocument (ODF), Apple iWork, PDF, RTF, and EML. Scanned PDFs and images are processed via an embedded PP-OCRv6 deep learning engine.
+- **Broad Format Coverage & Natural In-Place Extraction**  
+  Office and PDF extraction is powered by an enhanced fork of [DocToText (v5.1.2+)](https://github.com/lilucpp/doctotext). Features include in-place streaming OCR for embedded images, natural top-to-bottom reading order recovery for PDFs, smart deduplication on searchable PDFs, and automatic fallback for pure scanned documents. Native extractors handle code repositories, OpenDocument (ODF), Apple iWork, RTF, and EML. Standalone images are indexed via an embedded PP-OCRv6 deep learning engine.
 
 - **Desktop-Native Dual-Pane Interface**  
   A responsive Master-Detail layout with instant file preview, keyboard navigation, and real-time directory monitoring (`efsw`) featuring event debouncing.
@@ -144,6 +144,17 @@ The project includes unit and micro-benchmark suites to verify indexing throughp
 # Profile parser logging performance impact
 ./build/test_log_impact
 ```
+
+---
+
+## Core Dependencies & Acknowledgements
+
+SoEasy is built on top of high-performance open-source foundations:
+- **[DocToText (lilucpp fork)](https://github.com/lilucpp/doctotext)**: Powers multi-format extraction for Office and PDF. Upgrades over upstream include in-place embedded image OCR streaming, natural top-to-bottom reading order recovery for PDFs, automatic scanned PDF fallback, and a robust C ABI for cross-compiler stability.
+- **[SQLite3MultipleCiphers](https://github.com/utelle/SQLite3MultipleCiphers)**: Transparent page-level AES-128 index database encryption.
+- **[CppJieba](https://github.com/yanyiwu/cppjieba)**: High-speed Chinese tokenization for SQLite FTS5.
+- **[Zstandard](https://github.com/facebook/zstd)**: High-ratio realtime document content compression.
+- **[efsw](https://github.com/SpartanJ/efsw)**: Cross-platform asynchronous filesystem event watcher.
 
 ---
 
