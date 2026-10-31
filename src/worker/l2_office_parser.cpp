@@ -224,8 +224,10 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
       ptype = DOCTOTEXT_PARSER_PDF;
     } else if (lower == "xlsb") {
       ptype = DOCTOTEXT_PARSER_XLSB;
-    } else if (lower == "eml" || lower == "fodt" || lower == "fods" || lower == "fodp") {
-      ptype = DOCTOTEXT_PARSER_AUTO;
+    } else if (lower == "eml") {
+      ptype = DOCTOTEXT_PARSER_EML;
+    } else if (lower == "fodt" || lower == "fods" || lower == "fodp") {
+      ptype = DOCTOTEXT_PARSER_ODFXML;
     } else if (lower == "pages" || lower == "numbers" || lower == "key" || lower == "keynote") {
       ptype = DOCTOTEXT_PARSER_IWORK;
     }
