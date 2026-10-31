@@ -889,7 +889,7 @@
 
       <!-- Dual Platform Downloads -->
       <div class="download-group">
-        <a href="https://github.com/lilucpp/soeasy/releases/download/v0.2.0/soeasy-windows-x64.zip" class="btn-download btn-win" target="_blank">
+        <a href="https://github.com/lilucpp/soeasy/releases/download/v0.2.0/soeasy-v0.2.0-windows-x64.zip" class="btn-download btn-win" target="_blank">
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.901-1.799"/></svg>
           <span data-i18n="btn-win">下载 Windows 便携版 (x64 .zip)</span>
         </a>
@@ -1473,6 +1473,26 @@ struct ParseRequest {
       });
       toggleBtn.innerText = activeLang === "zh" ? "EN / 中文" : "中文 / EN";
     });
+
+    // 动态探测最新 Release 资产，自动同步下载按钮目标
+    (function syncLatestRelease() {
+      fetch("https://api.github.com/repos/lilucpp/soeasy/releases/latest")
+        .then(function(res) { return res.ok ? res.json() : null; })
+        .then(function(data) {
+          if (!data || !Array.isArray(data.assets)) return;
+          var winAsset = data.assets.find(function(a) { return a.name.includes("windows-x64.zip"); });
+          var linuxAsset = data.assets.find(function(a) { return a.name.includes("linux-x86_64.zip"); });
+          if (winAsset) {
+            var winBtn = document.querySelector(".btn-win");
+            if (winBtn) winBtn.href = winAsset.browser_download_url;
+          }
+          if (linuxAsset) {
+            var linuxBtn = document.querySelector(".btn-linux");
+            if (linuxBtn) linuxBtn.href = linuxAsset.browser_download_url;
+          }
+        })
+        .catch(function() {});
+    })();
   </script>
 </body>
 </html>

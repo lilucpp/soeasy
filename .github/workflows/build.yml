@@ -98,7 +98,12 @@ jobs:
 
       - name: Package Windows Artifacts
         run: |
-          STAGE_DIR="dist/soeasy-windows-x64"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
+            VERSION="0.2.0"
+          fi
+          DIST_NAME="soeasy-v${VERSION}-windows-x64"
+          STAGE_DIR="dist/${DIST_NAME}"
           mkdir -p "${STAGE_DIR}/bin" "${STAGE_DIR}/dict" "${STAGE_DIR}/models"
           
           # Copy binaries
@@ -127,16 +132,13 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           
-          cd dist && zip -r -q "../soeasy-windows-x64.zip" "soeasy-windows-x64"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            cp "../soeasy-windows-x64.zip" "../soeasy-${GITHUB_REF_NAME}-windows-x64.zip"
-          fi
+          cd dist && zip -r -q "${DIST_NAME}.zip" "${DIST_NAME}"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: soeasy-windows-x64
-          path: soeasy-*.zip
+          path: dist/soeasy-*.zip
 
   release:
     name: Publish GitHub Release

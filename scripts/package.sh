@@ -121,7 +121,6 @@ chmod +x "${STAGE_DIR}/soeasy-worker.sh"
 echo "[6/6] 生成独立 ZIP 压缩分发包..."
 cd "${DIST_DIR}"
 zip -r -q "${ZIP_FILE}" "${DIST_NAME}"
-cp -f "${ZIP_FILE}" "${DIST_DIR}/soeasy-linux-x86_64.zip"
 cd "${PROJECT_ROOT}"
 
 ZIP_SIZE=$(du -h "${ZIP_FILE}" | cut -f1)
