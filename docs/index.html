@@ -6,26 +6,27 @@
   <title>SoEasy - 让电脑没有难搜的文件 | 原生桌面全文检索引擎</title>
   <meta name="description" content="让电脑没有难搜的文件。基于 C++17 与 Qt5 的原生跨平台桌面全文检索工具。物理多进程沙箱隔离防卡死、纯本地透明 AES-128 加密存储，深度支持 Office、PDF、源码及图片 OCR。">
   <meta name="keywords" content="SoEasy, 桌面全文检索, 本地搜索, desktop search, full-text search, offline search, SQLite FTS5, DocToText, OCR">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23161b22'/><circle cx='50' cy='50' r='38' fill='%230d1117' stroke='%2358a6ff' stroke-width='4'/><text x='50' y='64' font-size='42' font-weight='800' fill='%2358a6ff' text-anchor='middle' font-family='monospace'>S</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><defs><linearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%230284C7'/><stop offset='50%25' stop-color='%230369A1'/><stop offset='100%25' stop-color='%230F172A'/></linearGradient></defs><rect x='8' y='8' width='112' height='112' rx='26' fill='url(%23bg)' stroke='%23FFFAFA' stroke-width='2' stroke-opacity='0.4'/><circle cx='56' cy='54' r='28' fill='none' stroke='%23FFFAFA' stroke-width='7'/><line x1='77' y1='75' x2='101' y2='99' stroke='%23FFFAFA' stroke-width='9' stroke-linecap='round'/><line x1='78' y1='76' x2='94' y2='92' stroke='%230284C7' stroke-width='3.5' stroke-linecap='round'/><path d='M 68 40.5 C 61 33.5 45 35 44 45.5 C 43 56 69 52.5 68 63 C 67 73 50 74.5 44 67.5' fill='none' stroke='%23FFFAFA' stroke-width='6.5' stroke-linecap='round'/><circle cx='70' cy='38' r='4.5' fill='%23F59E0B' stroke='%23FFFAFA' stroke-width='1.5'/></svg>">
   <style>
     /* 色彩体系：严格参考标准 RGB 16 进制颜色库 (https://www.sioe.cn/yingyong/yanse-rgb-16/)
-       玄青黑 #0d1117 / 黛墨 #161b22 / 铁灰 #30363d / 霁蓝 #58a6ff / 竹青 #3fb950 / 琥珀 #f0883e / 霜白 #f0f6fc */
+       主题色：Snow 雪 #FFFAFA (255, 250, 250) */
     :root {
-      --canvas: #0d1117;          /* RGB(13, 17, 23)   极深玄青底色 */
-      --surface: #161b22;         /* RGB(22, 27, 34)   卡片表面色 */
-      --surface-hover: #1c2128;   /* RGB(28, 33, 40)   卡片悬停色 */
-      --border: #30363d;          /* RGB(48, 54, 61)   铁灰色边框 */
-      --border-subtle: #21262d;   /* RGB(33, 38, 45)   微弱分割线 */
-      --primary: #58a6ff;         /* RGB(88, 166, 255) 霁蓝色主色 */
-      --primary-hover: #79c0ff;   /* RGB(121, 192, 255) */
-      --primary-dim: rgba(88, 166, 255, 0.12);
-      --accent-green: #3fb950;    /* RGB(63, 185, 80)  竹青色状态 */
-      --accent-green-dim: rgba(63, 185, 80, 0.12);
-      --accent-amber: #f0883e;    /* RGB(240, 136, 62) 琥珀橙搜索高亮 */
-      --accent-amber-dim: rgba(240, 136, 62, 0.18);
-      --text: #f0f6fc;             /* RGB(240, 246, 252) 霜白主文本 */
-      --text-muted: #8b949e;       /* RGB(139, 148, 158) 烟灰说明文本 */
-      --text-dim: #6e7681;         /* RGB(110, 118, 129) 幽灰标注 */
+      --snow: #FFFAFA;            /* RGB(255, 250, 250) Snow 雪 主题色 */
+      --canvas: #FFFAFA;          /* 页面画布基础背景 */
+      --surface: #FFFFFF;         /* 卡片与组件纯白表面 */
+      --surface-hover: #F8FAFC;   /* 悬停微灰 */
+      --border: #E2E8F0;          /* 细腻石板边框 */
+      --border-subtle: #EDF2F7;
+      --primary: #0969DA;         /* 经典海天蓝 / Royal Blue */
+      --primary-hover: #0854C4;
+      --primary-dim: rgba(9, 105, 218, 0.08);
+      --accent-green: #1A7F37;    /* 竹青绿状态 */
+      --accent-green-dim: rgba(26, 127, 55, 0.08);
+      --accent-amber: #BC4C00;    /* 琥珀橙搜索高亮 */
+      --accent-amber-dim: rgba(188, 76, 0, 0.12);
+      --text: #0F172A;            /* 纯正石墨黑主文字 (高对比、清晰有力) */
+      --text-muted: #475569;      /* 次级说明文本 */
+      --text-dim: #94A3B8;        /* 辅助标注文本 */
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
       --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
     }
@@ -43,9 +44,9 @@
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
       background-image: 
-        radial-gradient(circle at 50% 0%, rgba(88, 166, 255, 0.07) 0%, transparent 60%),
-        linear-gradient(to right, rgba(255,255,255,0.015) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255,255,255,0.015) 1px, transparent 1px);
+        radial-gradient(circle at 50% 0%, rgba(9, 105, 218, 0.05) 0%, transparent 60%),
+        linear-gradient(to right, rgba(15, 23, 42, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(15, 23, 42, 0.02) 1px, transparent 1px);
       background-size: 100% 100%, 40px 40px, 40px 40px;
       min-height: 100vh;
     }
@@ -64,12 +65,12 @@
     /* Top Navigation */
     header {
       padding: 18px 0;
-      border-bottom: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border);
       backdrop-filter: blur(12px);
       position: sticky;
       top: 0;
       z-index: 50;
-      background: rgba(13, 17, 23, 0.88);
+      background: rgba(255, 250, 250, 0.92);
     }
 
     .nav-inner {
@@ -219,26 +220,26 @@
     }
 
     .btn-win {
-      background: #1f6feb;
+      background: #0969DA;
       color: #ffffff;
-      border: 1px solid #388bfd;
-      box-shadow: 0 4px 18px rgba(31, 111, 235, 0.3);
+      border: 1px solid #0969DA;
+      box-shadow: 0 4px 14px rgba(9, 105, 218, 0.25);
     }
 
     .btn-win:hover {
-      background: #388bfd;
+      background: #0854C4;
       transform: translateY(-1px);
     }
 
     .btn-linux {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
+      background: #0F172A;
+      color: #ffffff;
+      border: 1px solid #0F172A;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
     }
 
     .btn-linux:hover {
-      border-color: var(--primary);
-      background: var(--surface-hover);
+      background: #1E293B;
       transform: translateY(-1px);
     }
 
@@ -249,24 +250,25 @@
       padding: 12px 18px;
       border-radius: 8px;
       font-size: 0.9rem;
+      background: var(--surface);
       color: var(--text-muted);
-      border: 1px solid var(--border-subtle);
+      border: 1px solid var(--border);
       transition: all 0.2s;
     }
 
     .btn-all-releases:hover {
-      color: var(--text);
-      border-color: var(--border);
+      color: var(--primary);
+      border-color: var(--primary);
     }
 
     /* REAL UI MOCKUP (Exact replica of Qt5 soeasy-gui) */
     .mockup-container {
       max-width: 1040px;
       margin: 0 auto;
-      background: #eef4f9; /* Exact Qt MainWindow background */
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+      background: #FFFAFA; /* Exact Qt MainWindow Snow background */
+      border: 1px solid #CBD5E1;
+      border-radius: 10px;
+      box-shadow: 0 20px 50px -10px rgba(15, 23, 42, 0.12), 0 8px 24px -6px rgba(15, 23, 42, 0.06);
       overflow: hidden;
       color: #1e293b;
       font-family: var(--font-sans);
@@ -304,7 +306,7 @@
     /* Main Window Content */
     .qt-content {
       padding: 12px;
-      background: #eef4f9;
+      background: #FFFAFA;
     }
 
     /* Search Bar Row 1 & 2 */
@@ -351,24 +353,25 @@
     }
 
     .qt-btn-preview {
-      background: #dce8f5;
+      background: #f8fafc;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
       padding: 6px 14px;
       font-size: 13px;
-      color: #1e293b;
+      color: #334155;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 500;
     }
 
     .qt-btn-settings {
-      background: #dce8f5;
+      background: #f8fafc;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
       padding: 6px 14px;
       font-size: 13px;
-      color: #1e293b;
+      color: #334155;
       cursor: pointer;
+      font-weight: 500;
     }
 
     .qt-search-row2 {
@@ -605,7 +608,7 @@
 
     /* Status Bar */
     .qt-statusbar {
-      background: #eef4f9;
+      background: #FFFAFA;
       border-top: 1px solid #cbd5e1;
       padding: 4px 12px;
       font-size: 11px;
@@ -661,12 +664,13 @@
       border-radius: 10px;
       padding: 30px;
       transition: all 0.25s ease;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.02);
     }
 
     .pillar-card:hover {
       border-color: var(--primary);
       transform: translateY(-2px);
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 12px 28px -6px rgba(9, 105, 218, 0.1);
     }
 
     .pillar-header {
@@ -690,7 +694,7 @@
       border-radius: 4px;
       background: var(--primary-dim);
       color: var(--primary);
-      border: 1px solid rgba(88, 166, 255, 0.25);
+      border: 1px solid rgba(9, 105, 218, 0.25);
     }
 
     .pillar-title {
@@ -718,6 +722,7 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 24px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.02);
     }
 
     .format-cat {
@@ -747,6 +752,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.02);
     }
 
     table {
@@ -762,7 +768,12 @@
     }
 
     th {
-      background: rgba(0, 0, 0, 0.25);
+      background: #F8FAFC;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.02em;
+    }
       color: var(--text-muted);
       font-size: 0.82rem;
       text-transform: uppercase;
@@ -784,43 +795,13 @@
       font-family: var(--font-mono);
     }
 
-    /* Quick Build Snippet */
-    .build-snippet {
-      max-width: 740px;
-      margin: 40px auto 0;
-      background: #090d13;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 18px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-family: var(--font-mono);
-      font-size: 0.88rem;
-    }
-
-    .copy-btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 6px 14px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.78rem;
-      transition: all 0.2s;
-    }
-
-    .copy-btn:hover {
-      color: var(--text);
-      border-color: var(--primary);
-    }
-
     /* Footer */
     footer {
-      border-top: 1px solid var(--border-subtle);
+      border-top: 1px solid var(--border);
       padding: 48px 0;
-      color: var(--text-dim);
+      color: var(--text-muted);
       font-size: 0.86rem;
+      background: #F8FAFC;
     }
 
     .footer-inner {
@@ -857,7 +838,22 @@
   <header>
     <div class="container nav-inner">
       <div class="brand">
-        <span class="brand-logo">S</span>
+        <svg class="brand-logo-svg" width="28" height="28" viewBox="0 0 128 128" fill="none" style="display: block; border-radius: 6px; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);">
+          <defs>
+            <linearGradient id="brandBg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#0284C7"/>
+              <stop offset="50%" stop-color="#0369A1"/>
+              <stop offset="100%" stop-color="#0F172A"/>
+            </linearGradient>
+          </defs>
+          <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#brandBg)" stroke="#FFFAFA" stroke-width="2" stroke-opacity="0.35"/>
+          <circle cx="56" cy="54" r="28" fill="rgba(255,250,250,0.18)"/>
+          <circle cx="56" cy="54" r="28" fill="none" stroke="#FFFAFA" stroke-width="7"/>
+          <line x1="77" y1="75" x2="101" y2="99" stroke="#FFFAFA" stroke-width="9" stroke-linecap="round"/>
+          <line x1="78" y1="76" x2="94" y2="92" stroke="#0284C7" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M 68 40.5 C 61 33.5 45 35 44 45.5 C 43 56 69 52.5 68 63 C 67 73 50 74.5 44 67.5" fill="none" stroke="#FFFAFA" stroke-width="6.5" stroke-linecap="round"/>
+          <circle cx="70" cy="38" r="4.5" fill="#F59E0B" stroke="#FFFAFA" stroke-width="1.5"/>
+        </svg>
         <span>SoEasy</span>
         <span class="brand-tag">v0.2.0</span>
       </div>
@@ -874,11 +870,6 @@
   <!-- Hero Section -->
   <section class="hero">
     <div class="container">
-      <div class="slogan-badge">
-        <span class="pulse-dot"></span>
-        <span data-i18n="slogan-text">C++17 / Qt5 桌面全文检索引擎</span>
-      </div>
-
       <h1 class="hero-title" data-i18n="hero-title">
         让电脑没有难搜的文件
       </h1>
@@ -907,8 +898,16 @@
         <!-- Title Bar -->
         <div class="qt-titlebar">
           <div class="qt-titlebar-left">
-            <span style="font-weight: 800; color: #1f6feb;">S</span>
-            <span>SoEasy - 让电脑没有难搜的文件</span>
+            <svg width="18" height="18" viewBox="0 0 128 128" fill="none" style="display: block; border-radius: 4px;">
+              <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#brandBg)" stroke="#FFFAFA" stroke-width="2" stroke-opacity="0.35"/>
+              <circle cx="56" cy="54" r="28" fill="rgba(255,250,250,0.18)"/>
+              <circle cx="56" cy="54" r="28" fill="none" stroke="#FFFAFA" stroke-width="7"/>
+              <line x1="77" y1="75" x2="101" y2="99" stroke="#FFFAFA" stroke-width="9" stroke-linecap="round"/>
+              <line x1="78" y1="76" x2="94" y2="92" stroke="#0284C7" stroke-width="3.5" stroke-linecap="round"/>
+              <path d="M 68 40.5 C 61 33.5 45 35 44 45.5 C 43 56 69 52.5 68 63 C 67 73 50 74.5 44 67.5" fill="none" stroke="#FFFAFA" stroke-width="6.5" stroke-linecap="round"/>
+              <circle cx="70" cy="38" r="4.5" fill="#F59E0B" stroke="#FFFAFA" stroke-width="1.5"/>
+            </svg>
+            <span id="mockupTitle" data-i18n="mockup-title">SoEasy - 让电脑没有难搜的文件</span>
           </div>
           <div class="qt-controls">
             <span>&minus;</span>
@@ -924,19 +923,19 @@
             <div class="qt-search-row1">
               <div class="qt-input-box">
                 <svg width="16" height="16" fill="none" stroke="#0284c7" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                <input type="text" class="qt-input" id="demoQueryInput" value="财务报表" placeholder="输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, &quot;精确词组&quot;, 前缀*）...">
+                <input type="text" class="qt-input" id="demoQueryInput" value="财务报表" placeholder="输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, &quot;精确词组&quot;, 前缀*）..." data-i18n-ph="mockup-search-ph">
               </div>
               <select class="qt-select" id="modeSelector">
-                <option value="fts5">全文倒排 (FTS5)</option>
-                <option value="filename">文件名秒搜</option>
+                <option value="fts5" data-i18n="mockup-mode-fts5">全文倒排 (FTS5)</option>
+                <option value="filename" data-i18n="mockup-mode-filename">文件名秒搜</option>
               </select>
-              <button class="qt-btn-preview" onclick="togglePreviewPane()">◨ 预览</button>
-              <button class="qt-btn-settings">⚙ 设置中心</button>
+              <button class="qt-btn-preview" onclick="togglePreviewPane()" data-i18n="mockup-btn-preview">◨ 预览</button>
+              <button class="qt-btn-settings" data-i18n="mockup-btn-settings">⚙ 设置中心</button>
             </div>
             <div class="qt-search-row2">
-              <span class="qt-scope-label">限定搜索路径:</span>
-              <input type="text" class="qt-scope-input" value="" placeholder="留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索...">
-              <button class="qt-btn-browse">浏览...</button>
+              <span class="qt-scope-label" data-i18n="mockup-scope-label">限定搜索路径:</span>
+              <input type="text" class="qt-scope-input" id="demoScopeInput" value="" placeholder="留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索..." data-i18n-ph="mockup-scope-ph">
+              <button class="qt-btn-browse" data-i18n="mockup-btn-browse">浏览...</button>
             </div>
           </div>
 
@@ -947,12 +946,12 @@
               <table class="qt-table">
                 <thead>
                   <tr>
-                    <th style="width: 42px; text-align: center;">序号</th>
-                    <th>文件名称</th>
-                    <th>所在路径</th>
-                    <th style="text-align: right;">大小</th>
-                    <th style="text-align: center;">修改时间</th>
-                    <th style="text-align: right;">相关度评分</th>
+                    <th style="width: 42px; text-align: center;" data-i18n="mockup-th-id">序号</th>
+                    <th data-i18n="mockup-th-name">文件名称</th>
+                    <th data-i18n="mockup-th-path">所在路径</th>
+                    <th style="text-align: right;" data-i18n="mockup-th-size">大小</th>
+                    <th style="text-align: center;" data-i18n="mockup-th-mtime">修改时间</th>
+                    <th style="text-align: right;" data-i18n="mockup-th-score">相关度评分</th>
                   </tr>
                 </thead>
                 <tbody id="demoTableBody">
@@ -967,8 +966,8 @@
                 <div class="preview-title-row">
                   <div class="preview-title" id="previewFileName">2026年度第一季度财务报表.xlsx</div>
                   <div class="preview-actions">
-                    <button class="btn-qt-action-blue">打开文件</button>
-                    <button class="btn-qt-action-gray">所在目录</button>
+                    <button class="btn-qt-action-blue" data-i18n="mockup-btn-openfile">打开文件</button>
+                    <button class="btn-qt-action-gray" data-i18n="mockup-btn-openfolder">所在目录</button>
                   </div>
                 </div>
                 <div class="preview-path" id="previewFilePath">/home/peanut/Finance/2026/2026年度第一季度财务报表.xlsx</div>
@@ -976,10 +975,10 @@
 
               <!-- Keyword Jump Navigation -->
               <div class="keyword-jump-bar">
-                <span>关键词跳转:</span>
+                <span data-i18n="mockup-label-jump">关键词跳转:</span>
                 <input type="text" class="jump-input" id="jumpInput" value="财务报表">
-                <button class="btn-jump" onclick="prevMatch()">&uarr; 上一个 (F3)</button>
-                <button class="btn-jump" onclick="nextMatch()">&darr; 下一个 (Shift+F3)</button>
+                <button class="btn-jump" onclick="prevMatch()" data-i18n="mockup-btn-prev">&uarr; 上一个 (F3)</button>
+                <button class="btn-jump" onclick="nextMatch()" data-i18n="mockup-btn-next">&darr; 下一个 (Shift+F3)</button>
                 <span class="jump-count" id="jumpCount">第 1 / 4 处匹配</span>
               </div>
 
@@ -993,7 +992,7 @@
 
         <!-- Status Bar -->
         <div class="qt-statusbar">
-          <span id="statusBarLeft">已索引 18,492 个文档 | 存储大小: 142.6 MB (Zstd密态压缩)</span>
+          <span id="statusBarLeft" data-i18n="mockup-status-left">已索引 18,492 个文档 | 存储大小: 142.6 MB (Zstd密态压缩)</span>
           <span style="color: #0369a1; font-weight: bold;" id="statusBarRight">搜索耗时: 0.38 毫秒 (命中 3 个文件)</span>
         </div>
       </div>
@@ -1059,7 +1058,7 @@
   </section>
 
   <!-- Format Matrix -->
-  <section class="section" style="background: rgba(22, 27, 34, 0.4); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);">
+  <section class="section" style="background: rgba(241, 245, 249, 0.5); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
     <div class="container">
       <div class="section-header">
         <div class="section-tag" data-i18n="tag-formats">SUPPORTED FORMATS</div>
@@ -1112,50 +1111,42 @@
     <div class="container">
       <div class="section-header">
         <div class="section-tag" data-i18n="tag-benchmarks">BENCHMARKS</div>
-        <h2 class="section-title" data-i18n="title-benchmarks">拒绝内存黑洞：性能与开销实测对比</h2>
-        <p class="section-desc" data-i18n="desc-benchmarks">原生现代 C++17 的纯粹性能，告别网页套壳桌面端动辄几个 G 的内存浪费与发热卡顿。</p>
+        <h2 class="section-title" data-i18n="title-benchmarks">系统性能与实测表现</h2>
+        <p class="section-desc" data-i18n="desc-benchmarks">以实测事实为依据，纯粹现代 C++17 架构带来的极低系统开销、毫秒级检索与高可用容灾能力。</p>
       </div>
 
       <div class="benchmark-table-wrapper">
         <table>
           <thead>
             <tr>
-              <th data-i18n="bm-h1">对比维度</th>
-              <th>SoEasy (C++17 / Qt5)</th>
-              <th data-i18n="bm-h2">传统 Electron / 网页容器搜索软件</th>
+              <th data-i18n="bm-h1">核心性能指标</th>
+              <th data-i18n="bm-h2">实测表现数据</th>
+              <th data-i18n="bm-h3">底层技术实现原理</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td><strong data-i18n="bm-r1">后台静默常驻内存开销</strong></td>
-              <td class="metric-win">~ 35 MB (轻若无物)</td>
-              <td class="metric-lose">> 480 MB (Chromium 多渲染进程 + V8)</td>
+              <td class="metric-win" data-i18n="bm-v1">~ 35 MB (极低常驻)</td>
+              <td data-i18n="bm-d1">原生 Qt5/C++17 架构，无臃肿运行时，精细内存管理与零泄漏保障</td>
             </tr>
             <tr>
-              <td><strong data-i18n="bm-r2">百万字本地全文倒排检索耗时</strong></td>
-              <td class="metric-win">&lt; 1 ms (SQLite FTS5 + CppJieba)</td>
-              <td class="metric-lose">~ 120 ms - 400 ms</td>
+              <td><strong data-i18n="bm-r2">百万字本地倒排检索耗时</strong></td>
+              <td class="metric-win" data-i18n="bm-v2">&lt; 1 ms (瞬间响应)</td>
+              <td data-i18n="bm-d2">SQLite FTS5 引擎 + CppJieba 深度优化分词，毫秒级定位目标文档</td>
             </tr>
             <tr>
-              <td><strong data-i18n="bm-r3">复杂损坏/死锁文件容灾机制</strong></td>
-              <td class="metric-win">WorkerGuard 5秒超时强杀自愈，UI 零影响</td>
-              <td class="metric-lose">整个主窗口白屏无响应甚至主进程崩溃闪退</td>
+              <td><strong data-i18n="bm-r3">复杂损坏/死锁文件容灾</strong></td>
+              <td class="metric-win" data-i18n="bm-v3">5秒超时强杀并自愈</td>
+              <td data-i18n="bm-d3">WorkerGuard 物理多进程沙箱隔离，故障Worker精准重启，主界面绝对零卡顿</td>
             </tr>
             <tr>
-              <td><strong data-i18n="bm-r4">数据落盘与隐私机制</strong></td>
-              <td class="metric-win">100% 本地透明 AES-128 页级加密 + Zstd</td>
-              <td class="metric-lose">明文存储或包含后台遥测数据上传</td>
+              <td><strong data-i18n="bm-r4">数据落盘与隐私安全机制</strong></td>
+              <td class="metric-win" data-i18n="bm-v4">100% 本地透明加密 + 高压缩比</td>
+              <td data-i18n="bm-d4">SQLite3MC 驱动 AES-128 页级加密存储 + Facebook Zstd 实时高压缩</td>
             </tr>
           </tbody>
         </table>
-      </div>
-
-      <!-- Quick Linux Build Snippet -->
-      <div class="build-snippet">
-        <div style="color: var(--primary); overflow-x: auto;">
-          <span style="color: var(--text-dim);">$</span> cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
-        </div>
-        <button class="copy-btn" id="buildCopyBtn" onclick="copyBuildScript()">复制编译命令</button>
       </div>
     </div>
   </section>
@@ -1175,81 +1166,84 @@
   </footer>
 
   <script>
-    // Authentic Mock Search Results
-    const searchDatabase = {
-      "财务报表": [
-        {
-          id: 1,
-          name: "2026年度第一季度财务报表.xlsx",
-          icon: "📊",
-          path: "/home/peanut/Finance/2026/2026年度第一季度财务报表.xlsx",
-          size: "1.2 MB",
-          time: "2026-10-31 18:20",
-          score: "14.82",
-          matches: 4,
-          content: `2026年度第一季度<mark>财务报表</mark>与研发开支明细：
+    // Authentic Mock Search Results (Bilingual: ZH & EN)
+    const searchDatasets = {
+      zh: {
+        defaultQuery: "财务报表",
+        items: {
+          "财务报表": [
+            {
+              id: 1,
+              name: "2026年度第一季度财务报表.xlsx",
+              icon: "📊",
+              path: "/home/peanut/Finance/2026/2026年度第一季度财务报表.xlsx",
+              size: "1.2 MB",
+              time: "2026-10-31 18:20",
+              score: "14.82",
+              matches: 4,
+              content: `2026年度第一季度<mark>财务报表</mark>与研发开支明细：
 - 算法服务器集群购置费用：¥ 380,000
 - 基础架构师及安全审计开支核算：¥ 450,000
 - 本季度总计完成 128 项研发预算报销与密态数据存储单元部署。
 经审计，本季度<mark>财务报表</mark>客观反映了公司在离线全文检索底座研发中的资产支出与资源配置。`
-        },
-        {
-          id: 2,
-          name: "财务报表审计工作底稿_2025.docx",
-          icon: "📄",
-          path: "/home/peanut/Audit/Reports/财务报表审计工作底稿_2025.docx",
-          size: "480 KB",
-          time: "2026-10-30 11:15",
-          score: "11.20",
-          matches: 2,
-          content: `会计师事务所专项审计报告：
+            },
+            {
+              id: 2,
+              name: "财务报表审计工作底稿_2025.docx",
+              icon: "📄",
+              path: "/home/peanut/Audit/Reports/财务报表审计工作底稿_2025.docx",
+              size: "480 KB",
+              time: "2026-10-30 11:15",
+              score: "11.20",
+              matches: 2,
+              content: `会计师事务所专项审计报告：
 针对年度合并<mark>财务报表</mark>进行严格核对，确认所有离线索引数据库均部署本地 AES-128 透明加密。
 所有资产开支及报销单据已完成与银行流水校验对齐。`
-        },
-        {
-          id: 3,
-          name: "财务报表报销审批单扫描件.pdf",
-          icon: "📑",
-          path: "/home/peanut/Scans/Invoices/财务报表报销审批单扫描件.pdf",
-          size: "3.4 MB",
-          time: "2026-10-28 14:02",
-          score: "9.65",
-          matches: 1,
-          content: `【PP-OCRv6 扫描件识别提取内容】
+            },
+            {
+              id: 3,
+              name: "财务报表报销审批单扫描件.pdf",
+              icon: "📑",
+              path: "/home/peanut/Scans/Invoices/财务报表报销审批单扫描件.pdf",
+              size: "3.4 MB",
+              time: "2026-10-28 14:02",
+              score: "9.65",
+              matches: 1,
+              content: `【PP-OCRv6 扫描件识别提取内容】
 部门：系统架构研发中心
 单据：季度研发<mark>财务报表</mark>核销凭证
 金额：壹拾伍万捌仟元整 (¥158,000)
 审批状态：财务总监复核通过 (已签名盖章)`
-        }
-      ],
-      "架构设计": [
-        {
-          id: 1,
-          name: "SoEasy核心技术架构设计白皮书.pdf",
-          icon: "📑",
-          path: "/home/peanut/Docs/Architecture/SoEasy核心技术架构设计白皮书.pdf",
-          size: "2.8 MB",
-          time: "2026-10-29 16:45",
-          score: "15.40",
-          matches: 6,
-          content: `1. 引言与系统目标
+            }
+          ],
+          "架构设计": [
+            {
+              id: 1,
+              name: "SoEasy核心技术架构设计白皮书.pdf",
+              icon: "📑",
+              path: "/home/peanut/Docs/Architecture/SoEasy核心技术架构设计白皮书.pdf",
+              size: "2.8 MB",
+              time: "2026-10-29 16:45",
+              score: "15.40",
+              matches: 6,
+              content: `1. 引言与系统目标
 SoEasy 是一款采用 C++17 与 Qt5 打造的跨平台本地全文检索引擎。
 在核心<mark>架构设计</mark>中，严格遵循“主服务与解析沙箱物理隔离”原则。
 2. 多进程沙箱与看门狗
 WorkerGuard 通过共享内存槽位池 (SHM Slot Pool) 调度子进程，死锁文件5秒内强杀自愈。
 3. 密态存储<mark>架构设计</mark>
 透明页级 AES-128 加密与 Zstandard 高压缩比正文缓存。`
-        },
-        {
-          id: 2,
-          name: "worker_sandbox_protocol.capnp",
-          icon: "⚙️",
-          path: "/home/peanut/project/soeasy/schema/worker_sandbox_protocol.capnp",
-          size: "4.2 KB",
-          time: "2026-10-27 16:46",
-          score: "12.18",
-          matches: 2,
-          content: `@0xa9b12c3d4e5f6789;
+            },
+            {
+              id: 2,
+              name: "worker_sandbox_protocol.capnp",
+              icon: "⚙️",
+              path: "/home/peanut/project/soeasy/schema/worker_sandbox_protocol.capnp",
+              size: "4.2 KB",
+              time: "2026-10-27 16:46",
+              score: "12.18",
+              matches: 2,
+              content: `@0xa9b12c3d4e5f6789;
 // 进程间通信协议<mark>架构设计</mark>：零拷贝跨进程参数定义
 struct ParseRequest {
   docId @0 :Int64;
@@ -1257,16 +1251,107 @@ struct ParseRequest {
   ext @2 :Text;
   targetSlot @3 :SlotInfo;
 }`
+            }
+          ]
         }
-      ]
+      },
+      en: {
+        defaultQuery: "Financial Report",
+        items: {
+          "Financial Report": [
+            {
+              id: 1,
+              name: "Q1_2026_Financial_Report.xlsx",
+              icon: "📊",
+              path: "/home/peanut/Finance/2026/Q1_2026_Financial_Report.xlsx",
+              size: "1.2 MB",
+              time: "2026-10-31 18:20",
+              score: "14.82",
+              matches: 4,
+              content: `Q1 2026 <mark>Financial Report</mark> & R&D Budget Breakdown:
+- High-performance algorithm cluster procurement: $ 380,000
+- Senior infrastructure & security auditing expenses: $ 450,000
+- 128 R&D budget reimbursements approved and encrypted storage deployed.
+Audit opinion: this quarterly <mark>Financial Report</mark> objectively reflects asset allocations and engineering investments.`
+            },
+            {
+              id: 2,
+              name: "Financial_Report_Audit_Working_Paper_2025.docx",
+              icon: "📄",
+              path: "/home/peanut/Audit/Reports/Financial_Report_Audit_Working_Paper_2025.docx",
+              size: "480 KB",
+              time: "2026-10-30 11:15",
+              score: "11.20",
+              matches: 2,
+              content: `Special Audit Working Paper:
+Annual consolidated <mark>Financial Report</mark> verified against ledger records.
+Confirmed all offline index databases are encrypted locally with transparent AES-128.`
+            },
+            {
+              id: 3,
+              name: "Financial_Report_Reimbursement_Scan.pdf",
+              icon: "📑",
+              path: "/home/peanut/Scans/Invoices/Financial_Report_Reimbursement_Scan.pdf",
+              size: "3.4 MB",
+              time: "2026-10-28 14:02",
+              score: "9.65",
+              matches: 1,
+              content: `[PP-OCRv6 Scanned Document OCR Recognition Result]
+Department: Core Infrastructure R&D Center
+Document: Quarterly R&D <mark>Financial Report</mark> Voucher
+Amount: USD $158,000
+Approval Status: CFO Verified & Signed`
+            }
+          ],
+          "Architecture Design": [
+            {
+              id: 1,
+              name: "SoEasy_Core_Architecture_Whitepaper.pdf",
+              icon: "📑",
+              path: "/home/peanut/Docs/Architecture/SoEasy_Core_Architecture_Whitepaper.pdf",
+              size: "2.8 MB",
+              time: "2026-10-29 16:45",
+              score: "15.40",
+              matches: 6,
+              content: `1. System Philosophy & Objectives
+SoEasy is an offline desktop full-text search engine built on modern C++17 and Qt5.
+Core <mark>Architecture Design</mark> strictly isolates index coordination from untrusted file parsers.
+2. Worker Sandbox & Watchdog
+WorkerGuard schedules worker subprocesses across a Shared Memory slot pool, terminating hanging files within 5 seconds.
+3. Encrypted Storage <mark>Architecture Design</mark>
+Transparent page-level AES-128 encryption paired with Zstandard Level 3 compression.`
+            },
+            {
+              id: 2,
+              name: "worker_sandbox_protocol.capnp",
+              icon: "⚙️",
+              path: "/home/peanut/project/soeasy/schema/worker_sandbox_protocol.capnp",
+              size: "4.2 KB",
+              time: "2026-10-27 16:46",
+              score: "12.18",
+              matches: 2,
+              content: `@0xa9b12c3d4e5f6789;
+// Zero-copy IPC Protocol <mark>Architecture Design</mark>
+struct ParseRequest {
+  docId @0 :Int64;
+  filePath @1 :Text;
+  ext @2 :Text;
+  targetSlot @3 :SlotInfo;
+}`
+            }
+          ]
+        }
+      }
     };
 
-    let activeQuery = "财务报表";
+    let activeLang = "zh";
+    let activeQuery = searchDatasets.zh.defaultQuery;
     let activeRowIndex = 0;
     let currentMatchIndex = 1;
 
     function renderMockup() {
-      const items = searchDatabase[activeQuery] || [];
+      const currentDataset = searchDatasets[activeLang] || searchDatasets.zh;
+      const items = currentDataset.items[activeQuery] || [];
       const tbody = document.getElementById("demoTableBody");
       const titleEl = document.getElementById("previewFileName");
       const pathEl = document.getElementById("previewFilePath");
@@ -1277,17 +1362,26 @@ struct ParseRequest {
 
       tbody.innerHTML = "";
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color: #94a3b8;">无匹配结果</td></tr>`;
-        titleEl.innerText = "未选中文件";
-        pathEl.innerText = "请尝试输入其他关键词";
-        contentEl.innerHTML = "无正文预览";
-        jumpCount.innerText = "第 0 / 0 处匹配";
-        statusRight.innerText = "搜索耗时: 0.12 毫秒 (命中 0 个文件)";
+        const noMatchText = activeLang === "zh" ? "无匹配结果" : "No matching results";
+        const noSelFile = activeLang === "zh" ? "未选中文件" : "No file selected";
+        const tryOther = activeLang === "zh" ? "请尝试输入其他关键词" : "Try entering another keyword";
+        const noPreview = activeLang === "zh" ? "无正文预览" : "No preview available";
+        const zeroMatch = activeLang === "zh" ? "第 0 / 0 处匹配" : "Match 0 / 0";
+        const zeroStatus = activeLang === "zh" ? "搜索耗时: 0.12 毫秒 (命中 0 个文件)" : "Search latency: 0.12 ms (0 files matched)";
+
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px; color: #94a3b8;">${noMatchText}</td></tr>`;
+        titleEl.innerText = noSelFile;
+        pathEl.innerText = tryOther;
+        contentEl.innerHTML = noPreview;
+        jumpCount.innerText = zeroMatch;
+        statusRight.innerText = zeroStatus;
         return;
       }
 
       const selectedItem = items[activeRowIndex] || items[0];
-      statusRight.innerText = `搜索耗时: 0.38 毫秒 (命中 ${items.length} 个文件)`;
+      statusRight.innerText = activeLang === "zh"
+          ? `搜索耗时: 0.38 毫秒 (命中 ${items.length} 个文件)`
+          : `Search latency: 0.38 ms (${items.length} files matched)`;
 
       items.forEach((item, idx) => {
         const tr = document.createElement("tr");
@@ -1317,13 +1411,16 @@ struct ParseRequest {
       pathEl.innerText = selectedItem.path;
       contentEl.innerHTML = selectedItem.content;
       jumpInput.value = activeQuery;
-      jumpCount.innerText = `第 ${currentMatchIndex} / ${selectedItem.matches} 处匹配`;
+      jumpCount.innerText = activeLang === "zh"
+          ? `第 ${currentMatchIndex} / ${selectedItem.matches} 处匹配`
+          : `Match ${currentMatchIndex} / ${selectedItem.matches}`;
     }
 
     const demoInput = document.getElementById("demoQueryInput");
     demoInput.addEventListener("input", (e) => {
       const val = e.target.value.trim();
-      if (searchDatabase[val]) {
+      const currentDataset = searchDatasets[activeLang] || searchDatasets.zh;
+      if (currentDataset.items[val]) {
         activeQuery = val;
         activeRowIndex = 0;
         currentMatchIndex = 1;
@@ -1332,20 +1429,26 @@ struct ParseRequest {
     });
 
     function prevMatch() {
-      const items = searchDatabase[activeQuery] || [];
+      const currentDataset = searchDatasets[activeLang] || searchDatasets.zh;
+      const items = currentDataset.items[activeQuery] || [];
       const item = items[activeRowIndex];
       if (item && item.matches > 0) {
         currentMatchIndex = currentMatchIndex > 1 ? currentMatchIndex - 1 : item.matches;
-        document.getElementById("jumpCount").innerText = `第 ${currentMatchIndex} / ${item.matches} 处匹配`;
+        document.getElementById("jumpCount").innerText = activeLang === "zh"
+            ? `第 ${currentMatchIndex} / ${item.matches} 处匹配`
+            : `Match ${currentMatchIndex} / ${item.matches}`;
       }
     }
 
     function nextMatch() {
-      const items = searchDatabase[activeQuery] || [];
+      const currentDataset = searchDatasets[activeLang] || searchDatasets.zh;
+      const items = currentDataset.items[activeQuery] || [];
       const item = items[activeRowIndex];
       if (item && item.matches > 0) {
         currentMatchIndex = currentMatchIndex < item.matches ? currentMatchIndex + 1 : 1;
-        document.getElementById("jumpCount").innerText = `第 ${currentMatchIndex} / ${item.matches} 处匹配`;
+        document.getElementById("jumpCount").innerText = activeLang === "zh"
+            ? `第 ${currentMatchIndex} / ${item.matches} 处匹配`
+            : `Match ${currentMatchIndex} / ${item.matches}`;
       }
     }
 
@@ -1354,30 +1457,37 @@ struct ParseRequest {
       panel.style.display = panel.style.display === "none" ? "flex" : "none";
     }
 
-    function copyBuildScript() {
-      const cmd = "cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)";
-      navigator.clipboard.writeText(cmd).then(() => {
-        const btn = document.getElementById("buildCopyBtn");
-        btn.innerText = "已复制到剪贴板!";
-        btn.style.color = "#3fb950";
-        setTimeout(() => {
-          btn.innerText = "复制编译命令";
-          btn.style.color = "";
-        }, 2200);
-      });
-    }
-
     renderMockup();
 
     // Dual-language dictionary
     const langDict = {
       zh: {
-        "slogan-text": "C++17 / Qt5 桌面全文检索引擎",
         "hero-title": "让电脑没有难搜的文件",
         "hero-subtitle": "基于现代 C++17 与 Qt5 架构。提供 FTS5 全文倒排与文件名双秒搜模式、物理多进程沙箱隔离自愈，以及纯本地透明 AES-128 加密存储。深入支持 Office、PDF、工程源码与图片 OCR。",
         "btn-win": "下载 Windows 便携版 (x64 .zip)",
         "btn-linux": "下载 Linux 便携版 (x86_64 .zip)",
         "btn-all": "所有 Release 发布产物 &rarr;",
+        "mockup-title": "SoEasy - 让电脑没有难搜的文件",
+        "mockup-search-ph": "输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, \"精确词组\", 前缀*）...",
+        "mockup-mode-fts5": "全文倒排 (FTS5)",
+        "mockup-mode-filename": "文件名秒搜",
+        "mockup-btn-preview": "◨ 预览",
+        "mockup-btn-settings": "⚙ 设置中心",
+        "mockup-scope-label": "限定搜索路径:",
+        "mockup-scope-ph": "留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索...",
+        "mockup-btn-browse": "浏览...",
+        "mockup-th-id": "序号",
+        "mockup-th-name": "文件名称",
+        "mockup-th-path": "所在路径",
+        "mockup-th-size": "大小",
+        "mockup-th-mtime": "修改时间",
+        "mockup-th-score": "相关度评分",
+        "mockup-btn-openfile": "打开文件",
+        "mockup-btn-openfolder": "所在目录",
+        "mockup-label-jump": "关键词跳转:",
+        "mockup-btn-prev": "&uarr; 上一个 (F3)",
+        "mockup-btn-next": "&darr; 下一个 (Shift+F3)",
+        "mockup-status-left": "已索引 18,492 个文档 | 存储大小: 142.6 MB (Zstd密态压缩)",
         "tag-pillars": "ARCHITECTURE HIGHLIGHTS",
         "title-pillars": "代码实证：SoEasy 的核心技术底座",
         "desc-pillars": "摒弃网页套壳假大空的宣传，每一项设计均落实于底层 C++17 真实代码之中。",
@@ -1405,22 +1515,51 @@ struct ParseRequest {
         "fmt-c6": "压缩归档文件 (规划中)",
         "fmt-d6": "界面默认置灰禁用，防止未实现时造成误检；递归解压与内部正文索引流水线正式在排期中。",
         "tag-benchmarks": "BENCHMARKS",
-        "title-benchmarks": "拒绝内存黑洞：性能与开销实测对比",
-        "desc-benchmarks": "原生现代 C++17 的纯粹性能，告别网页套壳桌面端动辄几个 G 的内存浪费与发热卡顿。",
-        "bm-h1": "对比维度",
-        "bm-h2": "传统 Electron / 网页容器搜索软件",
+        "title-benchmarks": "系统性能与实测表现",
+        "desc-benchmarks": "以实测事实为依据，纯粹现代 C++17 架构带来的极低系统开销、毫秒级检索与高可用容灾能力。",
+        "bm-h1": "核心性能指标",
+        "bm-h2": "实测表现数据",
+        "bm-h3": "底层技术实现原理",
         "bm-r1": "后台静默常驻内存开销",
-        "bm-r2": "百万字本地全文倒排检索耗时",
-        "bm-r3": "复杂损坏/死锁文件容灾机制",
-        "bm-r4": "数据落盘与隐私机制"
+        "bm-v1": "~ 35 MB (极低常驻)",
+        "bm-d1": "原生 Qt5/C++17 架构，无臃肿运行时，精细内存管理与零泄漏保障",
+        "bm-r2": "百万字本地倒排检索耗时",
+        "bm-v2": "&lt; 1 ms (瞬间响应)",
+        "bm-d2": "SQLite FTS5 引擎 + CppJieba 深度优化分词，毫秒级定位目标文档",
+        "bm-r3": "复杂损坏/死锁文件容灾",
+        "bm-v3": "5秒超时强杀并自愈",
+        "bm-d3": "WorkerGuard 物理多进程沙箱隔离，故障Worker精准重启，主界面绝对零卡顿",
+        "bm-r4": "数据落盘与隐私安全机制",
+        "bm-v4": "100% 本地透明加密 + 高压缩比",
+        "bm-d4": "SQLite3MC 驱动 AES-128 页级加密存储 + Facebook Zstd 实时高压缩"
       },
       en: {
-        "slogan-text": "Native Desktop Full-Text Search Engine",
         "hero-title": "Make Every File Searchable On Your Desktop",
         "hero-subtitle": "Engineered with C++17 & Qt5. Dual search modes (FTS5 full-text + fast filename), crash-isolated worker sandbox, and transparent local AES-128 encrypted storage. Deep support for Office, PDF, code trees, and OCR.",
         "btn-win": "Download Windows Release (x64 .zip)",
         "btn-linux": "Download Linux Release (x86_64 .zip)",
         "btn-all": "All Release Binaries &rarr;",
+        "mockup-title": "SoEasy - Make Every File Searchable",
+        "mockup-search-ph": "Enter search keywords (Supports FTS5: AND, OR, NOT, \"exact phrase\", prefix*)...",
+        "mockup-mode-fts5": "Full-Text (FTS5)",
+        "mockup-mode-filename": "Filename Search",
+        "mockup-btn-preview": "◨ Preview",
+        "mockup-btn-settings": "⚙ Settings",
+        "mockup-scope-label": "Search Scope:",
+        "mockup-scope-ph": "Leave empty for global search; or enter path to search within directory...",
+        "mockup-btn-browse": "Browse...",
+        "mockup-th-id": "#",
+        "mockup-th-name": "File Name",
+        "mockup-th-path": "Path",
+        "mockup-th-size": "Size",
+        "mockup-th-mtime": "Modified Date",
+        "mockup-th-score": "Relevance",
+        "mockup-btn-openfile": "Open File",
+        "mockup-btn-openfolder": "Open Folder",
+        "mockup-label-jump": "Jump to Match:",
+        "mockup-btn-prev": "&uarr; Prev (F3)",
+        "mockup-btn-next": "&darr; Next (Shift+F3)",
+        "mockup-status-left": "Indexed 18,492 documents | Storage: 142.6 MB (Zstd encrypted)",
         "tag-pillars": "ARCHITECTURE HIGHLIGHTS",
         "title-pillars": "Verified Codebase: Architectural Pillars",
         "desc-pillars": "No marketing fluff. Every architectural highlight is backed by concrete C++17 code.",
@@ -1448,18 +1587,26 @@ struct ParseRequest {
         "fmt-c6": "Archives (Planned)",
         "fmt-d6": "UI-disabled to prevent false-positive indexing until recursive extraction is implemented.",
         "tag-benchmarks": "BENCHMARKS",
-        "title-benchmarks": "Zero Bloat: Verified Benchmarks",
-        "desc-benchmarks": "Raw performance of native C++17 without the gigabytes of wasted RAM from web shells.",
-        "bm-h1": "Metric",
-        "bm-h2": "Typical Electron / Web-based Shell",
+        "title-benchmarks": "System Performance & Resource Benchmarks",
+        "desc-benchmarks": "Fact-based empirical metrics: ultra-low system footprint, sub-millisecond retrieval, and rock-solid crash resilience powered by modern C++17.",
+        "bm-h1": "Key Performance Metric",
+        "bm-h2": "Verified Measurement",
+        "bm-h3": "Underlying Architectural Principle",
         "bm-r1": "Idle Background Memory Footprint",
-        "bm-r2": "Query Latency across 1M Words",
-        "bm-r3": "Fault Isolation on Hanging Files",
-        "bm-r4": "Data Security & Network Policy"
+        "bm-v1": "~ 35 MB (Minimal Footprint)",
+        "bm-d1": "Native Qt5 & modern C++17 architecture, zero bloated runtime, deterministic memory lifecycle",
+        "bm-r2": "Full-Text Query Latency (1M+ Words)",
+        "bm-v2": "&lt; 1 ms (Instant Response)",
+        "bm-d2": "SQLite FTS5 engine + CppJieba optimized segmentation for sub-millisecond inverted index lookups",
+        "bm-r3": "Fault Isolation & Resilience",
+        "bm-v3": "5s Timeout Kill & Auto-Heal",
+        "bm-d3": "WorkerGuard multiprocess sandbox isolation; cleanly terminates hanging workers with zero UI lag",
+        "bm-r4": "Data Security & Disk Footprint",
+        "bm-v4": "100% Local Encrypted & Compressed",
+        "bm-d4": "SQLite3MultipleCiphers page-level AES-128 encryption paired with real-time Facebook Zstd compression"
       }
     };
 
-    let activeLang = "zh";
     const toggleBtn = document.getElementById("langToggle");
     toggleBtn.addEventListener("click", () => {
       activeLang = activeLang === "zh" ? "en" : "zh";
@@ -1471,7 +1618,21 @@ struct ParseRequest {
           el.innerHTML = dict[key];
         }
       });
+      document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+        const key = el.getAttribute("data-i18n-ph");
+        if (dict[key]) {
+          el.placeholder = dict[key];
+        }
+      });
       toggleBtn.innerText = activeLang === "zh" ? "EN / 中文" : "中文 / EN";
+
+      // Sync interactive desktop mockup language and dataset
+      const currentDataset = searchDatasets[activeLang] || searchDatasets.zh;
+      activeQuery = currentDataset.defaultQuery;
+      document.getElementById("demoQueryInput").value = activeQuery;
+      activeRowIndex = 0;
+      currentMatchIndex = 1;
+      renderMockup();
     });
 
     // 动态探测最新 Release 资产，自动同步下载按钮目标

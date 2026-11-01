@@ -1,5 +1,6 @@
 #include "gui/title_bar.h"
 #include "gui/icon_provider.h"
+#include "gui/i18n.h"
 
 namespace soeasy {
 namespace gui {
@@ -13,7 +14,7 @@ void TitleBar::SetupUi() {
   setObjectName("TitleBar");
   setStyleSheet(
       "#TitleBar {"
-      "  background-color: #EEF4F9;"
+      "  background-color: #FFFAFA;"
       "  border: none;"
       "}");
 
@@ -106,6 +107,23 @@ void TitleBar::SetupUi() {
   connect(btn_min_, &QPushButton::clicked, this, &TitleBar::OnMinimizeClicked);
   connect(btn_max_, &QPushButton::clicked, this, &TitleBar::OnMaximizeClicked);
   connect(btn_close_, &QPushButton::clicked, this, &TitleBar::OnCloseClicked);
+
+  RetranslateUi();
+}
+
+void TitleBar::RetranslateUi() {
+  if (title_label_) {
+    title_label_->setText(Tr("app_title"));
+  }
+  if (btn_min_) {
+    btn_min_->setToolTip(Tr("minimize"));
+  }
+  if (btn_max_) {
+    btn_max_->setToolTip(Tr("maximize"));
+  }
+  if (btn_close_) {
+    btn_close_->setToolTip(Tr("close"));
+  }
 }
 
 void TitleBar::UpdateMaximizeButton(bool is_maximized) {

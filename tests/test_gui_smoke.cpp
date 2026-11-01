@@ -15,6 +15,7 @@
 
 #include "gui/content_preview_dialog.h"
 #include "gui/hover_preview_popup.h"
+#include "gui/i18n.h"
 #include "gui/main_window.h"
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
@@ -129,6 +130,82 @@ int main(int argc, char* argv[]) {
     CHECK(config->max_file_size() == 32 * 1024 * 1024);
 
     std::cout << "  -> 索引目录/排除模式/扩展名扩展配置应用通过!\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test 2.5: Bilingual UI and Language Switching in Settings
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 2.5] 测试中英双语国际化 (i18n) 与设置中心语言切换...\n";
+  {
+    auto config = std::make_shared<soeasy::service::IndexConfig>();
+    CHECK(config->ui_language() == "zh");
+    soeasy::gui::I18n::Instance().SetLanguage("zh");
+    CHECK(soeasy::gui::Tr("app_title") == "SoEasy - 让电脑没有难搜的文件");
+    CHECK(soeasy::gui::Tr("btn_preview") == "◨ 预览");
+    CHECK(soeasy::gui::Tr("th_filename") == "文件名称");
+
+    // Switch to English
+    soeasy::gui::I18n::Instance().SetLanguage("en");
+    CHECK(soeasy::gui::Tr("app_title") == "SoEasy - Make Every File Searchable");
+    CHECK(soeasy::gui::Tr("btn_preview") == "◨ Preview");
+    CHECK(soeasy::gui::Tr("th_filename") == "File Name");
+
+    // Verify format categories & format descriptions in English
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office OOXML Formats");
+    CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "default") == "Word 2007+ Document");
+    CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("pdf", "default") == "Adobe PDF Portable Document");
+    CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("cpp", "default") == "C++ Source Code");
+
+    // Verify config persistence for language
+    config->set_ui_language("en");
+    CHECK(config->ui_language() == "en");
+
+    // Test SettingsDialog rendering in English on Tab 3 (File Formats)
+    {
+      soeasy::gui::SettingsDialog dlg_en(config);
+      dlg_en.resize(800, 600);
+      dlg_en.show();
+      auto* tab_widget = dlg_en.findChild<QTabWidget*>();
+      if (tab_widget) {
+        tab_widget->setCurrentIndex(3);
+      }
+      app.processEvents();
+      QPixmap pix = dlg_en.grab();
+      bool ok = pix.save("/tmp/soeasy_settings_dlg_en.png");
+      std::cout << "  -> dlg_en save ok: " << ok << ", isNull: " << pix.isNull()
+                << ", size: " << pix.width() << "x" << pix.height() << "\n";
+    }
+
+    std::string test_cfg_file = "/tmp/soeasy_i18n_test_config.json";
+    CHECK(config->SaveToFile(test_cfg_file));
+
+    auto loaded_cfg = std::make_shared<soeasy::service::IndexConfig>();
+    CHECK(loaded_cfg->LoadFromFile(test_cfg_file));
+    CHECK(loaded_cfg->ui_language() == "en");
+    std::remove(test_cfg_file.c_str());
+
+    // Switch back to Chinese
+    soeasy::gui::I18n::Instance().SetLanguage("zh");
+    config->set_ui_language("zh");
+    CHECK(soeasy::gui::Tr("app_title") == "SoEasy - 让电脑没有难搜的文件");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office 新版格式 (OOXML)");
+    CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "Word 2007+ 文本文档") == "Word 2007+ 文本文档");
+
+    // Test SettingsDialog rendering in Chinese on Tab 3
+    {
+      soeasy::gui::SettingsDialog dlg_zh(config);
+      dlg_zh.resize(800, 600);
+      dlg_zh.show();
+      auto* tab_widget = dlg_zh.findChild<QTabWidget*>();
+      if (tab_widget) {
+        tab_widget->setCurrentIndex(3);
+      }
+      app.processEvents();
+      QPixmap pix = dlg_zh.grab();
+      pix.save("/tmp/soeasy_settings_dlg_zh.png");
+    }
+
+    std::cout << "  -> 中英双语即时翻译、文件格式说明、配置持久化与切换验证完全通过!\n";
   }
 
   // -------------------------------------------------------------
@@ -346,7 +423,7 @@ int main(int argc, char* argv[]) {
 
     // Test StorageEngine full-text total_count
     int total_storage_hits = 0;
-    auto st_hits = storage->Search("测试", 10, 0, "", &total_storage_hits);
+    auto st_hits = storage->Search("SoEasy", 10, 0, "", &total_storage_hits);
     CHECK(total_storage_hits > 0);
     CHECK(static_cast<int>(st_hits.size()) <= 10);
     std::cout << "  -> NameIndex 与 StorageEngine 总匹配数与分页逻辑验证完全通过!\n";

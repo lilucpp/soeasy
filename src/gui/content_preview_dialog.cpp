@@ -1,4 +1,5 @@
 #include "gui/content_preview_dialog.h"
+#include "gui/i18n.h"
 
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -29,7 +30,7 @@ ContentPreviewDialog::ContentPreviewDialog(
       file_path_(file_path),
       keywords_(keywords),
       storage_(std::move(storage)) {
-  setWindowTitle(QString("文档正文预览 - %1").arg(file_name_));
+  setWindowTitle(Tr("preview_dlg_title").arg(file_name_));
   resize(900, 680);
   SetupUi();
   LoadContentAndHighlight();
@@ -45,8 +46,8 @@ void ContentPreviewDialog::SetupUi() {
   path_label_->setStyleSheet("font-size: 12px; color: #546E7A; font-family: monospace;");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-  auto* btn_open_folder = new QPushButton("打开所在文件夹", this);
-  auto* btn_open_app = new QPushButton("用系统默认程序打开", this);
+  auto* btn_open_folder = new QPushButton(Tr("btn_open_folder_sys"), this);
+  auto* btn_open_app = new QPushButton(Tr("btn_open_app_sys"), this);
   btn_open_folder->setStyleSheet("padding: 4px 10px;");
   btn_open_app->setStyleSheet("padding: 4px 10px;");
 
@@ -62,17 +63,17 @@ void ContentPreviewDialog::SetupUi() {
 
   // Search/Navigation bar inside document
   auto* nav_layout = new QHBoxLayout();
-  auto* label_search = new QLabel("关键词跳转:", this);
+  auto* label_search = new QLabel(Tr("label_jump"), this);
   in_doc_search_edit_ = new QLineEdit(this);
   if (!keywords_.empty()) {
     in_doc_search_edit_->setText(QString::fromStdString(keywords_[0]));
   }
-  in_doc_search_edit_->setPlaceholderText("在正文中搜索...");
+  in_doc_search_edit_->setPlaceholderText(Tr("search_in_content_ph"));
   in_doc_search_edit_->setMaximumWidth(200);
 
-  auto* btn_prev = new QPushButton("上一个 (Shift+F3)", this);
-  auto* btn_next = new QPushButton("下一个 (F3)", this);
-  match_count_label_ = new QLabel("匹配: 0 / 0", this);
+  auto* btn_prev = new QPushButton(Tr("btn_prev"), this);
+  auto* btn_next = new QPushButton(Tr("btn_next"), this);
+  match_count_label_ = new QLabel(Tr("match_count").arg(0).arg(0), this);
   match_count_label_->setStyleSheet("color: #78909C; font-weight: bold;");
 
   nav_layout->addWidget(label_search);
@@ -211,13 +212,13 @@ void ContentPreviewDialog::HighlightOccurrences() {
   if (!match_positions_.empty()) {
     JumpToMatch(0);
   } else {
-    match_count_label_->setText("匹配: 0 / 0");
+    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
   }
 }
 
 void ContentPreviewDialog::JumpToMatch(int index) {
   if (match_positions_.empty()) {
-    match_count_label_->setText("匹配: 0 / 0");
+    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
     return;
   }
 
@@ -236,9 +237,7 @@ void ContentPreviewDialog::JumpToMatch(int index) {
   text_viewer_->ensureCursorVisible();
 
   match_count_label_->setText(
-      QString("匹配: %1 / %2")
-          .arg(current_match_idx_ + 1)
-          .arg(match_positions_.size()));
+      Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
 }
 
 void ContentPreviewDialog::OnFindNext() {

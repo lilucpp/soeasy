@@ -1,5 +1,6 @@
 #include "gui/search_bar.h"
 #include "gui/icon_provider.h"
+#include "gui/i18n.h"
 
 #include <QAction>
 #include <QDir>
@@ -91,14 +92,17 @@ void SearchBar::SetupUi() {
       "  padding: 5px 12px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
-      "  background-color: #CBDCEF;"
+      "  background-color: #F1F5F9;"
+      "  border-color: #94A3B8;"
+      "  color: #0F172A;"
       "}"
       "QPushButton:pressed {"
-      "  background-color: #B8CFE5;"
+      "  background-color: #E2E8F0;"
       "}");
 
   btn_settings_ = new QPushButton("⚙ 设置中心", this);
@@ -108,14 +112,17 @@ void SearchBar::SetupUi() {
       "  padding: 5px 14px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
-      "  background-color: #CBDCEF;"
+      "  background-color: #F1F5F9;"
+      "  border-color: #94A3B8;"
+      "  color: #0F172A;"
       "}"
       "QPushButton:pressed {"
-      "  background-color: #B8CFE5;"
+      "  background-color: #E2E8F0;"
       "}");
 
   query_layout->addWidget(query_edit_, 1);
@@ -128,8 +135,8 @@ void SearchBar::SetupUi() {
   auto* scope_layout = new QHBoxLayout();
   scope_layout->setSpacing(6);
 
-  auto* label_scope = new QLabel("限定搜索路径:", this);
-  label_scope->setStyleSheet("font-size: 13px; color: #1E293B; font-weight: bold;");
+  label_scope_ = new QLabel("限定搜索路径:", this);
+  label_scope_->setStyleSheet("font-size: 13px; color: #1E293B; font-weight: bold;");
 
   scope_edit_ = new QLineEdit(this);
   scope_edit_->setPlaceholderText("留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索...");
@@ -151,14 +158,15 @@ void SearchBar::SetupUi() {
       "QPushButton {"
       "  font-size: 12px;"
       "  padding: 5px 14px;"
-      "  border: 1px solid #7DD3FC;"
+      "  border: 1px solid #BAE6FD;"
       "  border-radius: 6px;"
-      "  background-color: #BAE6FD;"
+      "  background-color: #E0F2FE;"
       "  color: #0369A1;"
       "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
-      "  background-color: #93C5FD;"
+      "  background-color: #BAE6FD;"
+      "  color: #0284C7;"
       "}"
       "QPushButton:pressed {"
       "  background-color: #7DD3FC;"
@@ -171,17 +179,20 @@ void SearchBar::SetupUi() {
       "  padding: 5px 12px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
-      "  background-color: #CBDCEF;"
+      "  background-color: #F1F5F9;"
+      "  border-color: #94A3B8;"
+      "  color: #0F172A;"
       "}"
       "QPushButton:pressed {"
-      "  background-color: #B8CFE5;"
+      "  background-color: #E2E8F0;"
       "}");
 
-  scope_layout->addWidget(label_scope);
+  scope_layout->addWidget(label_scope_);
   scope_layout->addWidget(scope_edit_, 1);
   scope_layout->addWidget(btn_scope_browse_);
   scope_layout->addWidget(btn_scope_clear_);
@@ -203,6 +214,44 @@ void SearchBar::SetupUi() {
   connect(btn_scope_clear_, &QPushButton::clicked, this, &SearchBar::OnClearScope);
   connect(btn_settings_, &QPushButton::clicked, this, &SearchBar::SettingsRequested);
   connect(btn_toggle_preview_, &QPushButton::clicked, this, &SearchBar::PreviewToggleRequested);
+
+  RetranslateUi();
+}
+
+void SearchBar::RetranslateUi() {
+  if (query_edit_) {
+    query_edit_->setPlaceholderText(Tr("search_placeholder"));
+  }
+  if (mode_combo_) {
+    int current_idx = mode_combo_->currentIndex();
+    mode_combo_->blockSignals(true);
+    mode_combo_->clear();
+    mode_combo_->addItem(Tr("mode_fulltext"), kModeFulltext);
+    mode_combo_->addItem(Tr("mode_filename"), kModeFilename);
+    if (current_idx >= 0 && current_idx < mode_combo_->count()) {
+      mode_combo_->setCurrentIndex(current_idx);
+    }
+    mode_combo_->blockSignals(false);
+  }
+  if (btn_toggle_preview_) {
+    btn_toggle_preview_->setText(Tr("btn_preview"));
+    btn_toggle_preview_->setToolTip(Tr("tip_preview"));
+  }
+  if (btn_settings_) {
+    btn_settings_->setText(Tr("btn_settings"));
+  }
+  if (label_scope_) {
+    label_scope_->setText(Tr("label_scope"));
+  }
+  if (scope_edit_) {
+    scope_edit_->setPlaceholderText(Tr("scope_placeholder"));
+  }
+  if (btn_scope_browse_) {
+    btn_scope_browse_->setText(Tr("browse"));
+  }
+  if (btn_scope_clear_) {
+    btn_scope_clear_->setText(Tr("btn_clear_scope"));
+  }
 }
 
 QString SearchBar::query() const {
@@ -235,7 +284,7 @@ void SearchBar::SetPathScope(const QString& path) {
 
 void SearchBar::OnBrowseScope() {
   QString dir = QFileDialog::getExistingDirectory(
-      this, "选择限定检索路径", scope_edit_->text().isEmpty() ? QDir::homePath() : scope_edit_->text(),
+      this, Tr("dlg_select_scope"), scope_edit_->text().isEmpty() ? QDir::homePath() : scope_edit_->text(),
       QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
   if (!dir.isEmpty()) {
     scope_edit_->setText(dir);

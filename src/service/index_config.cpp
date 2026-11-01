@@ -337,6 +337,11 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
       enable_embedded_image_ocr_ = j["enable_embedded_image_ocr"].get<bool>();
     }
 
+    if (j.contains("ui_language") && j["ui_language"].is_string()) {
+      std::string lang = j["ui_language"].get<std::string>();
+      ui_language_ = (lang == "en") ? "en" : "zh";
+    }
+
     if (j.contains("custom_extensions") && j["custom_extensions"].is_array()) {
       custom_exts_.clear();
       for (const auto& item : j["custom_extensions"]) {
@@ -376,6 +381,7 @@ bool IndexConfig::SaveToFile(const std::string& file_path) const {
       j["doctotext_logging"] = doctotext_logging_;
       j["doctotext_log_path"] = doctotext_log_path_;
       j["enable_embedded_image_ocr"] = enable_embedded_image_ocr_;
+      j["ui_language"] = ui_language_;
       j["custom_extensions"] = custom_exts_;
     }
 

@@ -19,6 +19,7 @@ class TitleBar : public QWidget {
   ~TitleBar() override = default;
 
   void UpdateMaximizeButton(bool is_maximized);
+  void RetranslateUi();
 
  protected:
   void mousePressEvent(QMouseEvent* event) override;

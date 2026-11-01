@@ -1,5 +1,6 @@
 #include "gui/preview_panel.h"
 #include "gui/icon_provider.h"
+#include "gui/i18n.h"
 
 #include <QDateTime>
 #include <QDesktopServices>
@@ -42,7 +43,7 @@ void PreviewPanel::SetStorageEngine(
 
 void PreviewPanel::SetupUi() {
   auto* main_layout = new QVBoxLayout(this);
-  main_layout->setContentsMargins(8, 0, 0, 0);
+  main_layout->setContentsMargins(0, 0, 0, 0);
   main_layout->setSpacing(6);
 
   // 1. Header Card: File Info & Quick Actions
@@ -75,13 +76,13 @@ void PreviewPanel::SetupUi() {
       "QPushButton {"
       "  font-size: 11px;"
       "  padding: 4px 10px;"
-      "  border: 1px solid #7DD3FC;"
+      "  border: 1px solid #BAE6FD;"
       "  border-radius: 4px;"
-      "  background-color: #BAE6FD;"
+      "  background-color: #E0F2FE;"
       "  color: #0369A1;"
       "  font-weight: 500;"
       "}"
-      "QPushButton:hover { background-color: #93C5FD; }"
+      "QPushButton:hover { background-color: #BAE6FD; color: #0284C7; }"
       "QPushButton:pressed { background-color: #7DD3FC; }");
 
   btn_open_folder_ = new QPushButton("所在目录", header_card);
@@ -91,11 +92,12 @@ void PreviewPanel::SetupUi() {
       "  padding: 4px 10px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 4px;"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "  font-weight: 500;"
       "}"
-      "QPushButton:hover { background-color: #CBDCEF; }"
-      "QPushButton:pressed { background-color: #B8CFE5; }");
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:pressed { background-color: #E2E8F0; }");
 
   title_row->addWidget(icon_label_);
   title_row->addWidget(title_label_, 1);
@@ -116,8 +118,8 @@ void PreviewPanel::SetupUi() {
   auto* nav_layout = new QHBoxLayout();
   nav_layout->setSpacing(6);
 
-  auto* label_jump = new QLabel("关键词跳转:", this);
-  label_jump->setStyleSheet("font-size: 12px; color: #475569; font-weight: 500;");
+  label_jump_ = new QLabel("关键词跳转:", this);
+  label_jump_->setStyleSheet("font-size: 12px; color: #475569; font-weight: 500;");
 
   in_doc_search_edit_ = new QLineEdit(this);
   in_doc_search_edit_->setPlaceholderText("在正文中查找...");
@@ -139,11 +141,12 @@ void PreviewPanel::SetupUi() {
       "  padding: 3px 8px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 4px;"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "  font-weight: 500;"
       "}"
-      "QPushButton:hover { background-color: #CBDCEF; }"
-      "QPushButton:pressed { background-color: #B8CFE5; }");
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:pressed { background-color: #E2E8F0; }");
   btn_next_ = new QPushButton("▼ 下一个", this);
   btn_next_->setStyleSheet(
       "QPushButton {"
@@ -151,16 +154,17 @@ void PreviewPanel::SetupUi() {
       "  padding: 3px 8px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 4px;"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "  font-weight: 500;"
       "}"
-      "QPushButton:hover { background-color: #CBDCEF; }"
-      "QPushButton:pressed { background-color: #B8CFE5; }");
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:pressed { background-color: #E2E8F0; }");
 
   match_count_label_ = new QLabel("匹配: 0 / 0", this);
   match_count_label_->setStyleSheet("font-size: 11px; color: #64748B; font-weight: bold;");
 
-  nav_layout->addWidget(label_jump);
+  nav_layout->addWidget(label_jump_);
   nav_layout->addWidget(in_doc_search_edit_, 1);
   nav_layout->addWidget(btn_prev_);
   nav_layout->addWidget(btn_next_);
@@ -224,6 +228,41 @@ void PreviewPanel::SetupUi() {
     }
     HighlightOccurrences();
   });
+
+  RetranslateUi();
+}
+
+void PreviewPanel::RetranslateUi() {
+  if (btn_open_file_) {
+    btn_open_file_->setText(Tr("btn_open_file"));
+  }
+  if (btn_open_folder_) {
+    btn_open_folder_->setText(Tr("btn_open_folder"));
+  }
+  if (label_jump_) {
+    label_jump_->setText(Tr("label_jump"));
+  }
+  if (in_doc_search_edit_) {
+    in_doc_search_edit_->setPlaceholderText(Tr("search_in_content_ph"));
+  }
+  if (btn_prev_) {
+    btn_prev_->setText(Tr("btn_prev"));
+  }
+  if (btn_next_) {
+    btn_next_->setText(Tr("btn_next"));
+  }
+  if (match_count_label_) {
+    if (match_positions_.empty()) {
+      match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+    } else {
+      int cur = (current_match_idx_ >= 0) ? current_match_idx_ + 1 : 1;
+      match_count_label_->setText(Tr("match_count").arg(cur).arg(match_positions_.size()));
+    }
+  }
+  if (current_file_path_.isEmpty()) {
+    if (title_label_) title_label_->setText(Tr("no_file_selected"));
+    if (path_label_) path_label_->setText(Tr("no_content_extracted"));
+  }
 }
 
 void PreviewPanel::ClearPreview() {
@@ -235,12 +274,12 @@ void PreviewPanel::ClearPreview() {
   current_match_idx_ = -1;
 
   icon_label_->clear();
-  title_label_->setText("未选中文件");
-  path_label_->setText("请在左侧列表中选择文件以查看正文预览。");
+  title_label_->setText(Tr("no_file_selected"));
+  path_label_->setText(Tr("no_content_extracted"));
   btn_open_file_->setEnabled(false);
   btn_open_folder_->setEnabled(false);
   in_doc_search_edit_->clear();
-  match_count_label_->setText("匹配: 0 / 0");
+  match_count_label_->setText(Tr("match_count").arg(0).arg(0));
 
   text_viewer_->clear();
   meta_label_->clear();
@@ -379,12 +418,10 @@ void PreviewPanel::HighlightOccurrences() {
   if (!match_positions_.empty()) {
     std::sort(match_positions_.begin(), match_positions_.end());
     match_count_label_->setText(
-        QString("匹配: 1 / %1%2")
-            .arg(match_positions_.size())
-            .arg(match_positions_.size() >= kMaxHighlights ? "+" : ""));
+        Tr("match_count").arg(1).arg(QString("%1%2").arg(match_positions_.size()).arg(match_positions_.size() >= kMaxHighlights ? "+" : "")));
     JumpToMatch(0);
   } else {
-    match_count_label_->setText("匹配: 0 / 0");
+    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
   }
 }
 
@@ -395,9 +432,7 @@ void PreviewPanel::JumpToMatch(int index) {
 
   current_match_idx_ = index;
   match_count_label_->setText(
-      QString("匹配: %1 / %2")
-          .arg(current_match_idx_ + 1)
-          .arg(match_positions_.size()));
+      Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
 
   int pos = match_positions_[current_match_idx_];
   QTextCursor cursor = text_viewer_->textCursor();

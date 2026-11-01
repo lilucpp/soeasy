@@ -1,5 +1,6 @@
 #include "gui/main_window.h"
 #include "gui/icon_provider.h"
+#include "gui/i18n.h"
 
 #include <QApplication>
 #include <QDateTime>
@@ -53,8 +54,11 @@ std::vector<std::string> SplitQueryKeywords(const std::string& query) {
 MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
                        QWidget* parent)
     : QMainWindow(parent), pipeline_(std::move(pipeline)) {
+  if (pipeline_ && pipeline_->config()) {
+    I18n::Instance().SetLanguage(pipeline_->config()->ui_language());
+  }
   setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
-  setWindowTitle("SoEasy - 让电脑没有难搜的文件");
+  setWindowTitle(Tr("app_title"));
   setWindowIcon(IconProvider::GetAppIcon());
   resize(1280, 750);
   SetupUi();
@@ -100,14 +104,14 @@ void MainWindow::showEvent(QShowEvent* event) {
 void MainWindow::SetupUi() {
   setStyleSheet(
       "QMainWindow {"
-      "  background-color: #EEF4F9;"
+      "  background-color: #FFFAFA;"
       "  border: 1px solid #CBD5E1;"
       "}"
       "#centralWidget {"
-      "  background-color: #EEF4F9;"
+      "  background-color: #FFFAFA;"
       "}"
       "QStatusBar {"
-      "  background-color: #EEF4F9;"
+      "  background-color: #FFFAFA;"
       "  border-top: 1px solid #CBD5E1;"
       "  color: #334155;"
       "  font-size: 12px;"
@@ -140,13 +144,17 @@ void MainWindow::SetupUi() {
 
   // Splitter: Result Table (Left) + Master-Detail Preview Panel (Right)
   splitter_ = new QSplitter(Qt::Horizontal, content_widget);
-  splitter_->setHandleWidth(5);
+  splitter_->setHandleWidth(6);
   splitter_->setStyleSheet(
       "QSplitter::handle {"
-      "  background-color: #CBD5E1;"
+      "  background-color: transparent;"
       "}"
       "QSplitter::handle:hover {"
       "  background-color: #38BDF8;"
+      "  border-radius: 3px;"
+      "}"
+      "QSplitter::handle:pressed {"
+      "  background-color: #0284C7;"
       "}");
 
   result_view_ = new ResultView(splitter_);
@@ -224,8 +232,7 @@ void MainWindow::SetupUi() {
       pipeline_->CancelScan();
     }
     status_cancel_btn_->setEnabled(false);
-    status_stats_label_->setText(
-        "<span style=\"color:#D97706; font-weight:bold;\">! 正在协同取消索引...</span>");
+    status_stats_label_->setText(Tr("status_cancelling"));
   });
 
   status_file_label_ = new QLabel(this);
@@ -255,6 +262,29 @@ void MainWindow::SetupUi() {
           &MainWindow::OnFileOpenRequested);
   connect(result_view_, &ResultView::LoadMoreRequested, this,
           &MainWindow::OnLoadMoreRequested);
+
+  RetranslateUi();
+}
+
+void MainWindow::RetranslateUi() {
+  setWindowTitle(Tr("app_title"));
+  if (title_bar_) {
+    title_bar_->RetranslateUi();
+  }
+  if (search_bar_) {
+    search_bar_->RetranslateUi();
+  }
+  if (result_view_) {
+    result_view_->RetranslateUi();
+  }
+  if (preview_panel_) {
+    preview_panel_->RetranslateUi();
+  }
+  if (status_cancel_btn_) {
+    status_cancel_btn_->setText(Tr("btn_cancel_index"));
+    status_cancel_btn_->setToolTip(Tr("tip_cancel_index"));
+  }
+  UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
 }
 
 void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
@@ -263,18 +293,12 @@ void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
     indexed_files = pipeline_->name_index()->size();
   }
 
-  status_stats_label_->setText(
-      QString("在索引文件: %1 个 | 匹配结果: %2 条")
-          .arg(indexed_files)
-          .arg(total_matches));
+  status_stats_label_->setText(Tr("status_stats").arg(indexed_files).arg(total_matches));
 
   if (cost_ms > 0.0) {
-    status_latency_label_->setText(
-        QString("<span style=\"color: #16A34A; font-size: 13px;\">●</span> 检索耗时: %1 ms")
-            .arg(QString::number(cost_ms, 'f', 2)));
+    status_latency_label_->setText(Tr("status_latency").arg(QString::number(cost_ms, 'f', 2)));
   } else {
-    status_latency_label_->setText(
-        "<span style=\"color: #16A34A; font-size: 13px;\">●</span> 就绪");
+    status_latency_label_->setText(Tr("status_ready"));
   }
 }
 
@@ -363,7 +387,7 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
       if (name_snippet.empty()) {
         name_snippet = nh.file_name;
       }
-      item.snippet_html = QString("文件名匹配: %1").arg(QString::fromStdString(name_snippet));
+      item.snippet_html = Tr("filename_match_prefix").arg(QString::fromStdString(name_snippet));
       display_items.push_back(std::move(item));
     }
   }
@@ -446,7 +470,7 @@ void MainWindow::OnLoadMoreRequested() {
       if (name_snippet.empty()) {
         name_snippet = nh.file_name;
       }
-      item.snippet_html = QString("文件名匹配: %1").arg(QString::fromStdString(name_snippet));
+      item.snippet_html = Tr("filename_match_prefix").arg(QString::fromStdString(name_snippet));
       new_display_items.push_back(std::move(item));
     }
   }
@@ -508,6 +532,8 @@ void MainWindow::OnOpenSettings() {
 }
 
 void MainWindow::OnSettingsApplied() {
+  RetranslateUi();
+
   if (pipeline_ && pipeline_->config()) {
     common::Logger::SetLevel(pipeline_->config()->log_level());
     common::Logger::SetConsoleEnabled(pipeline_->config()->log_console());

@@ -30,6 +30,7 @@ class PreviewPanel : public QWidget {
                     const QString& file_path,
                     const std::vector<std::string>& keywords);
   void ClearPreview();
+  void RetranslateUi();
 
  private slots:
   void OnFindNext();
@@ -55,6 +56,7 @@ class PreviewPanel : public QWidget {
   QPushButton* btn_open_file_ = nullptr;
   QPushButton* btn_open_folder_ = nullptr;
 
+  QLabel* label_jump_ = nullptr;
   QLineEdit* in_doc_search_edit_ = nullptr;
   QPushButton* btn_prev_ = nullptr;
   QPushButton* btn_next_ = nullptr;

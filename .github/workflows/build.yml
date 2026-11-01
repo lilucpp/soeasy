@@ -117,6 +117,7 @@ jobs:
           cp -rp third_party/cppjieba/dict/* "${STAGE_DIR}/dict/" 2>/dev/null || true
           cp -rp models/ppocr_v6 "${STAGE_DIR}/models/" 2>/dev/null || true
           cp -p README.md "${STAGE_DIR}/" 2>/dev/null || true
+          mkdir -p "${STAGE_DIR}/icons" && cp -rp resources/icons/* "${STAGE_DIR}/icons/" 2>/dev/null || true
           
           # Bundle third-party runtime libraries
           cp -p third_party/doctotext/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true

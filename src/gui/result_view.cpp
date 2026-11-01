@@ -1,5 +1,6 @@
 #include "gui/result_view.h"
 #include "gui/icon_provider.h"
+#include "gui/i18n.h"
 
 #include <QDateTime>
 #include <QFileInfo>
@@ -35,22 +36,7 @@ ResultView::ResultView(QWidget* parent) : QTableWidget(parent) {
 
 void ResultView::SetupTable() {
   setColumnCount(6);
-  QStringList headers;
-  headers << "序号" << "文件名称" << "所在路径" << "大小" << "修改时间" << "相关度评分";
-  setHorizontalHeaderLabels(headers);
-
-  if (auto* item = horizontalHeaderItem(0)) {
-    item->setTextAlignment(Qt::AlignCenter);
-  }
-  if (auto* item = horizontalHeaderItem(3)) {
-    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  }
-  if (auto* item = horizontalHeaderItem(4)) {
-    item->setTextAlignment(Qt::AlignCenter);
-  }
-  if (auto* item = horizontalHeaderItem(5)) {
-    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  }
+  RetranslateUi();
 
   horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
   horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
@@ -78,9 +64,9 @@ void ResultView::SetupTable() {
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
       "  background-color: #FFFFFF;"
-      "  alternate-background-color: #F4F8FC;"
-      "  selection-background-color: #BDDDF8;"
-      "  selection-color: #0F172A;"
+      "  alternate-background-color: #F8FAFC;"
+      "  selection-background-color: #E0F2FE;"
+      "  selection-color: #0369A1;"
       "  outline: none;"
       "}"
       "QTableWidget::item {"
@@ -89,16 +75,16 @@ void ResultView::SetupTable() {
       "  border: none;"
       "}"
       "QTableWidget::item:hover {"
-      "  background-color: #EBF3FA;"
+      "  background-color: #F1F5F9;"
       "}"
       "QHeaderView::section {"
-      "  background-color: #DCE8F5;"
+      "  background-color: #F8FAFC;"
       "  font-size: 12px;"
       "  font-weight: bold;"
-      "  color: #1E293B;"
+      "  color: #334155;"
       "  padding: 7px 8px;"
       "  border: none;"
-      "  border-right: 1px solid #CBD5E1;"
+      "  border-right: 1px solid #E2E8F0;"
       "  border-bottom: 1px solid #CBD5E1;"
       "}"
       "QScrollBar:vertical {"
@@ -344,6 +330,25 @@ void ResultView::OnItemDoubleClicked(int row, int /*column*/) {
   if (row >= 0 && row < static_cast<int>(current_items_.size())) {
     const auto& it = current_items_[row];
     emit FileOpenRequested(it.doc_id, it.file_name, it.file_path);
+  }
+}
+
+void ResultView::RetranslateUi() {
+  QStringList headers;
+  headers << Tr("th_id") << Tr("th_filename") << Tr("th_path") << Tr("th_size") << Tr("th_mtime") << Tr("th_score");
+  setHorizontalHeaderLabels(headers);
+
+  if (auto* item = horizontalHeaderItem(0)) {
+    item->setTextAlignment(Qt::AlignCenter);
+  }
+  if (auto* item = horizontalHeaderItem(3)) {
+    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  }
+  if (auto* item = horizontalHeaderItem(4)) {
+    item->setTextAlignment(Qt::AlignCenter);
+  }
+  if (auto* item = horizontalHeaderItem(5)) {
+    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
   }
 }
 

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <!-- Modern Gradient: Vibrant Azure to Deep Navy -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="45%" stop-color="#0369A1"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+
+    <!-- Glass Refraction Gradient -->
+    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFAFA" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.04"/>
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow -->
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Rounded Squircle Base -->
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bgGrad)"/>
+  <!-- Crisp Snow Ambient Rim -->
+  <rect x="9" y="9" width="110" height="110" rx="25" fill="none" stroke="#FFFAFA" stroke-width="1.6" stroke-opacity="0.32"/>
+
+  <g filter="url(#subtleShadow)">
+    <!-- Magnifier Lens Base Glass -->
+    <circle cx="56" cy="54" r="28" fill="url(#glassGrad)"/>
+
+    <!-- Magnifier Handle -->
+    <line x1="77" y1="75" x2="101" y2="99" stroke="#FFFAFA" stroke-width="9" stroke-linecap="round"/>
+    <line x1="78" y1="76" x2="94" y2="92" stroke="#0284C7" stroke-width="3.5" stroke-linecap="round"/>
+
+    <!-- Magnifier Outer Snow Rim -->
+    <circle cx="56" cy="54" r="28" fill="none" stroke="#FFFAFA" stroke-width="7"/>
+
+    <!-- Elegant Modern 'S' Inside the Lens -->
+    <!-- Top arc, smooth sweep, bottom arc -->
+    <path d="M 68 40.5 C 61 33.5 45 35 44 45.5 C 43 56 69 52.5 68 63 C 67 73 50 74.5 44 67.5" 
+          fill="none" stroke="#FFFAFA" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Search Target Match: Precision Amber Jewel (Top-right of lens) -->
+    <circle cx="70" cy="38" r="4.5" fill="#F59E0B" stroke="#FFFAFA" stroke-width="1.5"/>
+  </g>
+</svg>

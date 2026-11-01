@@ -201,48 +201,77 @@ QIcon IconProvider::GetAppIcon() {
     return s_icon_cache["__app__"];
   }
 
-  const int size = 32;
-  QPixmap pix(size, size);
-  pix.fill(Qt::transparent);
+  QIcon icon;
+  for (int size : {16, 20, 24, 32, 48, 64, 128}) {
+    QPixmap pix(size, size);
+    pix.fill(Qt::transparent);
 
-  QPainter p(&pix);
-  p.setRenderHint(QPainter::Antialiasing, true);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-  // Folder tab & back
-  QPainterPath tab;
-  tab.moveTo(3, 8);
-  tab.lineTo(12, 8);
-  tab.lineTo(14, 11);
-  tab.lineTo(28, 11);
-  tab.quadTo(29, 11, 29, 12);
-  tab.lineTo(29, 26);
-  tab.quadTo(29, 27, 28, 27);
-  tab.lineTo(3, 27);
-  tab.quadTo(2, 27, 2, 26);
-  tab.lineTo(2, 9);
-  tab.quadTo(2, 8, 3, 8);
-  p.setPen(Qt::NoPen);
-  p.setBrush(QColor("#F59E0B"));
-  p.drawPath(tab);
+    const double s = size / 128.0;
 
-  // Folder front
-  QPainterPath front;
-  front.moveTo(2, 13);
-  front.lineTo(29, 13);
-  front.lineTo(27, 27);
-  front.lineTo(4, 27);
-  front.closeSubpath();
-  p.setBrush(QColor("#FBBF24"));
-  p.drawPath(front);
+    // 1. Squircle background with Azure to Oceanic Navy gradient
+    QLinearGradient bgGrad(0, 0, size, size);
+    bgGrad.setColorAt(0.0, QColor("#0284C7"));
+    bgGrad.setColorAt(0.45, QColor("#0369A1"));
+    bgGrad.setColorAt(1.0, QColor("#0F172A"));
 
-  // Magnifying glass overlay
-  QPen glass_pen(QColor("#1E40AF"), 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-  p.setPen(glass_pen);
-  p.setBrush(QColor(255, 255, 255, 180));
-  p.drawEllipse(QPointF(17, 19), 6.0, 6.0);
-  p.drawLine(QPointF(21.5, 23.5), QPointF(27.0, 29.0));
+    QRectF squircleRect(8 * s, 8 * s, 112 * s, 112 * s);
+    p.setPen(Qt::NoPen);
+    p.setBrush(bgGrad);
+    p.drawRoundedRect(squircleRect, 26 * s, 26 * s);
 
-  QIcon icon(pix);
+    // 2. Snow ambient border
+    QPen rimPen(QColor(255, 250, 250, 80), 1.5 * s);
+    p.setPen(rimPen);
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(9 * s, 9 * s, 110 * s, 110 * s), 25 * s, 25 * s);
+
+    // 3. Magnifier glass backing
+    QRadialGradient glassGrad(56 * s, 54 * s, 28 * s);
+    glassGrad.setColorAt(0.0, QColor(255, 250, 250, 60));
+    glassGrad.setColorAt(1.0, QColor(56, 189, 248, 15));
+    p.setPen(Qt::NoPen);
+    p.setBrush(glassGrad);
+    p.drawEllipse(QPointF(56 * s, 54 * s), 28 * s, 28 * s);
+
+    // 4. Magnifier handle
+    QPen handleOuter(QColor("#FFFAFA"), 9 * s, Qt::SolidLine, Qt::RoundCap);
+    p.setPen(handleOuter);
+    p.drawLine(QPointF(77 * s, 75 * s), QPointF(101 * s, 99 * s));
+
+    QPen handleInner(QColor("#0284C7"), 3.5 * s, Qt::SolidLine, Qt::RoundCap);
+    p.setPen(handleInner);
+    p.drawLine(QPointF(78 * s, 76 * s), QPointF(94 * s, 92 * s));
+
+    // 5. Magnifier outer Snow rim
+    QPen lensRim(QColor("#FFFAFA"), 7 * s);
+    p.setPen(lensRim);
+    p.setBrush(Qt::NoBrush);
+    p.drawEllipse(QPointF(56 * s, 54 * s), 28 * s, 28 * s);
+
+    // 6. Modern 'S' Monogram
+    QPainterPath sPath;
+    sPath.moveTo(68 * s, 40.5 * s);
+    sPath.cubicTo(61 * s, 33.5 * s, 45 * s, 35 * s, 44 * s, 45.5 * s);
+    sPath.cubicTo(43 * s, 56 * s, 69 * s, 52.5 * s, 68 * s, 63 * s);
+    sPath.cubicTo(67 * s, 73 * s, 50 * s, 74.5 * s, 44 * s, 67.5 * s);
+
+    QPen sPen(QColor("#FFFAFA"), 6.5 * s, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    p.setPen(sPen);
+    p.setBrush(Qt::NoBrush);
+    p.drawPath(sPath);
+
+    // 7. Amber Jewel Dot (Search Target Match)
+    p.setPen(QPen(QColor("#FFFAFA"), 1.5 * s));
+    p.setBrush(QColor("#F59E0B"));
+    p.drawEllipse(QPointF(70 * s, 38 * s), 4.5 * s, 4.5 * s);
+
+    icon.addPixmap(pix);
+  }
+
   s_icon_cache["__app__"] = icon;
   return icon;
 }

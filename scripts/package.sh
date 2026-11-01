@@ -77,6 +77,8 @@ cp -rp "${PROJECT_ROOT}/third_party/cppjieba/dict/"* "${STAGE_DIR}/dict/"
 mkdir -p "${STAGE_DIR}/models"
 cp -rp "${PROJECT_ROOT}/models/ppocr_v6" "${STAGE_DIR}/models/"
 cp -p "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/"
+mkdir -p "${STAGE_DIR}/icons"
+cp -rp "${PROJECT_ROOT}/resources/icons/"* "${STAGE_DIR}/icons/" 2>/dev/null || true
 
 # 创建启动引导脚本 run.sh
 cat << 'EOF' > "${STAGE_DIR}/run.sh"
@@ -103,6 +105,7 @@ Type=Application
 Name=SoEasy
 Comment=SoEasy Desktop Search Engine - 让电脑没有难搜的文件
 Exec=./run.sh
+Icon=./icons/soeasy.png
 Terminal=false
 Categories=Utility;Office;
 EOF

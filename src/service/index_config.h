@@ -16,6 +16,7 @@ class IndexConfig {
   static constexpr uint32_t kDefaultDebounceMs = 300;                // 300ms
   static constexpr size_t kDefaultWorkerCount = 2;                   // 2 workers default
   static constexpr const char* kDefaultLogLevel = "info";
+  static constexpr const char* kDefaultUiLanguage = "zh";
   static constexpr bool kDefaultLogConsole = false;
   static constexpr bool kDefaultLogSync = false;
 
@@ -50,6 +51,15 @@ class IndexConfig {
   size_t worker_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return worker_count_;
+  }
+
+  void set_ui_language(const std::string& lang) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ui_language_ = (lang == "en") ? "en" : "zh";
+  }
+  std::string ui_language() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return ui_language_;
   }
 
   void set_log_level(const std::string& level) {
@@ -208,6 +218,7 @@ class IndexConfig {
   bool doctotext_logging_ = false;
   std::string doctotext_log_path_;
   bool enable_embedded_image_ocr_ = false;
+  std::string ui_language_ = kDefaultUiLanguage;
   std::vector<std::string> custom_exts_;
 };
 

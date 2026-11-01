@@ -2,6 +2,7 @@
 #define SOEASY_SRC_GUI_SEARCH_BAR_H_
 
 #include <QComboBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QString>
@@ -30,6 +31,7 @@ class SearchBar : public QWidget {
   void SetQuery(const QString& query);
   void SetMode(SearchMode mode);
   void SetPathScope(const QString& path);
+  void RetranslateUi();
 
  signals:
   void SearchTriggered(const QString& query, int mode, const QString& path_scope);
@@ -48,6 +50,7 @@ class SearchBar : public QWidget {
   QLineEdit* query_edit_ = nullptr;
   QComboBox* mode_combo_ = nullptr;
   QLineEdit* scope_edit_ = nullptr;
+  QLabel* label_scope_ = nullptr;
   QPushButton* btn_scope_browse_ = nullptr;
   QPushButton* btn_scope_clear_ = nullptr;
   QPushButton* btn_settings_ = nullptr;

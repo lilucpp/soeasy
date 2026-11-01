@@ -71,6 +71,7 @@ class MainWindow : public QMainWindow {
 
  private:
   void SetupUi();
+  void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
 
   std::shared_ptr<service::IndexPipeline> pipeline_;

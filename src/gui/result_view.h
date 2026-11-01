@@ -40,6 +40,7 @@ class ResultView : public QTableWidget {
   void SetResults(const std::vector<DisplayResultItem>& items);
   void AppendResults(const std::vector<DisplayResultItem>& items);
   void ClearResults();
+  void RetranslateUi();
 
   void EnsureSnippetForRows(int start_row, int end_row);
 

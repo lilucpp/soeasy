@@ -14,6 +14,7 @@
 #include <string>
 
 #include "common/logger.h"
+#include "gui/i18n.h"
 #include "gui/main_window.h"
 #include "service/index_config.h"
 #include "service/index_pipeline.h"
@@ -129,6 +130,10 @@ int main(int argc, char* argv[]) {
     }
     config->SaveToFile(config_path.toStdString());
   }
+
+  // Initialize UI language from configuration
+  soeasy::gui::I18n::Instance().SetLanguage(config->ui_language());
+  app.setApplicationDisplayName(soeasy::gui::Tr("app_title"));
 
   // Ensure default doctotext log path is populated if empty
   if (config->doctotext_log_path().empty()) {
