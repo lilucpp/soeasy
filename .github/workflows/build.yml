@@ -32,6 +32,8 @@ jobs:
             libuchardet-dev \
             libcapnp-dev \
             capnproto \
+            libboost-dev \
+            libboost-nowide-dev \
             zip
 
       - name: Build and Package Linux Release
@@ -77,6 +79,7 @@ jobs:
             mingw-w64-x86_64-zlib
             mingw-w64-x86_64-uchardet
             mingw-w64-x86_64-libiconv
+            mingw-w64-x86_64-boost
             zip
           update: true
 
@@ -132,6 +135,7 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libgcc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           
           cd dist && zip -r -q "${DIST_NAME}.zip" "${DIST_NAME}"
 
