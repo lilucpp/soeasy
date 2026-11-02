@@ -10,6 +10,7 @@
 
 #include <opencv2/imgcodecs.hpp>
 
+#include "common/encoding_utils.h"
 #include "common/logger.h"
 #include "worker/ocr/ocr_engine_factory.h"
 
@@ -44,10 +45,10 @@ bool L3ImageParser::ParseSvgText(const std::string& file_path, std::string* out_
   if (!out_utf8) return false;
   out_utf8->clear();
 
-  std::ifstream f(file_path);
-  if (!f.is_open()) return false;
-
-  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  auto ifs = common::EncodingUtils::OpenIfstream(file_path);
+  if (!ifs.is_open()) return false;
+  std::string content((std::istreambuf_iterator<char>(ifs)),
+                      std::istreambuf_iterator<char>());
 
   // Extract content between <text...>...</text> and <tspan...>...</tspan>
   static const std::regex text_tag_regex("<(?:text|tspan)[^>]*>([^<]+)<\\/(?:text|tspan)>",
@@ -132,8 +133,9 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
     }
   }
 
-  // 4. Standard raster bitmap decoding
-  cv::Mat img = cv::imread(file_path);
+  // 4. Standard raster bitmap decoding directly from disk using native path
+  std::string native_path = common::EncodingUtils::ToNativeAnsiPath(file_path);
+  cv::Mat img = cv::imread(native_path);
   if (img.empty()) {
     LOG_ERROR("[L3ImageParser] Failed to decode image file '{}'", file_path);
     return false;

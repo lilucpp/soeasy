@@ -10,6 +10,8 @@
 #include <fstream>
 #include <vector>
 
+#include "common/encoding_utils.h"
+
 namespace soeasy {
 namespace worker {
 namespace ocr {
@@ -22,9 +24,7 @@ FilterDecision ImageFilter::PrecheckFile(const std::string& file_path, uint64_t 
   }
 
   if (file_size == 0) {
-    std::error_code ec;
-    file_size = std::filesystem::file_size(file_path, ec);
-    if (ec || file_size == 0) {
+    if (!common::EncodingUtils::GetFileStat(file_path, &file_size, nullptr) || file_size == 0) {
       return FilterDecision::kUnreadable;
     }
   }
@@ -134,7 +134,7 @@ FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat& bgr_image) const {
 
 ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string& file_path) {
   ImageDimension dim;
-  std::ifstream f(file_path, std::ios::binary);
+  auto f = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
   if (!f.is_open()) return dim;
 
   uint8_t buf[256];

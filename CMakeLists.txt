@@ -11,6 +11,8 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
 find_package(OpenCV REQUIRED)
+set(Boost_USE_STATIC_LIBS OFF)
+find_package(Boost 1.73 REQUIRED COMPONENTS nowide)
 
 # Optimization flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -139,15 +141,17 @@ add_subdirectory(third_party/efsw ${CMAKE_BINARY_DIR}/efsw_build EXCLUDE_FROM_AL
 add_library(soeasy_common STATIC
     src/common/shm_pool.cpp
     src/common/logger.cpp
+    src/common/encoding_utils.cpp
 )
 target_include_directories(soeasy_common PUBLIC
     src
     third_party/spdlog/include
+    third_party/utfcpp/source
 )
 if(WIN32)
-    target_link_libraries(soeasy_common PUBLIC pthread)
+    target_link_libraries(soeasy_common PUBLIC pthread Boost::nowide)
 else()
-    target_link_libraries(soeasy_common PUBLIC rt pthread)
+    target_link_libraries(soeasy_common PUBLIC rt pthread Boost::nowide)
 endif()
 
 # -------------------------------------------------------------

@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QTabBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -28,7 +29,7 @@ SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config,
                                QWidget* parent)
     : QDialog(parent), config_(std::move(config)) {
   setWindowTitle("SoEasy - 索引配置与设置中心");
-  resize(750, 600);
+  resize(800, 620);
   SetupUi();
   PopulateFromConfig();
 }
@@ -38,6 +39,7 @@ void SettingsDialog::SetupUi() {
       "QDialog {"
       "  background-color: #FFFAFA;"
       "  color: #1E293B;"
+      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;"
       "}"
       "QTabWidget::pane {"
       "  border: 1px solid #E2E8F0;"
@@ -50,10 +52,11 @@ void SettingsDialog::SetupUi() {
       "  color: #475569;"
       "  border: 1px solid #CBD5E1;"
       "  border-bottom: none;"
-      "  padding: 6px 11px;"
+      "  padding: 6px 12px;"
+      "  min-width: 125px;"
       "  border-top-left-radius: 6px;"
       "  border-top-right-radius: 6px;"
-      "  margin-right: 2px;"
+      "  margin-right: 3px;"
       "  font-size: 12px;"
       "  font-weight: 500;"
       "}"
@@ -118,6 +121,11 @@ void SettingsDialog::SetupUi() {
 
   auto* main_layout = new QVBoxLayout(this);
   tab_widget_ = new QTabWidget(this);
+  tab_widget_->setElideMode(Qt::ElideNone);
+  if (tab_widget_->tabBar()) {
+    tab_widget_->tabBar()->setElideMode(Qt::ElideNone);
+    tab_widget_->tabBar()->setExpanding(false);
+  }
 
   // -------------------------------------------------------------
   // Tab 0: 常规与语言 (General & Language)

@@ -30,6 +30,7 @@
 
 #include <opencv2/imgcodecs.hpp>
 
+#include "common/encoding_utils.h"
 #include "doctotext_c_api.h"
 #include "miniz.h"
 #include "utf8.h"
@@ -39,9 +40,7 @@
 namespace soeasy {
 namespace worker {
 
-#ifdef _WIN32
-static const char* kDevNull = "NUL";
-#else
+#ifndef _WIN32
 static const char* kDevNull = "/dev/null";
 #endif
 
@@ -76,13 +75,14 @@ std::string RunCommandCaptureStdout(const std::string& cmd) {
 }
 
 uint64_t GetFileSize(const std::string& path) {
-  struct stat st;
-  if (stat(path.c_str(), &st) == 0) {
-    return static_cast<uint64_t>(st.st_size);
+  uint64_t size = 0;
+  if (common::EncodingUtils::GetFileStat(path, &size, nullptr)) {
+    return size;
   }
   return 0;
 }
 
+#ifndef _WIN32
 std::string DocToTextImageParserCallback(
     const std::string& image_name,
     const char* image_buffer,
@@ -131,6 +131,7 @@ const char* DocToTextImageParserCallbackC(
       user_data);
   return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
 }
+#endif
 
 }  // namespace
 
@@ -138,7 +139,7 @@ L2OfficeParser::L2OfficeParser() {
   supported_exts_ = {
       "docx", "xlsx", "pptx", "pdf", "doc", "xls", "ppt", "rtf",
       "odt", "ods", "odp", "odg", "fodt", "fods", "fodp", "xlsb",
-      "eml", "pages", "numbers", "key", "keynote"
+      "eml", "pages", "numbers", "key", "keynote", "wps", "et", "dps"
   };
 }
 
@@ -195,6 +196,7 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
   std::string lower = ext;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
+#ifndef _WIN32
   // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
   try {
     bool enable_logging = false;
@@ -288,6 +290,7 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
   } catch (...) {
     // Graceful fallback to secondary extractors
   }
+#endif
 
   // 2. Secondary / Fallback: If DocToText extraction was empty or failed, use internal extractors
   if (out_utf8_text->empty()) {
@@ -299,7 +302,8 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
       ParsePptx(file_path, out_utf8_text);
     } else if (lower == "pdf") {
       ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
-    } else if (lower == "doc" || lower == "xls" || lower == "ppt") {
+    } else if (lower == "doc" || lower == "xls" || lower == "ppt" ||
+               lower == "wps" || lower == "et" || lower == "dps" || lower == "rtf") {
       ParseLegacyOffice(file_path, lower, out_utf8_text);
     }
   }
@@ -328,28 +332,71 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
     return true;
   }
 
+  // If this is a valid scanned PDF, treat as successful extraction with empty text
+  if (lower == "pdf" && is_scanned_pdf && *is_scanned_pdf) {
+    return true;
+  }
+
   return false;
 }
 
-bool L2OfficeParser::ParseDocx(const std::string& file_path,
-                              std::string* out_utf8) {
-  mz_zip_archive zip;
-  std::memset(&zip, 0, sizeof(zip));
-  if (!mz_zip_reader_init_file(&zip, file_path.c_str(), 0)) {
-    return false;
+namespace {
+
+class ZipFileScope {
+ public:
+  ZipFileScope() : file_(nullptr) {
+    std::memset(&zip_, 0, sizeof(zip_));
+  }
+  ~ZipFileScope() {
+    Close();
   }
 
+  bool Open(const std::string& file_path) {
+    Close();
+    file_ = common::EncodingUtils::FopenUtf8(file_path, "rb");
+    if (!file_) return false;
+    if (mz_zip_reader_init_cfile(&zip_, file_, 0, 0) != MZ_TRUE) {
+      std::fclose(file_);
+      file_ = nullptr;
+      return false;
+    }
+    return true;
+  }
+
+  void Close() {
+    if (file_) {
+      mz_zip_reader_end(&zip_);
+      std::fclose(file_);
+      file_ = nullptr;
+    }
+  }
+
+  mz_zip_archive* zip() { return &zip_; }
+
+ private:
+  mz_zip_archive zip_;
+  FILE* file_;
+};
+
+}  // namespace
+
+bool L2OfficeParser::ParseDocx(const std::string& file_path,
+                              std::string* out_utf8) {
+  ZipFileScope zip_scope;
+  if (!zip_scope.Open(file_path)) {
+    return false;
+  }
+  mz_zip_archive* zip = zip_scope.zip();
+
   size_t uncomp_size = 0;
-  void* data = mz_zip_reader_extract_file_to_heap(&zip, "word/document.xml",
+  void* data = mz_zip_reader_extract_file_to_heap(zip, "word/document.xml",
                                                   &uncomp_size, 0);
   if (!data) {
-    mz_zip_reader_end(&zip);
     return false;
   }
 
   std::string xml(static_cast<const char*>(data), uncomp_size);
   mz_free(data);
-  mz_zip_reader_end(&zip);
 
   *out_utf8 = ExtractXmlText(xml, true);
   return !out_utf8->empty();
@@ -357,18 +404,18 @@ bool L2OfficeParser::ParseDocx(const std::string& file_path,
 
 bool L2OfficeParser::ParseXlsx(const std::string& file_path,
                               std::string* out_utf8) {
-  mz_zip_archive zip;
-  std::memset(&zip, 0, sizeof(zip));
-  if (!mz_zip_reader_init_file(&zip, file_path.c_str(), 0)) {
+  ZipFileScope zip_scope;
+  if (!zip_scope.Open(file_path)) {
     return false;
   }
+  mz_zip_archive* zip = zip_scope.zip();
 
   std::ostringstream oss;
 
   // 1. Extract sharedStrings.xml (primary string table in XLSX)
   size_t shared_size = 0;
   void* shared_data = mz_zip_reader_extract_file_to_heap(
-      &zip, "xl/sharedStrings.xml", &shared_size, 0);
+      zip, "xl/sharedStrings.xml", &shared_size, 0);
   if (shared_data) {
     std::string shared_xml(static_cast<const char*>(shared_data), shared_size);
     mz_free(shared_data);
@@ -376,9 +423,9 @@ bool L2OfficeParser::ParseXlsx(const std::string& file_path,
   }
 
   // 2. Extract worksheet cell contents
-  for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
+  for (mz_uint i = 0; i < mz_zip_reader_get_num_files(zip); ++i) {
     mz_zip_archive_file_stat file_stat;
-    if (!mz_zip_reader_file_stat(&zip, i, &file_stat)) continue;
+    if (!mz_zip_reader_file_stat(zip, i, &file_stat)) continue;
 
     std::string filename(file_stat.m_filename);
     if (filename.rfind("xl/worksheets/sheet", 0) == 0 &&
@@ -386,7 +433,7 @@ bool L2OfficeParser::ParseXlsx(const std::string& file_path,
         filename.substr(filename.size() - 4) == ".xml") {
       size_t sheet_size = 0;
       void* sheet_data = mz_zip_reader_extract_file_to_heap(
-          &zip, file_stat.m_filename, &sheet_size, 0);
+          zip, file_stat.m_filename, &sheet_size, 0);
       if (sheet_data) {
         std::string sheet_xml(static_cast<const char*>(sheet_data), sheet_size);
         mz_free(sheet_data);
@@ -395,25 +442,24 @@ bool L2OfficeParser::ParseXlsx(const std::string& file_path,
     }
   }
 
-  mz_zip_reader_end(&zip);
   *out_utf8 = oss.str();
   return !out_utf8->empty();
 }
 
 bool L2OfficeParser::ParsePptx(const std::string& file_path,
                               std::string* out_utf8) {
-  mz_zip_archive zip;
-  std::memset(&zip, 0, sizeof(zip));
-  if (!mz_zip_reader_init_file(&zip, file_path.c_str(), 0)) {
+  ZipFileScope zip_scope;
+  if (!zip_scope.Open(file_path)) {
     return false;
   }
+  mz_zip_archive* zip = zip_scope.zip();
 
   std::ostringstream oss;
 
   // Extract all slide*.xml
-  for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
+  for (mz_uint i = 0; i < mz_zip_reader_get_num_files(zip); ++i) {
     mz_zip_archive_file_stat file_stat;
-    if (!mz_zip_reader_file_stat(&zip, i, &file_stat)) continue;
+    if (!mz_zip_reader_file_stat(zip, i, &file_stat)) continue;
 
     std::string filename(file_stat.m_filename);
     if (filename.rfind("ppt/slides/slide", 0) == 0 &&
@@ -421,7 +467,7 @@ bool L2OfficeParser::ParsePptx(const std::string& file_path,
         filename.substr(filename.size() - 4) == ".xml") {
       size_t slide_size = 0;
       void* slide_data = mz_zip_reader_extract_file_to_heap(
-          &zip, file_stat.m_filename, &slide_size, 0);
+          zip, file_stat.m_filename, &slide_size, 0);
       if (slide_data) {
         std::string slide_xml(static_cast<const char*>(slide_data), slide_size);
         mz_free(slide_data);
@@ -430,7 +476,6 @@ bool L2OfficeParser::ParsePptx(const std::string& file_path,
     }
   }
 
-  mz_zip_reader_end(&zip);
   *out_utf8 = oss.str();
   return !out_utf8->empty();
 }
@@ -450,6 +495,7 @@ bool L2OfficeParser::ParsePdf(const std::string& file_path,
 bool L2OfficeParser::ParseLegacyOffice(const std::string& file_path,
                                       const std::string& ext,
                                       std::string* out_utf8) {
+#ifndef _WIN32
   std::string cmd;
   if (ext == "doc") {
     cmd = "catdoc -d utf-8 \"" + file_path + "\" 2>/dev/null";
@@ -464,30 +510,77 @@ bool L2OfficeParser::ParseLegacyOffice(const std::string& file_path,
     *out_utf8 = std::move(output);
     return true;
   }
+#endif
 
-  // Fallback: extract contiguous printable ASCII / UTF-8 characters from binary stream
-  std::ifstream ifs(file_path, std::ios::binary);
+  // Extract both UTF-16LE and ANSI / UTF-8 characters directly from disk via stream
+  auto ifs = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
   if (!ifs.is_open()) {
     return false;
   }
 
-  std::string content((std::istreambuf_iterator<char>(ifs)),
-                      std::istreambuf_iterator<char>());
   std::string extracted;
-  std::string chunk;
-  for (unsigned char c : content) {
-    if (c >= 32 || c == '\n' || c == '\t' || c >= 0x80) {
-      chunk += static_cast<char>(c);
-    } else {
-      if (chunk.size() >= 4) {
-        extracted += chunk;
-        extracted += " ";
+  extracted.reserve(8192);
+
+  auto is_valid_char = [](wchar_t wc) {
+    if (wc >= 0x0020 && wc <= 0x007E) return true;  // Printable ASCII
+    if (wc == L'\n' || wc == L'\r' || wc == L'\t') return true;
+    if (wc >= 0x00A0 && wc < 0xD800) return true;   // Unicode (including CJK 0x4E00 - 0x9FFF)
+    if (wc >= 0xE000 && wc <= 0xFFFD) return true;
+    return false;
+  };
+
+  std::wstring current_wstr;
+  std::string current_ansi;
+  char buf[65536];
+  uint8_t pending_byte = 0;
+  bool has_pending = false;
+
+  while (ifs) {
+    ifs.read(buf, sizeof(buf));
+    std::streamsize bytes_read = ifs.gcount();
+    if (bytes_read <= 0) break;
+
+    for (std::streamsize idx = 0; idx < bytes_read; ++idx) {
+      uint8_t byte = static_cast<uint8_t>(buf[idx]);
+
+      // 1. ANSI scanner
+      if (byte >= 32 || byte == '\n' || byte == '\t' || byte >= 0x80) {
+        current_ansi.push_back(static_cast<char>(byte));
+      } else {
+        if (current_ansi.size() >= 4) {
+          extracted += common::EncodingUtils::ToUtf8(current_ansi);
+          extracted.push_back(' ');
+        }
+        current_ansi.clear();
       }
-      chunk.clear();
+
+      // 2. UTF-16LE scanner
+      if (!has_pending) {
+        pending_byte = byte;
+        has_pending = true;
+      } else {
+        wchar_t wc = static_cast<wchar_t>(pending_byte | (byte << 8));
+        has_pending = false;
+        if (is_valid_char(wc)) {
+          current_wstr.push_back(wc);
+        } else {
+          if (current_wstr.size() >= 3) {
+            extracted += common::EncodingUtils::WideToUtf8(current_wstr);
+            extracted.push_back(' ');
+          }
+          current_wstr.clear();
+        }
+      }
     }
   }
-  if (chunk.size() >= 4) {
-    extracted += chunk;
+
+  if (current_ansi.size() >= 4) {
+    extracted += common::EncodingUtils::ToUtf8(current_ansi);
+    extracted.push_back(' ');
+  }
+  if (current_wstr.size() >= 3) {
+    extracted += common::EncodingUtils::WideToUtf8(current_wstr);
+    extracted.push_back(' ');
   }
 
   *out_utf8 = std::move(extracted);

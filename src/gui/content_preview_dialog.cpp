@@ -37,6 +37,13 @@ ContentPreviewDialog::ContentPreviewDialog(
 }
 
 void ContentPreviewDialog::SetupUi() {
+  setStyleSheet(
+      "QDialog {"
+      "  background-color: #FFFFFF;"
+      "  color: #1E293B;"
+      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;"
+      "}");
+
   auto* main_layout = new QVBoxLayout(this);
   main_layout->setSpacing(8);
 

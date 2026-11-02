@@ -6,6 +6,7 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QFileInfo>
+#include <QFont>
 #include <QMessageBox>
 #include <QStandardPaths>
 
@@ -35,6 +36,21 @@ int main(int argc, char* argv[]) {
   app.setApplicationName("SoEasy");
   app.setApplicationDisplayName("SoEasy - 让电脑没有难搜的文件");
   app.setApplicationVersion("1.0.0");
+
+  // Configure modern, anti-aliased sans-serif fonts across platforms
+  QFont app_font;
+#ifdef _WIN32
+  app_font.setFamily("Microsoft YaHei UI");
+  app_font.setPointSize(9);
+#elif defined(__APPLE__)
+  app_font.setFamily(".AppleSystemUIFont");
+  app_font.setPointSize(10);
+#else
+  app_font.setFamily("Noto Sans CJK SC");
+  app_font.setPointSize(10);
+#endif
+  app_font.setStyleStrategy(QFont::PreferAntialias);
+  app.setFont(app_font);
 
   QCommandLineParser parser;
   parser.setApplicationDescription("SoEasy Desktop Search Engine");

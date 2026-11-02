@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "common/encoding_utils.h"
 #include "uchardet/uchardet.h"
 #include "utf8.h"
 
@@ -276,7 +277,7 @@ bool L1TextParser::ParseFile(const std::string& file_path, const std::string& ex
     return false;
   }
 
-  std::ifstream ifs(file_path, std::ios::binary);
+  auto ifs = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
   if (!ifs.is_open()) {
     return false;
   }

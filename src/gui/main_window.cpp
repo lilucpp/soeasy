@@ -106,6 +106,7 @@ void MainWindow::SetupUi() {
       "QMainWindow {"
       "  background-color: #FFFAFA;"
       "  border: 1px solid #CBD5E1;"
+      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;"
       "}"
       "#centralWidget {"
       "  background-color: #FFFAFA;"

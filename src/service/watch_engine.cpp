@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/encoding_utils.h"
 #include "common/logger.h"
 
 namespace soeasy {
@@ -69,7 +70,8 @@ void WatchEngine::Stop() {
   is_watching_ = false;
 }
 
-bool WatchEngine::AddWatch(const std::string& dir_path) {
+bool WatchEngine::AddWatch(const std::string& raw_dir_path) {
+  std::string dir_path = common::EncodingUtils::ToUtf8(raw_dir_path);
   std::lock_guard<std::mutex> lock(watch_mutex_);
 
   auto it = watch_ids_.find(dir_path);
@@ -116,10 +118,14 @@ std::vector<std::string> WatchEngine::GetWatchedDirectories() const {
 }
 
 void WatchEngine::handleFileAction(efsw::WatchID watchid,
-                                   const std::string& dir,
-                                   const std::string& filename,
+                                   const std::string& raw_dir,
+                                   const std::string& raw_filename,
                                    efsw::Action action,
-                                   const std::string& old_filename) {
+                                   const std::string& raw_old_filename) {
+  std::string dir = common::EncodingUtils::ToUtf8(raw_dir);
+  std::string filename = common::EncodingUtils::ToUtf8(raw_filename);
+  std::string old_filename = common::EncodingUtils::ToUtf8(raw_old_filename);
+
   // 1. Fast suffix check: skip non-interested extensions directly
   if (config_) {
     bool supported = config_->IsFileSupported(filename);

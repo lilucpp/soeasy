@@ -5,6 +5,8 @@
 #include <fstream>
 #include <vector>
 
+#include "common/encoding_utils.h"
+
 namespace soeasy {
 namespace service {
 
@@ -54,7 +56,7 @@ PrecheckResult DocPrechecker::Check(const std::string& file_path,
     return res;
   }
 
-  std::ifstream file(file_path, std::ios::binary);
+  auto file = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
   if (!file.is_open()) {
     res.status = PrecheckStatus::kTruncatedOrCorrupt;
     res.reason = "Cannot open file";

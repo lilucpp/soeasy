@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/encoding_utils.h"
 #include "common/logger.h"
 #include "service/doc_prechecker.h"
 
@@ -145,26 +146,30 @@ bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
 
 void IndexPipeline::ScanDirectoryRecursive(const std::string& dir_path) {
   try {
+    auto target_p = common::EncodingUtils::PathFromUtf8(dir_path);
     for (auto it = std::filesystem::recursive_directory_iterator(
-             dir_path, std::filesystem::directory_options::skip_permission_denied);
+             target_p, std::filesystem::directory_options::skip_permission_denied);
          it != std::filesystem::recursive_directory_iterator(); ++it) {
       if (it->is_directory()) {
-        std::string sub_dir = it->path().string();
+        std::string sub_dir = common::EncodingUtils::PathToUtf8(it->path());
         if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
           it.disable_recursion_pending();
           continue;
         }
       }
       if (it->is_regular_file()) {
-        std::string file_path = it->path().string();
-        std::string filename = it->path().filename().string();
+        std::string file_path = common::EncodingUtils::PathToUtf8(it->path());
+        std::string filename = common::EncodingUtils::PathToUtf8(it->path().filename());
         std::string ext = ExtractExtension(filename);
 
         uint64_t fsize = 0;
-        try {
-          fsize = it->file_size();
-        } catch (...) {
-          fsize = 0;
+        int64_t fmtime = 0;
+        if (!common::EncodingUtils::GetFileStat(file_path, &fsize, &fmtime)) {
+          try {
+            fsize = it->file_size();
+          } catch (...) {
+            fsize = 0;
+          }
         }
 
         if (config_->ShouldIndex(file_path, ext, fsize)) {
@@ -195,24 +200,28 @@ size_t IndexPipeline::PerformInitialScan(
   std::vector<std::string> files_to_index;
   for (const auto& dir : watched_dirs) {
     try {
+      auto target_p = common::EncodingUtils::PathFromUtf8(dir);
       for (auto it = std::filesystem::recursive_directory_iterator(
-               dir, std::filesystem::directory_options::skip_permission_denied);
+               target_p, std::filesystem::directory_options::skip_permission_denied);
            it != std::filesystem::recursive_directory_iterator(); ++it) {
         if (it->is_directory()) {
-          std::string sub_dir = it->path().string();
+          std::string sub_dir = common::EncodingUtils::PathToUtf8(it->path());
           if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
             it.disable_recursion_pending();
             continue;
           }
         }
         if (it->is_regular_file()) {
-          std::string fpath = it->path().string();
-          std::string fname = it->path().filename().string();
+          std::string fpath = common::EncodingUtils::PathToUtf8(it->path());
+          std::string fname = common::EncodingUtils::PathToUtf8(it->path().filename());
           std::string ext = ExtractExtension(fname);
           uint64_t fsize = 0;
-          try {
-            fsize = it->file_size();
-          } catch (...) {}
+          int64_t fmtime = 0;
+          if (!common::EncodingUtils::GetFileStat(fpath, &fsize, &fmtime)) {
+            try {
+              fsize = it->file_size();
+            } catch (...) {}
+          }
           if (config_->ShouldIndex(fpath, ext, fsize)) {
             files_to_index.push_back(fpath);
           }
@@ -312,24 +321,28 @@ bool IndexPipeline::RebuildIndex(
   std::vector<std::string> files_to_index;
   for (const auto& dir : watched_dirs) {
     try {
+      auto target_p = common::EncodingUtils::PathFromUtf8(dir);
       for (auto it = std::filesystem::recursive_directory_iterator(
-               dir, std::filesystem::directory_options::skip_permission_denied);
+               target_p, std::filesystem::directory_options::skip_permission_denied);
            it != std::filesystem::recursive_directory_iterator(); ++it) {
         if (it->is_directory()) {
-          std::string sub_dir = it->path().string();
+          std::string sub_dir = common::EncodingUtils::PathToUtf8(it->path());
           if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
             it.disable_recursion_pending();
             continue;
           }
         }
         if (it->is_regular_file()) {
-          std::string fpath = it->path().string();
-          std::string fname = it->path().filename().string();
+          std::string fpath = common::EncodingUtils::PathToUtf8(it->path());
+          std::string fname = common::EncodingUtils::PathToUtf8(it->path().filename());
           std::string ext = ExtractExtension(fname);
           uint64_t fsize = 0;
-          try {
-            fsize = it->file_size();
-          } catch (...) {}
+          int64_t fmtime = 0;
+          if (!common::EncodingUtils::GetFileStat(fpath, &fsize, &fmtime)) {
+            try {
+              fsize = it->file_size();
+            } catch (...) {}
+          }
 
           if (config_->ShouldIndex(fpath, ext, fsize)) {
             files_to_index.push_back(fpath);
@@ -399,15 +412,15 @@ bool IndexPipeline::RebuildIndex(
 bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  struct stat st;
-  if (stat(file_path.c_str(), &st) != 0) {
+  uint64_t file_size = 0;
+  int64_t file_mtime = 0;
+  if (!common::EncodingUtils::GetFileStat(file_path, &file_size, &file_mtime)) {
     LOG_WARN("[IndexPipeline] Failed to stat file: '{}'", file_path);
     return false;
   }
 
   std::string filename = ExtractFileName(file_path);
   std::string ext = ExtractExtension(filename);
-  uint64_t file_size = static_cast<uint64_t>(st.st_size);
 
   if (!config_->ShouldIndex(file_path, ext, file_size)) {
     return false;
@@ -418,7 +431,7 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     std::lock_guard<std::mutex> lock(failed_files_mutex_);
     auto it = failed_files_.find(file_path);
     if (it != failed_files_.end() && it->second.file_size == file_size &&
-        it->second.mtime == st.st_mtime) {
+        it->second.mtime == file_mtime) {
       return false;
     }
   }
@@ -435,14 +448,14 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     meta_found = true;
   }
 
-  if (meta_found && db_size == file_size && db_mtime == st.st_mtime) {
+  if (meta_found && db_size == file_size && db_mtime == file_mtime) {
     NameRecord rec;
     rec.doc_id = doc_id;
     rec.file_name = filename;
     rec.file_path = file_path;
     rec.ext = ext;
     rec.file_size = file_size;
-    rec.mtime = st.st_mtime;
+    rec.mtime = file_mtime;
     name_index_->Upsert(rec);
     return true;
   }
@@ -459,20 +472,20 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     rec.file_path = file_path;
     rec.ext = ext;
     rec.file_size = file_size;
-    rec.mtime = st.st_mtime;
+    rec.mtime = file_mtime;
     name_index_->Upsert(rec);
 
     if (write_queue_ && write_queue_->is_running()) {
       WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
-                 file_size, st.st_mtime, 1, ""};
+                 file_size, file_mtime, 1, ""};
       write_queue_->Enqueue(std::move(op));
     } else if (storage_engine_) {
       storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
-                                     st.st_mtime, 1, "");
+                                     file_mtime, 1, "");
     }
 
     std::lock_guard<std::mutex> lock(failed_files_mutex_);
-    failed_files_[file_path] = {file_size, st.st_mtime, precheck.reason};
+    failed_files_[file_path] = {file_size, file_mtime, precheck.reason};
     return true;
   }
 
@@ -505,20 +518,20 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     rec.file_path = file_path;
     rec.ext = ext;
     rec.file_size = file_size;
-    rec.mtime = st.st_mtime;
+    rec.mtime = file_mtime;
     name_index_->Upsert(rec);
 
     if (write_queue_ && write_queue_->is_running()) {
       WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
-                 file_size, st.st_mtime, 1, ""};
+                 file_size, file_mtime, 1, ""};
       write_queue_->Enqueue(std::move(op));
     } else if (storage_engine_) {
       storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
-                                     st.st_mtime, 1, "");
+                                     file_mtime, 1, "");
     }
 
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
-    failed_files_[file_path] = {file_size, st.st_mtime, res.error_message};
+    failed_files_[file_path] = {file_size, file_mtime, res.error_message};
     return false;
   }
 
@@ -542,17 +555,17 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   rec.file_path = file_path;
   rec.ext = ext;
   rec.file_size = file_size;
-  rec.mtime = st.st_mtime;
+  rec.mtime = file_mtime;
   name_index_->Upsert(rec);
 
   // 4. Update encrypted persistent database via async write queue
   if (write_queue_ && write_queue_->is_running()) {
     WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
-               file_size, st.st_mtime, 1, std::move(text_content)};
+               file_size, file_mtime, 1, std::move(text_content)};
     write_queue_->Enqueue(std::move(op));
   } else if (storage_engine_) {
     storage_engine_->IndexDocument(
-        doc_id, file_path, filename, ext, file_size, st.st_mtime, 1, text_content);
+        doc_id, file_path, filename, ext, file_size, file_mtime, 1, text_content);
   }
 
   auto total_end = std::chrono::high_resolution_clock::now();
