@@ -38,7 +38,9 @@
 namespace soeasy {
 namespace worker {
 
-#ifndef _WIN32
+#ifdef _WIN32
+static const char* kDevNull = "NUL";
+#else
 static const char* kDevNull = "/dev/null";
 #endif
 
@@ -66,7 +68,6 @@ uint64_t GetFileSize(const std::string& path) {
   return 0;
 }
 
-#ifndef _WIN32
 std::string DocToTextImageParserCallback(
     const std::string& image_name,
     const char* image_buffer,
@@ -115,7 +116,6 @@ const char* DocToTextImageParserCallbackC(
       user_data);
   return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
 }
-#endif
 
 }  // namespace
 
@@ -180,7 +180,6 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
   std::string lower = ext;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-#ifndef _WIN32
   // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
   try {
     bool enable_logging = false;
@@ -198,11 +197,11 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
     int ptype = DOCTOTEXT_PARSER_AUTO;
     if (lower == "docx" || lower == "xlsx" || lower == "pptx" || lower == "odt" || lower == "ods" || lower == "odp" || lower == "odg") {
       ptype = DOCTOTEXT_PARSER_ODF_OOXML;
-    } else if (lower == "doc") {
+    } else if (lower == "doc" || lower == "wps") {
       ptype = DOCTOTEXT_PARSER_DOC;
-    } else if (lower == "xls") {
+    } else if (lower == "xls" || lower == "et") {
       ptype = DOCTOTEXT_PARSER_XLS;
-    } else if (lower == "ppt") {
+    } else if (lower == "ppt" || lower == "dps") {
       ptype = DOCTOTEXT_PARSER_PPT;
     } else if (lower == "rtf") {
       ptype = DOCTOTEXT_PARSER_RTF;
@@ -236,7 +235,8 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
       }
 
       DocToTextException* exc = nullptr;
-      DocToTextExtractedData* data = doctotext_process_file(file_path.c_str(), params, &exc);
+      std::string native_path = common::EncodingUtils::ToNativeAnsiPath(file_path);
+      DocToTextExtractedData* data = doctotext_process_file(native_path.c_str(), params, &exc);
       if (data) {
         const char* txt = doctotext_extracted_data_get_text(data);
         if (txt && *txt) {
@@ -274,7 +274,6 @@ bool L2OfficeParser::Parse(const std::string& file_path, const std::string& ext,
   } catch (...) {
     // Graceful fallback to secondary extractors
   }
-#endif
 
   // 2. Secondary / Fallback: If DocToText extraction was empty or failed, use internal extractors
   if (out_utf8_text->empty()) {

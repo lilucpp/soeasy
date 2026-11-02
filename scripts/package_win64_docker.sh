@@ -73,7 +73,6 @@ ${DOCKER_RUN} run --name "${CONTAINER_NAME}" --rm -v "${PROJECT_ROOT}":/workspac
   cp -p build-win64/soeasy-worker.exe dist/${DIST_NAME}/bin/
   # 仅拷贝 DocToText 专用动态库，避免旧版 zlib1/libgcc 等系统库覆盖 MinGW 官方现代库
   cp -p third_party/doctotext/lib/doctotext.dll dist/${DIST_NAME}/bin/ 2>/dev/null || true
-  cp -p third_party/doctotext/lib/libwv2*.dll dist/${DIST_NAME}/bin/ 2>/dev/null || true
   cp -p third_party/doctotext/lib/pthreadGC2.dll dist/${DIST_NAME}/bin/ 2>/dev/null || true
   cp -p third_party/doctotext/lib/libiconv*.dll dist/${DIST_NAME}/bin/ 2>/dev/null || true
   cp -p third_party/onnxruntime/lib/*.dll dist/${DIST_NAME}/bin/ 2>/dev/null || true

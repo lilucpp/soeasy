@@ -3,7 +3,7 @@
 # Downloads and extracts prebuilt doctotext binaries from GitHub Releases
 # ==============================================================================
 
-set(DOCTOTEXT_VERSION "v5.1.2")
+set(DOCTOTEXT_VERSION "v5.1.3")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
