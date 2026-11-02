@@ -100,7 +100,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
-            VERSION="0.2.0"
+            VERSION="0.2.1"
           fi
           DIST_NAME="soeasy-v${VERSION}-windows-x64"
           STAGE_DIR="dist/${DIST_NAME}"

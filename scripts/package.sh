@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-VERSION="${1:-${VERSION:-$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.2.0")}}"
+VERSION="${1:-${VERSION:-$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.2.1")}}"
 PLATFORM="linux-x86_64"
 DIST_NAME="soeasy-v${VERSION}-${PLATFORM}"
 BUILD_DIR="${PROJECT_ROOT}/build"
