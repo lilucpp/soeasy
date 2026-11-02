@@ -582,6 +582,11 @@ bool StorageEngine::ClearAll() {
 
   sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
   uncommitted_count_ = 0;
+
+  // Reclaim all unused free pages to operating system and truncate database file
+  sqlite3_exec(db_, "VACUUM;", nullptr, nullptr, nullptr);
+  sqlite3_exec(db_, "PRAGMA wal_checkpoint(TRUNCATE);", nullptr, nullptr, nullptr);
+
   return InitTables();
 }
 
