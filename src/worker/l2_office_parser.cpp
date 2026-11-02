@@ -9,8 +9,6 @@
 #else
 #include <io.h>
 #include <direct.h>
-#define popen _popen
-#define pclose _pclose
 #endif
 
 #include <algorithm>
@@ -59,20 +57,6 @@ static bool g_dt_logging_enabled = false;
 static std::string g_dt_log_path = "";
 static std::unique_ptr<std::ofstream> g_dt_file_stream;
 static std::atomic<bool> s_embedded_image_ocr{false};
-
-std::string RunCommandCaptureStdout(const std::string& cmd) {
-  std::array<char, 4096> buffer;
-  std::string result;
-  FILE* pipe = popen(cmd.c_str(), "r");
-  if (!pipe) {
-    return "";
-  }
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-    result += buffer.data();
-  }
-  pclose(pipe);
-  return result;
-}
 
 uint64_t GetFileSize(const std::string& path) {
   uint64_t size = 0;
@@ -483,35 +467,22 @@ bool L2OfficeParser::ParsePptx(const std::string& file_path,
 bool L2OfficeParser::ParsePdf(const std::string& file_path,
                              std::string* out_utf8, bool* is_scanned) {
   if (is_scanned) *is_scanned = false;
+  if (!out_utf8) return false;
+  out_utf8->clear();
 
-  // Try extracting text via pdftotext (Poppler)
-  std::string cmd = "pdftotext -enc UTF-8 -layout \"" + file_path + "\" - 2>/dev/null";
-  std::string output = RunCommandCaptureStdout(cmd);
+  // Pure C++ fallback for embedded text strings
+  ParseLegacyOffice(file_path, "pdf", out_utf8);
 
-  *out_utf8 = std::move(output);
-  return !out_utf8->empty();
+  uint64_t file_size = GetFileSize(file_path);
+  if (out_utf8->size() < 15 && file_size > 10 * 1024) {
+    if (is_scanned) *is_scanned = true;
+  }
+  return !out_utf8->empty() || (is_scanned && *is_scanned);
 }
 
 bool L2OfficeParser::ParseLegacyOffice(const std::string& file_path,
                                       const std::string& ext,
                                       std::string* out_utf8) {
-#ifndef _WIN32
-  std::string cmd;
-  if (ext == "doc") {
-    cmd = "catdoc -d utf-8 \"" + file_path + "\" 2>/dev/null";
-  } else if (ext == "xls") {
-    cmd = "xls2csv -d utf-8 \"" + file_path + "\" 2>/dev/null";
-  } else {
-    cmd = "catdoc -d utf-8 \"" + file_path + "\" 2>/dev/null";
-  }
-
-  std::string output = RunCommandCaptureStdout(cmd);
-  if (!output.empty()) {
-    *out_utf8 = std::move(output);
-    return true;
-  }
-#endif
-
   // Extract both UTF-16LE and ANSI / UTF-8 characters directly from disk via stream
   auto ifs = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
   if (!ifs.is_open()) {
