@@ -58,14 +58,12 @@ void SettingsDialog::SetupUi() {
       "  border-top-right-radius: 6px;"
       "  margin-right: 3px;"
       "  font-size: 12px;"
-      "  font-weight: 500;"
       "}"
       "QTabBar::tab:selected {"
       "  background-color: #FFFFFF;"
       "  color: #0284C7;"
       "  border-color: #E2E8F0;"
       "  border-bottom: 1px solid #FFFFFF;"
-      "  font-weight: bold;"
       "}"
       "QTabBar::tab:hover:!selected {"
       "  background-color: #E2E8F0;"
@@ -92,7 +90,6 @@ void SettingsDialog::SetupUi() {
       "  border-right: 1px solid #E2E8F0;"
       "  border-bottom: 1px solid #E2E8F0;"
       "  padding: 5px 8px;"
-      "  font-weight: 600;"
       "}"
       "QPushButton {"
       "  background-color: #F8FAFC;"
@@ -100,7 +97,6 @@ void SettingsDialog::SetupUi() {
       "  border-radius: 4px;"
       "  padding: 6px 14px;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
       "  background-color: #F1F5F9;"
@@ -214,9 +210,6 @@ void SettingsDialog::SetupUi() {
   auto* layout_ocr = new QVBoxLayout(group_ocr_);
   embedded_image_ocr_check_ = new QCheckBox(
       "提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)", group_ocr_);
-  QFont ocr_font = embedded_image_ocr_check_->font();
-  ocr_font.setBold(true);
-  embedded_image_ocr_check_->setFont(ocr_font);
   label_ocr_tip_ = new QLabel(
       "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n"
       "    不勾选可获得极致解析性能（纯文本毫秒级完成索引）。", group_ocr_);
@@ -311,7 +304,7 @@ void SettingsDialog::SetupUi() {
   btn_deselect_all_ = new QPushButton("全不选", tab_exts);
   btn_reset_exts_ = new QPushButton("恢复推荐默认", tab_exts);
   exts_count_label_ = new QLabel("已启用: 0 种文件格式", tab_exts);
-  exts_count_label_->setStyleSheet("font-weight: bold; color: #1976D2;");
+  exts_count_label_->setStyleSheet("color: #1976D2;");
 
   bottom_exts_layout->addWidget(btn_select_all_);
   bottom_exts_layout->addWidget(btn_deselect_all_);
@@ -404,7 +397,7 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   auto* bottom_layout = new QHBoxLayout();
   btn_rebuild_ = new QPushButton("清空并重建索引...", this);
-  btn_rebuild_->setStyleSheet("QPushButton { color: #D32F2F; font-weight: bold; }");
+  btn_rebuild_->setStyleSheet("QPushButton { color: #D32F2F; }");
   bottom_layout->addWidget(btn_rebuild_);
   bottom_layout->addStretch();
   btn_save_ = new QPushButton("保存并应用", this);

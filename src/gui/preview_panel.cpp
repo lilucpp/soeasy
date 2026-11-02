@@ -80,7 +80,6 @@ void PreviewPanel::SetupUi() {
       "  border-radius: 4px;"
       "  background-color: #E0F2FE;"
       "  color: #0369A1;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover { background-color: #BAE6FD; color: #0284C7; }"
       "QPushButton:pressed { background-color: #7DD3FC; }");
@@ -94,7 +93,6 @@ void PreviewPanel::SetupUi() {
       "  border-radius: 4px;"
       "  background-color: #F8FAFC;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
       "QPushButton:pressed { background-color: #E2E8F0; }");
@@ -119,7 +117,7 @@ void PreviewPanel::SetupUi() {
   nav_layout->setSpacing(6);
 
   label_jump_ = new QLabel("关键词跳转:", this);
-  label_jump_->setStyleSheet("font-size: 12px; color: #475569; font-weight: 500;");
+  label_jump_->setStyleSheet("font-size: 12px; color: #475569;");
 
   in_doc_search_edit_ = new QLineEdit(this);
   in_doc_search_edit_->setPlaceholderText("在正文中查找...");
@@ -143,7 +141,6 @@ void PreviewPanel::SetupUi() {
       "  border-radius: 4px;"
       "  background-color: #F8FAFC;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
       "QPushButton:pressed { background-color: #E2E8F0; }");
@@ -156,13 +153,12 @@ void PreviewPanel::SetupUi() {
       "  border-radius: 4px;"
       "  background-color: #F8FAFC;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
       "QPushButton:pressed { background-color: #E2E8F0; }");
 
   match_count_label_ = new QLabel("匹配: 0 / 0", this);
-  match_count_label_->setStyleSheet("font-size: 11px; color: #64748B; font-weight: bold;");
+  match_count_label_->setStyleSheet("font-size: 11px; color: #64748B;");
 
   nav_layout->addWidget(label_jump_);
   nav_layout->addWidget(in_doc_search_edit_, 1);
@@ -177,7 +173,7 @@ void PreviewPanel::SetupUi() {
   text_viewer_->setStyleSheet(
       "QTextBrowser {"
       "  font-family: 'Consolas', 'Courier New', 'Noto Sans CJK SC', monospace;"
-      "  font-size: 12.5px;"
+      "  font-size: 12px;"
       "  line-height: 1.5;"
       "  background-color: #FFFFFF;"
       "  border: 1px solid #CBD5E1;"

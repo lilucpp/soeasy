@@ -81,7 +81,7 @@ void ContentPreviewDialog::SetupUi() {
   auto* btn_prev = new QPushButton(Tr("btn_prev"), this);
   auto* btn_next = new QPushButton(Tr("btn_next"), this);
   match_count_label_ = new QLabel(Tr("match_count").arg(0).arg(0), this);
-  match_count_label_->setStyleSheet("color: #78909C; font-weight: bold;");
+  match_count_label_->setStyleSheet("color: #78909C;");
 
   nav_layout->addWidget(label_search);
   nav_layout->addWidget(in_doc_search_edit_);

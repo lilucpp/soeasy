@@ -80,7 +80,6 @@ void ResultView::SetupTable() {
       "QHeaderView::section {"
       "  background-color: #F8FAFC;"
       "  font-size: 12px;"
-      "  font-weight: bold;"
       "  color: #334155;"
       "  padding: 7px 8px;"
       "  border: none;"
@@ -241,7 +240,6 @@ void ResultView::PopulateRow(int row, const DisplayResultItem& it) {
 
   auto* name_item = new QTableWidgetItem(it.file_name);
   name_item->setIcon(IconProvider::GetFileIcon(ext));
-  name_item->setFont(QFont(font().family(), font().pointSize(), QFont::Normal));
 
   auto* path_item = new QTableWidgetItem(fi.absolutePath());
   path_item->setForeground(QColor("#64748B"));

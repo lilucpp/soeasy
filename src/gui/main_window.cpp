@@ -196,7 +196,6 @@ void MainWindow::SetupUi() {
       "  background-color: #E2E8F0;"
       "  text-align: center;"
       "  font-size: 10px;"
-      "  font-weight: bold;"
       "  color: #0F172A;"
       "}"
       "QProgressBar::chunk {"
@@ -217,7 +216,6 @@ void MainWindow::SetupUi() {
       "  color: #64748B;"
       "  font-size: 11px;"
       "  padding: 1px 7px;"
-      "  font-weight: 500;"
       "}"
       "QPushButton#statusCancelBtn:hover {"
       "  background-color: #FEE2E2;"
@@ -241,7 +239,7 @@ void MainWindow::SetupUi() {
   status_file_label_->setVisible(false);
 
   status_latency_label_ = new QLabel(this);
-  status_latency_label_->setStyleSheet("color: #334155; font-size: 12px; font-weight: 500;");
+  status_latency_label_->setStyleSheet("color: #334155; font-size: 12px;");
   status_latency_label_->setTextFormat(Qt::RichText);
 
   statusBar()->addWidget(status_stats_label_);

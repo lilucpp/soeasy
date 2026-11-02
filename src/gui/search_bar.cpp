@@ -94,7 +94,6 @@ void SearchBar::SetupUi() {
       "  border-radius: 6px;"
       "  background-color: #F8FAFC;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
       "  background-color: #F1F5F9;"
@@ -114,7 +113,6 @@ void SearchBar::SetupUi() {
       "  border-radius: 6px;"
       "  background-color: #F8FAFC;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
       "  background-color: #F1F5F9;"
@@ -136,7 +134,7 @@ void SearchBar::SetupUi() {
   scope_layout->setSpacing(6);
 
   label_scope_ = new QLabel("限定搜索路径:", this);
-  label_scope_->setStyleSheet("font-size: 13px; color: #1E293B; font-weight: bold;");
+  label_scope_->setStyleSheet("font-size: 12px; color: #475569;");
 
   scope_edit_ = new QLineEdit(this);
   scope_edit_->setPlaceholderText("留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索...");
@@ -162,7 +160,6 @@ void SearchBar::SetupUi() {
       "  border-radius: 6px;"
       "  background-color: #E0F2FE;"
       "  color: #0369A1;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
       "  background-color: #BAE6FD;"
@@ -181,7 +178,6 @@ void SearchBar::SetupUi() {
       "  border-radius: 6px;"
       "  background-color: #F8FAFC;"
       "  color: #334155;"
-      "  font-weight: 500;"
       "}"
       "QPushButton:hover {"
       "  background-color: #F1F5F9;"

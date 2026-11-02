@@ -47,7 +47,6 @@ void TitleBar::SetupUi() {
       "  background: transparent;"
       "  color: #475569;"
       "  font-size: 13px;"
-      "  font-weight: bold;"
       "}"
       "QPushButton:hover {"
       "  background-color: #DCE8F5;"

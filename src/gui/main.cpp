@@ -23,9 +23,37 @@
 #include "storage/storage_engine.h"
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+  // Enable Per-Monitor DPI Awareness V2 on Windows 10/11
+  // This completely disables blurry OS bitmap scaling (DPI virtualization)
+  HMODULE user32 = LoadLibraryA("user32.dll");
+  if (user32) {
+    typedef BOOL(WINAPI* SetProcessDpiAwarenessContextFunc)(void*);
+    auto set_context = reinterpret_cast<SetProcessDpiAwarenessContextFunc>(
+        GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+    if (set_context) {
+      // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ((DPI_AWARENESS_CONTEXT)-4)
+      set_context(reinterpret_cast<void*>(-4));
+    } else {
+      HMODULE shcore = LoadLibraryA("shcore.dll");
+      if (shcore) {
+        typedef HRESULT(WINAPI* SetProcessDpiAwarenessFunc)(int);
+        auto set_awareness = reinterpret_cast<SetProcessDpiAwarenessFunc>(
+            GetProcAddress(shcore, "SetProcessDpiAwareness"));
+        if (set_awareness) {
+          set_awareness(2);  // PROCESS_PER_MONITOR_DPI_AWARE
+        }
+        FreeLibrary(shcore);
+      }
+    }
+    FreeLibrary(user32);
+  }
+#endif
+
   // High DPI scaling attributes for Qt5
 #if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
   QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+  QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 #endif
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
   QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
@@ -49,6 +77,7 @@ int main(int argc, char* argv[]) {
   app_font.setFamily("Noto Sans CJK SC");
   app_font.setPointSize(10);
 #endif
+  app_font.setWeight(QFont::Normal);
   app_font.setStyleStrategy(QFont::PreferAntialias);
   app.setFont(app_font);
 
