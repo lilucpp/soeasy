@@ -1,8 +1,8 @@
 #include "service/worker_guard.h"
 
 #ifdef _WIN32
-#include <windows.h>
 #include <psapi.h>
+#include <windows.h>
 #else
 #include <fcntl.h>
 #include <sys/prctl.h>
@@ -11,21 +11,21 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 #include <csignal>
 #endif
 
-#include <cstring>
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include <kj/io.h>
 
 #include <chrono>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <capnp/message.h>
-#include <capnp/serialize.h>
-#include <kj/io.h>
 
 #include "common/logger.h"
 #include "common/shm_pool.h"
@@ -67,9 +67,8 @@ size_t WorkerGuard::GetProcessRssBytes(pid_t pid) {
 #endif
 }
 
-bool WorkerGuard::Init(const std::string& worker_bin_path, size_t worker_count,
-                       uint32_t timeout_ms, size_t shm_slot_count,
-                       size_t shm_slot_capacity) {
+bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, uint32_t timeout_ms,
+                       size_t shm_slot_count, size_t shm_slot_capacity) {
   Shutdown();
 
   worker_bin_path_ = worker_bin_path;
@@ -83,11 +82,10 @@ bool WorkerGuard::Init(const std::string& worker_bin_path, size_t worker_count,
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     SetInformationJobObject(job_handle_, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
   }
-  std::string shm_name = "Local\\soeasy_shm_" + std::to_string(GetCurrentProcessId()) + "_" +
-                         std::to_string(rand() % 1000000);
+  std::string shm_name =
+      "Local\\soeasy_shm_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(rand() % 1000000);
 #else
-  std::string shm_name = "/soeasy_shm_" + std::to_string(getpid()) + "_" +
-                         std::to_string(rand() % 1000000);
+  std::string shm_name = "/soeasy_shm_" + std::to_string(getpid()) + "_" + std::to_string(rand() % 1000000);
 #endif
   if (!shm_pool_.Create(shm_name, shm_slot_count, shm_slot_capacity)) {
     return false;
@@ -113,17 +111,11 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   }
 
 #ifdef _WIN32
-  std::string pipe_name = "\\\\.\\pipe\\soeasy_ipc_" + std::to_string(GetCurrentProcessId()) +
-                          "_" + std::to_string(index) + "_" + std::to_string(rand() % 1000000);
-  HANDLE hPipe = CreateNamedPipeA(
-      pipe_name.c_str(),
-      PIPE_ACCESS_DUPLEX,
-      PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-      1,
-      1024 * 1024,
-      1024 * 1024,
-      5000,
-      NULL);
+  std::string pipe_name = "\\\\.\\pipe\\soeasy_ipc_" + std::to_string(GetCurrentProcessId()) + "_" +
+                          std::to_string(index) + "_" + std::to_string(rand() % 1000000);
+  HANDLE hPipe =
+      CreateNamedPipeA(pipe_name.c_str(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1,
+                       1024 * 1024, 1024 * 1024, 5000, NULL);
   if (hPipe == INVALID_HANDLE_VALUE) {
     LOG_ERROR("[WorkerGuard] Failed to create named pipe for worker {}", index);
     return false;
@@ -136,17 +128,14 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     target_bin = exe_path;
   }
 
-  std::string cmd = "\"" + target_bin + "\" " +
-                    "--pipe-name=" + pipe_name + " " +
-                    "--shm-name=" + shm_pool_.shm_name() + " " +
-                    "--slot-count=" + std::to_string(shm_pool_.slot_count()) + " " +
-                    "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()) + " " +
-                    "--log-level=" + log_level_ + " " +
-                    (log_console_ ? "--log-console " : "--no-log-console ") +
-                    (log_sync_ ? "--log-sync " : "--no-log-sync ") +
-                    (doctotext_logging_ ? "--doctotext-logging " : "--no-doctotext-logging ") +
-                    "--doctotext-log-path=" + doctotext_log_path_ + " " +
-                    (embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr");
+  std::string cmd =
+      "\"" + target_bin + "\" " + "--pipe-name=" + pipe_name + " " + "--shm-name=" + shm_pool_.shm_name() + " " +
+      "--slot-count=" + std::to_string(shm_pool_.slot_count()) + " " +
+      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()) + " " + "--log-level=" + log_level_ + " " +
+      (log_console_ ? "--log-console " : "--no-log-console ") + (log_sync_ ? "--log-sync " : "--no-log-sync ") +
+      (doctotext_logging_ ? "--doctotext-logging " : "--no-doctotext-logging ") +
+      "--doctotext-log-path=" + doctotext_log_path_ + " " +
+      (embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr");
 
   STARTUPINFOA si;
   PROCESS_INFORMATION pi;
@@ -154,8 +143,8 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   si.cb = sizeof(si);
   ZeroMemory(&pi, sizeof(pi));
 
-  if (!CreateProcessA(NULL, const_cast<char*>(cmd.c_str()), NULL, NULL, FALSE,
-                       CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+  if (!CreateProcessA(NULL, const_cast<char *>(cmd.c_str()), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si,
+                      &pi)) {
     LOG_ERROR("[WorkerGuard] CreateProcess failed for worker {}: {}", index, GetLastError());
     CloseHandle(hPipe);
     return false;
@@ -175,7 +164,7 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     return false;
   }
 
-  WorkerInstance& inst = workers_[index];
+  WorkerInstance &inst = workers_[index];
   inst.pid = pi.dwProcessId;
   inst.process_handle = pi.hProcess;
   inst.pipe_handle = hPipe;
@@ -219,19 +208,15 @@ bool WorkerGuard::SpawnWorker(size_t index) {
       common::Logger::SetSyncMode(log_sync_);
       worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
       worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr_);
-      int ret = worker::RunWorkerLoop(fds[1], shm_pool_.shm_name(),
-                                      shm_pool_.slot_count(),
-                                      shm_pool_.slot_capacity());
+      int ret = worker::RunWorkerLoop(fds[1], shm_pool_.shm_name(), shm_pool_.slot_count(), shm_pool_.slot_capacity());
       close(fds[1]);
       _exit(ret);
     } else {
       // Exec standalone binary mode
       std::string fd_arg = "--socket-fd=" + std::to_string(fds[1]);
       std::string shm_arg = "--shm-name=" + shm_pool_.shm_name();
-      std::string count_arg =
-          "--slot-count=" + std::to_string(shm_pool_.slot_count());
-      std::string cap_arg =
-          "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity());
+      std::string count_arg = "--slot-count=" + std::to_string(shm_pool_.slot_count());
+      std::string cap_arg = "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity());
       std::string level_arg = "--log-level=" + log_level_;
       std::string console_arg = log_console_ ? "--log-console" : "--no-log-console";
       std::string sync_arg = log_sync_ ? "--log-sync" : "--no-log-sync";
@@ -239,19 +224,12 @@ bool WorkerGuard::SpawnWorker(size_t index) {
       std::string dt_path_arg = "--doctotext-log-path=" + doctotext_log_path_;
       std::string img_ocr_arg = embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr";
 
-      char* const argv[] = {
-          const_cast<char*>(worker_bin_path_.c_str()),
-          const_cast<char*>(fd_arg.c_str()),
-          const_cast<char*>(shm_arg.c_str()),
-          const_cast<char*>(count_arg.c_str()),
-          const_cast<char*>(cap_arg.c_str()),
-          const_cast<char*>(level_arg.c_str()),
-          const_cast<char*>(console_arg.c_str()),
-          const_cast<char*>(sync_arg.c_str()),
-          const_cast<char*>(dt_log_arg.c_str()),
-          const_cast<char*>(dt_path_arg.c_str()),
-          const_cast<char*>(img_ocr_arg.c_str()),
-          nullptr};
+      char *const argv[] = {const_cast<char *>(worker_bin_path_.c_str()), const_cast<char *>(fd_arg.c_str()),
+                            const_cast<char *>(shm_arg.c_str()),          const_cast<char *>(count_arg.c_str()),
+                            const_cast<char *>(cap_arg.c_str()),          const_cast<char *>(level_arg.c_str()),
+                            const_cast<char *>(console_arg.c_str()),      const_cast<char *>(sync_arg.c_str()),
+                            const_cast<char *>(dt_log_arg.c_str()),       const_cast<char *>(dt_path_arg.c_str()),
+                            const_cast<char *>(img_ocr_arg.c_str()),      nullptr};
       execv(worker_bin_path_.c_str(), argv);
       _exit(127);
     }
@@ -260,7 +238,7 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   // Parent process
   close(fds[1]);  // Close child end
 
-  WorkerInstance& inst = workers_[index];
+  WorkerInstance &inst = workers_[index];
   inst.pid = pid;
   inst.socket_fd = fds[0];
   inst.state = WorkerState::kIdle;
@@ -271,12 +249,11 @@ bool WorkerGuard::SpawnWorker(size_t index) {
 #endif
 }
 
-void WorkerGuard::KillWorker(size_t index, TaskStatus status,
-                             const std::string& reason) {
+void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string &reason) {
   if (index >= workers_.size()) {
     return;
   }
-  WorkerInstance& inst = workers_[index];
+  WorkerInstance &inst = workers_[index];
 #ifdef _WIN32
   if (inst.process_handle) {
     TerminateProcess(inst.process_handle, 1);
@@ -317,7 +294,7 @@ void WorkerGuard::WatchdogLoop() {
     auto now = std::chrono::steady_clock::now();
 
     for (size_t i = 0; i < workers_.size(); ++i) {
-      WorkerInstance& inst = workers_[i];
+      WorkerInstance &inst = workers_[i];
       if (inst.pid <= 0) {
         continue;
       }
@@ -325,8 +302,7 @@ void WorkerGuard::WatchdogLoop() {
       // 1. Check if child crashed (exited unexpectedly)
 #ifdef _WIN32
       DWORD exit_code = 0;
-      if (inst.process_handle && GetExitCodeProcess(inst.process_handle, &exit_code) &&
-          exit_code != STILL_ACTIVE) {
+      if (inst.process_handle && GetExitCodeProcess(inst.process_handle, &exit_code) && exit_code != STILL_ACTIVE) {
         if (inst.process_handle) {
           CloseHandle(inst.process_handle);
           inst.process_handle = nullptr;
@@ -366,15 +342,11 @@ void WorkerGuard::WatchdogLoop() {
 
       // 2. Check for task timeout or stall heartbeat
       if (inst.state == WorkerState::kBusy) {
-        uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()).count();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - inst.task_start_time)
-                           .count();
+        uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.task_start_time).count();
 
         uint64_t last_hb_ms = shm_pool_.GetSlotLastHeartbeat(inst.current_slot_id);
-        bool is_stalled = (last_hb_ms > 0 && (now_ms > last_hb_ms) &&
-                           (now_ms - last_hb_ms > kDefaultStallTimeoutMs));
+        bool is_stalled = (last_hb_ms > 0 && (now_ms > last_hb_ms) && (now_ms - last_hb_ms > kDefaultStallTimeoutMs));
         bool is_overtime = (elapsed > inst.current_timeout_ms);
 
         if (is_stalled || is_overtime) {
@@ -420,8 +392,7 @@ void WorkerGuard::WatchdogLoop() {
   }
 }
 
-bool WorkerGuard::ExecuteTask(const ParseTask& task,
-                              ParseTaskResult* out_result) {
+bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result) {
   if (!out_result) {
     return false;
   }
@@ -431,7 +402,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
   out_result->extracted_bytes = 0;
 
   uint32_t slot_id = 0;
-  uint8_t* slot_data = nullptr;
+  uint8_t *slot_data = nullptr;
 
   size_t assigned_worker_idx = 0;
 #ifdef _WIN32
@@ -446,15 +417,13 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
     std::unique_lock<std::mutex> lock(pool_mutex_);
 
     // Wait until both an idle worker AND an available SHM slot exist
-    worker_available_cv_.wait(lock, [this, &assigned_worker_idx, &slot_id,
-                                     &slot_data]() {
+    worker_available_cv_.wait(lock, [this, &assigned_worker_idx, &slot_id, &slot_data]() {
       if (!is_running_.load(std::memory_order_acquire)) {
         return true;
       }
       for (size_t i = 0; i < workers_.size(); ++i) {
 #ifdef _WIN32
-        if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0 &&
-            workers_[i].pipe_handle != nullptr) {
+        if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0 && workers_[i].pipe_handle != nullptr) {
 #else
         if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0 &&
             workers_[i].socket_fd >= 0) {
@@ -472,7 +441,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
       return false;
     }
 
-    WorkerInstance& worker = workers_[assigned_worker_idx];
+    WorkerInstance &worker = workers_[assigned_worker_idx];
     worker.state = WorkerState::kBusy;
     worker.current_doc_id = task.doc_id;
     worker.current_slot_id = slot_id;
@@ -539,8 +508,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
       if (bytes_avail > 0) {
         break;
       }
-      auto wait_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now() - wait_start).count();
+      auto wait_elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - wait_start).count();
       if (wait_elapsed >= wait_timeout) {
         break;
       }
@@ -552,9 +521,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
       capnp::InputStreamMessageReader resp_reader(in_stream);
       auto resp = resp_reader.getRoot<soeasy::ipc::ParseResult>();
 
-      out_result->status = (resp.getStatusCode() == soeasy::ipc::ParseStatusCode::OK)
-                               ? TaskStatus::kSuccess
-                               : TaskStatus::kFailed;
+      out_result->status =
+          (resp.getStatusCode() == soeasy::ipc::ParseStatusCode::OK) ? TaskStatus::kSuccess : TaskStatus::kFailed;
       out_result->slot_id = slot_id;
       out_result->extracted_bytes = resp.getExtractedBytes();
       out_result->is_scanned_pdf = resp.getIsScannedPdf();
@@ -569,9 +537,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
     capnp::StreamFdMessageReader resp_reader(worker_fd);
     auto resp = resp_reader.getRoot<soeasy::ipc::ParseResult>();
 
-    out_result->status = (resp.getStatusCode() == soeasy::ipc::ParseStatusCode::OK)
-                             ? TaskStatus::kSuccess
-                             : TaskStatus::kFailed;
+    out_result->status =
+        (resp.getStatusCode() == soeasy::ipc::ParseStatusCode::OK) ? TaskStatus::kSuccess : TaskStatus::kFailed;
     out_result->slot_id = slot_id;
     out_result->extracted_bytes = resp.getExtractedBytes();
     out_result->is_scanned_pdf = resp.getIsScannedPdf();
@@ -584,13 +551,11 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
 #endif
 
   auto finish_time = std::chrono::steady_clock::now();
-  out_result->elapsed_ms =
-      std::chrono::duration<double, std::milli>(finish_time - start_time)
-          .count();
+  out_result->elapsed_ms = std::chrono::duration<double, std::milli>(finish_time - start_time).count();
 
   {
     std::unique_lock<std::mutex> lock(pool_mutex_);
-    WorkerInstance& worker = workers_[assigned_worker_idx];
+    WorkerInstance &worker = workers_[assigned_worker_idx];
 
     if (worker.state == WorkerState::kKilledByWatchdog) {
       // Watchdog already cleaned up the slot and terminated the worker.
@@ -609,8 +574,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask& task,
       }
     } else {
       out_result->status = TaskStatus::kCrashed;
-      out_result->error_message =
-          "Worker crashed (SIGSEGV/abort) during file parsing";
+      out_result->error_message = "Worker crashed (SIGSEGV/abort) during file parsing";
       shm_pool_.ReleaseSlot(slot_id);
       out_result->slot_id = 0;
       KillWorker(assigned_worker_idx, out_result->status, out_result->error_message);
@@ -632,7 +596,7 @@ void WorkerGuard::Shutdown() {
   }
 
   std::unique_lock<std::mutex> lock(pool_mutex_);
-  for (auto& inst : workers_) {
+  for (auto &inst : workers_) {
 #ifdef _WIN32
     if (inst.process_handle) {
       TerminateProcess(inst.process_handle, 1);
@@ -667,15 +631,12 @@ void WorkerGuard::Shutdown() {
   shm_pool_.Close();
 }
 
-void WorkerGuard::SetLoggingOptions(const std::string& level, bool enable_console,
-                                    bool enable_sync, bool doctotext_logging,
-                                    const std::string& doctotext_log_path,
+void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
+                                    bool doctotext_logging, const std::string &doctotext_log_path,
                                     bool embedded_image_ocr) {
   std::lock_guard<std::mutex> lock(pool_mutex_);
-  bool changed = (log_level_ != level || log_console_ != enable_console ||
-                  log_sync_ != enable_sync ||
-                  doctotext_logging_ != doctotext_logging ||
-                  doctotext_log_path_ != doctotext_log_path ||
+  bool changed = (log_level_ != level || log_console_ != enable_console || log_sync_ != enable_sync ||
+                  doctotext_logging_ != doctotext_logging || doctotext_log_path_ != doctotext_log_path ||
                   embedded_image_ocr_ != embedded_image_ocr);
   log_level_ = level;
   log_console_ = enable_console;

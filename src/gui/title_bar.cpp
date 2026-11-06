@@ -1,11 +1,12 @@
 #include "gui/title_bar.h"
-#include "gui/icon_provider.h"
+
 #include "gui/i18n.h"
+#include "gui/icon_provider.h"
 
 namespace soeasy {
 namespace gui {
 
-TitleBar::TitleBar(QWidget* parent) : QWidget(parent) {
+TitleBar::TitleBar(QWidget *parent) : QWidget(parent) {
   setFixedHeight(36);
   SetupUi();
 }
@@ -18,7 +19,7 @@ void TitleBar::SetupUi() {
       "  border: none;"
       "}");
 
-  auto* layout = new QHBoxLayout(this);
+  auto *layout = new QHBoxLayout(this);
   layout->setContentsMargins(12, 0, 0, 0);
   layout->setSpacing(8);
 
@@ -158,21 +159,21 @@ void TitleBar::OnCloseClicked() {
   }
 }
 
-void TitleBar::mousePressEvent(QMouseEvent* event) {
+void TitleBar::mousePressEvent(QMouseEvent *event) {
   if (event->button() == Qt::LeftButton) {
     drag_pos_ = event->globalPos() - window()->frameGeometry().topLeft();
     event->accept();
   }
 }
 
-void TitleBar::mouseMoveEvent(QMouseEvent* event) {
+void TitleBar::mouseMoveEvent(QMouseEvent *event) {
   if ((event->buttons() & Qt::LeftButton) && !window()->isMaximized()) {
     window()->move(event->globalPos() - drag_pos_);
     event->accept();
   }
 }
 
-void TitleBar::mouseDoubleClickEvent(QMouseEvent* event) {
+void TitleBar::mouseDoubleClickEvent(QMouseEvent *event) {
   if (event->button() == Qt::LeftButton) {
     OnMaximizeClicked();
     event->accept();

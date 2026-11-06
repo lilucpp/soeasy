@@ -19,16 +19,9 @@ namespace service {
 IndexConfig::IndexConfig() {
   // Default common excluded directory patterns
   excluded_patterns_ = {
-      "/.git/",        "\\git\\",
-      "/node_modules/","\\node_modules\\",
-      "/.idea/",       "\\.idea\\",
-      "/.vscode/",     "\\.vscode\\",
-      "/build/",       "\\build\\",
-      "/dist/",        "\\dist\\",
-      "/__pycache__/", "\\__pycache__\\",
-      "/.svn/",        "\\.svn\\",
-      "/target/",      "\\target\\",
-      "/.cache/",      "\\.cache\\",
+      "/.git/",      "\\git\\",  "/node_modules/", "\\node_modules\\", "/.idea/",  "\\.idea\\",     "/.vscode/",
+      "\\.vscode\\", "/build/",  "\\build\\",      "/dist/",           "\\dist\\", "/__pycache__/", "\\__pycache__\\",
+      "/.svn/",      "\\.svn\\", "/target/",       "\\target\\",       "/.cache/", "\\.cache\\",
   };
 
   supported_exts_ = GetDefaultSupportedExtensions();
@@ -43,72 +36,61 @@ void IndexConfig::ResetSupportedExtensionsToDefault() {
   supported_exts_ = GetDefaultSupportedExtensions();
 }
 
-void IndexConfig::AddIndexedDirectory(const std::string& dir_path) {
+void IndexConfig::AddIndexedDirectory(const std::string &dir_path) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (std::find(indexed_dirs_.begin(), indexed_dirs_.end(), dir_path) ==
-      indexed_dirs_.end()) {
+  if (std::find(indexed_dirs_.begin(), indexed_dirs_.end(), dir_path) == indexed_dirs_.end()) {
     indexed_dirs_.push_back(dir_path);
   }
 }
 
-void IndexConfig::RemoveIndexedDirectory(const std::string& dir_path) {
+void IndexConfig::RemoveIndexedDirectory(const std::string &dir_path) {
   std::lock_guard<std::mutex> lock(mutex_);
-  indexed_dirs_.erase(
-      std::remove(indexed_dirs_.begin(), indexed_dirs_.end(), dir_path),
-      indexed_dirs_.end());
+  indexed_dirs_.erase(std::remove(indexed_dirs_.begin(), indexed_dirs_.end(), dir_path), indexed_dirs_.end());
 }
 
-void IndexConfig::SetIndexedDirectories(
-    const std::vector<std::string>& dir_paths) {
+void IndexConfig::SetIndexedDirectories(const std::vector<std::string> &dir_paths) {
   std::lock_guard<std::mutex> lock(mutex_);
   indexed_dirs_ = dir_paths;
 }
 
-void IndexConfig::AddExcludedPattern(const std::string& pattern) {
+void IndexConfig::AddExcludedPattern(const std::string &pattern) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (std::find(excluded_patterns_.begin(), excluded_patterns_.end(), pattern) ==
-      excluded_patterns_.end()) {
+  if (std::find(excluded_patterns_.begin(), excluded_patterns_.end(), pattern) == excluded_patterns_.end()) {
     excluded_patterns_.push_back(pattern);
   }
 }
 
-void IndexConfig::RemoveExcludedPattern(const std::string& pattern) {
+void IndexConfig::RemoveExcludedPattern(const std::string &pattern) {
   std::lock_guard<std::mutex> lock(mutex_);
-  excluded_patterns_.erase(
-      std::remove(excluded_patterns_.begin(), excluded_patterns_.end(), pattern),
-      excluded_patterns_.end());
+  excluded_patterns_.erase(std::remove(excluded_patterns_.begin(), excluded_patterns_.end(), pattern),
+                           excluded_patterns_.end());
 }
 
-void IndexConfig::SetExcludedPatterns(
-    const std::vector<std::string>& patterns) {
+void IndexConfig::SetExcludedPatterns(const std::vector<std::string> &patterns) {
   std::lock_guard<std::mutex> lock(mutex_);
   excluded_patterns_ = patterns;
 }
 
-void IndexConfig::AddSupportedExtension(const std::string& ext) {
+void IndexConfig::AddSupportedExtension(const std::string &ext) {
   std::string lower_ext = ext;
-  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(),
-                 ::tolower);
+  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
   std::lock_guard<std::mutex> lock(mutex_);
   supported_exts_.insert(lower_ext);
 }
 
-void IndexConfig::RemoveSupportedExtension(const std::string& ext) {
+void IndexConfig::RemoveSupportedExtension(const std::string &ext) {
   std::string lower_ext = ext;
-  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(),
-                 ::tolower);
+  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
   std::lock_guard<std::mutex> lock(mutex_);
   supported_exts_.erase(lower_ext);
 }
 
-void IndexConfig::SetSupportedExtensions(
-    const std::vector<std::string>& extensions) {
+void IndexConfig::SetSupportedExtensions(const std::vector<std::string> &extensions) {
   std::lock_guard<std::mutex> lock(mutex_);
   supported_exts_.clear();
-  for (const auto& ext : extensions) {
+  for (const auto &ext : extensions) {
     std::string lower_ext = ext;
-    std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(),
-                   ::tolower);
+    std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
     supported_exts_.insert(lower_ext);
   }
 }
@@ -128,7 +110,7 @@ std::unordered_set<std::string> IndexConfig::GetSupportedExtensions() const {
   return supported_exts_;
 }
 
-void IndexConfig::SetCustomExtensions(const std::vector<std::string>& exts) {
+void IndexConfig::SetCustomExtensions(const std::vector<std::string> &exts) {
   std::lock_guard<std::mutex> lock(mutex_);
   custom_exts_ = exts;
 }
@@ -138,7 +120,7 @@ std::vector<std::string> IndexConfig::GetCustomExtensions() const {
   return custom_exts_;
 }
 
-void IndexConfig::AddCustomExtension(const std::string& ext) {
+void IndexConfig::AddCustomExtension(const std::string &ext) {
   if (ext.empty()) return;
   std::string lower = ext;
   if (lower.front() == '.') lower = lower.substr(1);
@@ -149,18 +131,16 @@ void IndexConfig::AddCustomExtension(const std::string& ext) {
   }
 }
 
-void IndexConfig::RemoveCustomExtension(const std::string& ext) {
+void IndexConfig::RemoveCustomExtension(const std::string &ext) {
   if (ext.empty()) return;
   std::string lower = ext;
   if (lower.front() == '.') lower = lower.substr(1);
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
   std::lock_guard<std::mutex> lock(mutex_);
-  custom_exts_.erase(
-      std::remove(custom_exts_.begin(), custom_exts_.end(), lower),
-      custom_exts_.end());
+  custom_exts_.erase(std::remove(custom_exts_.begin(), custom_exts_.end(), lower), custom_exts_.end());
 }
 
-bool IndexConfig::IsExtensionSupported(const std::string& ext) const {
+bool IndexConfig::IsExtensionSupported(const std::string &ext) const {
   if (ext.empty()) {
     return false;
   }
@@ -173,7 +153,7 @@ bool IndexConfig::IsExtensionSupported(const std::string& ext) const {
   return supported_exts_.find(lower_ext) != supported_exts_.end();
 }
 
-bool IndexConfig::IsFileSupported(const std::string& filename) const {
+bool IndexConfig::IsFileSupported(const std::string &filename) const {
   size_t dot_pos = filename.find_last_of('.');
   if (dot_pos == std::string::npos || dot_pos == filename.length() - 1) {
     return false;
@@ -181,7 +161,7 @@ bool IndexConfig::IsFileSupported(const std::string& filename) const {
   return IsExtensionSupported(filename.substr(dot_pos + 1));
 }
 
-bool IndexConfig::IsDirectoryExcluded(const std::string& dir_path) const {
+bool IndexConfig::IsDirectoryExcluded(const std::string &dir_path) const {
   if (dir_path.empty()) {
     return false;
   }
@@ -194,7 +174,7 @@ bool IndexConfig::IsDirectoryExcluded(const std::string& dir_path) const {
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  for (const auto& pattern : excluded_patterns_) {
+  for (const auto &pattern : excluded_patterns_) {
     if (normalized.find(pattern) != std::string::npos) {
       return true;
     }
@@ -202,21 +182,18 @@ bool IndexConfig::IsDirectoryExcluded(const std::string& dir_path) const {
   return false;
 }
 
-bool IndexConfig::ShouldIndex(const std::string& file_path,
-                              const std::string& ext,
-                              uint64_t file_size) const {
+bool IndexConfig::ShouldIndex(const std::string &file_path, const std::string &ext, uint64_t file_size) const {
   if (file_size > max_file_size_) {
     return false;
   }
 
   std::string lower_ext = ext;
-  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(),
-                 ::tolower);
+  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
 
   std::lock_guard<std::mutex> lock(mutex_);
 
   // Check exclusion patterns
-  for (const auto& pattern : excluded_patterns_) {
+  for (const auto &pattern : excluded_patterns_) {
     if (file_path.find(pattern) != std::string::npos) {
       return false;
     }
@@ -229,22 +206,18 @@ bool IndexConfig::ShouldIndex(const std::string& file_path,
 
   // Pre-filter cache and thumbnail paths for images to save indexing overhead
   if (filter_cache_thumbnails_ &&
-      (lower_ext == "png" || lower_ext == "jpg" || lower_ext == "jpeg" ||
-       lower_ext == "bmp" || lower_ext == "webp" || lower_ext == "gif" ||
-       lower_ext == "tif" || lower_ext == "tiff" || lower_ext == "svg")) {
-    static const char* kPathKeywords[] = {
-        "/weappicon/", "/thumb/", "/thumbs/", "/emoji/", "/emojis/",
-        "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"
-    };
+      (lower_ext == "png" || lower_ext == "jpg" || lower_ext == "jpeg" || lower_ext == "bmp" || lower_ext == "webp" ||
+       lower_ext == "gif" || lower_ext == "tif" || lower_ext == "tiff" || lower_ext == "svg")) {
+    static const char *kPathKeywords[] = {"/weappicon/", "/thumb/",     "/thumbs/", "/emoji/",  "/emojis/",
+                                          "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"};
     std::string lower_path = file_path;
     std::transform(lower_path.begin(), lower_path.end(), lower_path.begin(), ::tolower);
-    for (const char* kw : kPathKeywords) {
+    for (const char *kw : kPathKeywords) {
       if (lower_path.find(kw) != std::string::npos) {
         return false;
       }
     }
-    if (lower_path.find("_thumb.") != std::string::npos ||
-        lower_path.find("_thumbnail.") != std::string::npos) {
+    if (lower_path.find("_thumb.") != std::string::npos || lower_path.find("_thumbnail.") != std::string::npos) {
       return false;
     }
   }
@@ -252,7 +225,7 @@ bool IndexConfig::ShouldIndex(const std::string& file_path,
   return true;
 }
 
-bool IndexConfig::LoadFromFile(const std::string& file_path) {
+bool IndexConfig::LoadFromFile(const std::string &file_path) {
   std::ifstream ifs(file_path);
   if (!ifs.is_open()) {
     return false;
@@ -265,7 +238,7 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
 
     if (j.contains("indexed_directories") && j["indexed_directories"].is_array()) {
       indexed_dirs_.clear();
-      for (const auto& item : j["indexed_directories"]) {
+      for (const auto &item : j["indexed_directories"]) {
         if (item.is_string()) {
           indexed_dirs_.push_back(item.get<std::string>());
         }
@@ -274,7 +247,7 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
 
     if (j.contains("excluded_patterns") && j["excluded_patterns"].is_array()) {
       excluded_patterns_.clear();
-      for (const auto& item : j["excluded_patterns"]) {
+      for (const auto &item : j["excluded_patterns"]) {
         if (item.is_string()) {
           excluded_patterns_.push_back(item.get<std::string>());
         }
@@ -283,7 +256,7 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
 
     if (j.contains("supported_extensions") && j["supported_extensions"].is_array()) {
       supported_exts_.clear();
-      for (const auto& item : j["supported_extensions"]) {
+      for (const auto &item : j["supported_extensions"]) {
         if (item.is_string()) {
           supported_exts_.insert(item.get<std::string>());
         }
@@ -344,23 +317,23 @@ bool IndexConfig::LoadFromFile(const std::string& file_path) {
 
     if (j.contains("custom_extensions") && j["custom_extensions"].is_array()) {
       custom_exts_.clear();
-      for (const auto& item : j["custom_extensions"]) {
+      for (const auto &item : j["custom_extensions"]) {
         if (item.is_string()) {
           custom_exts_.push_back(item.get<std::string>());
         }
       }
     }
 
-    LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)",
-             file_path, indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
+    LOG_INFO("[IndexConfig] Successfully loaded config from '{}' ({} dirs, {} patterns, {} exts)", file_path,
+             indexed_dirs_.size(), excluded_patterns_.size(), supported_exts_.size());
     return true;
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     LOG_ERROR("[IndexConfig] Failed to parse config JSON '{}': {}", file_path, e.what());
     return false;
   }
 }
 
-bool IndexConfig::SaveToFile(const std::string& file_path) const {
+bool IndexConfig::SaveToFile(const std::string &file_path) const {
   try {
     nlohmann::json j;
     {
@@ -398,14 +371,13 @@ bool IndexConfig::SaveToFile(const std::string& file_path) const {
     std::error_code ec;
     std::filesystem::rename(temp_path, file_path, ec);
     if (ec) {
-      LOG_ERROR("[IndexConfig] Failed to atomically rename '{}' to '{}': {}",
-                temp_path, file_path, ec.message());
+      LOG_ERROR("[IndexConfig] Failed to atomically rename '{}' to '{}': {}", temp_path, file_path, ec.message());
       return false;
     }
 
     LOG_INFO("[IndexConfig] Configuration successfully saved to '{}'", file_path);
     return true;
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     LOG_ERROR("[IndexConfig] Failed to save config to '{}': {}", file_path, e.what());
     return false;
   }

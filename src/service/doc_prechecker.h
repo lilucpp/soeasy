@@ -36,8 +36,7 @@ class DocPrechecker {
    * @param file_size Size on disk in bytes
    * @return PrecheckResult containing status and timeout recommendation
    */
-  static PrecheckResult Check(const std::string& file_path, const std::string& ext,
-                              uint64_t file_size);
+  static PrecheckResult Check(const std::string &file_path, const std::string &ext, uint64_t file_size);
 };
 
 }  // namespace service

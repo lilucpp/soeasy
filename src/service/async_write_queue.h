@@ -21,10 +21,7 @@
 namespace soeasy {
 namespace service {
 
-enum class WriteOpType {
-  kIndex,
-  kDelete
-};
+enum class WriteOpType { kIndex, kDelete };
 
 struct WriteOp {
   WriteOpType type = WriteOpType::kIndex;
@@ -50,8 +47,8 @@ class AsyncWriteQueue {
   AsyncWriteQueue();
   ~AsyncWriteQueue();
 
-  AsyncWriteQueue(const AsyncWriteQueue&) = delete;
-  AsyncWriteQueue& operator=(const AsyncWriteQueue&) = delete;
+  AsyncWriteQueue(const AsyncWriteQueue &) = delete;
+  AsyncWriteQueue &operator=(const AsyncWriteQueue &) = delete;
 
   /**
    * @brief Start background storage writer thread.
@@ -61,10 +58,8 @@ class AsyncWriteQueue {
    * @param batch_timeout Max duration before committing a partial batch (default 10s)
    * @param max_queue_size High watermark for bounded backpressure (default 500)
    */
-  void Start(std::shared_ptr<storage::StorageEngine> storage_engine,
-             size_t batch_size = 100,
-             std::chrono::milliseconds batch_timeout = std::chrono::seconds(10),
-             size_t max_queue_size = 500);
+  void Start(std::shared_ptr<storage::StorageEngine> storage_engine, size_t batch_size = 100,
+             std::chrono::milliseconds batch_timeout = std::chrono::seconds(10), size_t max_queue_size = 500);
 
   /**
    * @brief Stop the writer thread and drain all pending write operations.

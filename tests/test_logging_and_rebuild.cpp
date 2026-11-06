@@ -17,21 +17,20 @@
 
 namespace {
 
-void WriteFile(const std::string& path, const std::string& content) {
+void WriteFile(const std::string &path, const std::string &content) {
   std::ofstream ofs(path, std::ios::binary);
   ofs.write(content.data(), content.size());
 }
 
-std::string ReadFileToString(const std::string& path) {
+std::string ReadFileToString(const std::string &path) {
   std::ifstream ifs(path);
   if (!ifs.is_open()) return "";
-  return std::string((std::istreambuf_iterator<char>(ifs)),
-                     std::istreambuf_iterator<char>());
+  return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 }
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   std::cout << "========================================================\n";
   std::cout << "   SoEasy spdlog 日志记录与全量重建索引实证测试\n";
   std::cout << "   - 单文件解析耗时与成功/失败记录\n";
@@ -77,8 +76,7 @@ int main(int argc, char* argv[]) {
   auto config = std::make_shared<soeasy::service::IndexConfig>();
   config->set_debounce_ms(100);
 
-  auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(
-      config, worker_guard, storage);
+  auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(config, worker_guard, storage);
   if (!pipeline->Init()) {
     std::cerr << "[-] IndexPipeline failed to init\n";
     return 1;
@@ -130,12 +128,11 @@ int main(int argc, char* argv[]) {
   size_t last_indexed = 0;
   size_t last_total = 0;
 
-  bool rebuild_ok = pipeline->RebuildIndex(
-      [&](size_t indexed, size_t total, const std::string& path) {
-        progress_calls++;
-        last_indexed = indexed;
-        last_total = total;
-      });
+  bool rebuild_ok = pipeline->RebuildIndex([&](size_t indexed, size_t total, const std::string &path) {
+    progress_calls++;
+    last_indexed = indexed;
+    last_total = total;
+  });
 
   if (!rebuild_ok) {
     std::cerr << "[-] RebuildIndex failed\n";
@@ -166,18 +163,13 @@ int main(int argc, char* argv[]) {
   std::string log_content = ReadFileToString(test_log);
 
   // 检查关键字：单文件解析耗时、单文件成功/失败、文件监控、重建索引
-  assert(log_content.find("[Parser]") != std::string::npos &&
-         "Log should contain [Parser] tags");
-  assert(log_content.find("SUCCESS") != std::string::npos &&
-         "Log should contain SUCCESS status");
-  assert(log_content.find("ms") != std::string::npos &&
-         "Log should contain parse elapsed milliseconds");
-  assert(log_content.find("[WatchEngine]") != std::string::npos &&
-         "Log should contain [WatchEngine] logs");
+  assert(log_content.find("[Parser]") != std::string::npos && "Log should contain [Parser] tags");
+  assert(log_content.find("SUCCESS") != std::string::npos && "Log should contain SUCCESS status");
+  assert(log_content.find("ms") != std::string::npos && "Log should contain parse elapsed milliseconds");
+  assert(log_content.find("[WatchEngine]") != std::string::npos && "Log should contain [WatchEngine] logs");
   assert(log_content.find("Starting full index rebuild") != std::string::npos &&
          "Log should contain rebuild starting log");
-  assert(log_content.find("Index rebuild finished") != std::string::npos &&
-         "Log should contain rebuild finished log");
+  assert(log_content.find("Index rebuild finished") != std::string::npos && "Log should contain rebuild finished log");
 
   std::cout << "  [+] 日志包含单文件解析耗时 (ms) 与成功/失败状态: 验证通过!\n";
   std::cout << "  [+] 日志包含文件系统变动监控 [WatchEngine]: 验证通过!\n";

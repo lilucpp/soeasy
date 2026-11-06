@@ -15,16 +15,16 @@ class TitleBar : public QWidget {
   Q_OBJECT
 
  public:
-  explicit TitleBar(QWidget* parent = nullptr);
+  explicit TitleBar(QWidget *parent = nullptr);
   ~TitleBar() override = default;
 
   void UpdateMaximizeButton(bool is_maximized);
   void RetranslateUi();
 
  protected:
-  void mousePressEvent(QMouseEvent* event) override;
-  void mouseMoveEvent(QMouseEvent* event) override;
-  void mouseDoubleClickEvent(QMouseEvent* event) override;
+  void mousePressEvent(QMouseEvent *event) override;
+  void mouseMoveEvent(QMouseEvent *event) override;
+  void mouseDoubleClickEvent(QMouseEvent *event) override;
 
  private slots:
   void OnMinimizeClicked();
@@ -34,11 +34,11 @@ class TitleBar : public QWidget {
  private:
   void SetupUi();
 
-  QLabel* icon_label_ = nullptr;
-  QLabel* title_label_ = nullptr;
-  QPushButton* btn_min_ = nullptr;
-  QPushButton* btn_max_ = nullptr;
-  QPushButton* btn_close_ = nullptr;
+  QLabel *icon_label_ = nullptr;
+  QLabel *title_label_ = nullptr;
+  QPushButton *btn_min_ = nullptr;
+  QPushButton *btn_max_ = nullptr;
+  QPushButton *btn_close_ = nullptr;
 
   QPoint drag_pos_;
 };

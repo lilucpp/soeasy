@@ -3,7 +3,7 @@
 namespace soeasy {
 namespace gui {
 
-I18n& I18n::Instance() {
+I18n &I18n::Instance() {
   static I18n instance;
   return instance;
 }
@@ -12,7 +12,7 @@ I18n::I18n() {
   InitDictionary();
 }
 
-void I18n::SetLanguage(const std::string& lang_code) {
+void I18n::SetLanguage(const std::string &lang_code) {
   if (lang_code == "en") {
     current_lang_ = Language::kEnglish;
   } else {
@@ -24,9 +24,9 @@ std::string I18n::GetLanguageCode() const {
   return current_lang_ == Language::kEnglish ? "en" : "zh";
 }
 
-QString I18n::Get(const char* key) const {
+QString I18n::Get(const char *key) const {
   if (!key) return QString();
-  const auto& dict = (current_lang_ == Language::kEnglish) ? en_dict_ : zh_dict_;
+  const auto &dict = (current_lang_ == Language::kEnglish) ? en_dict_ : zh_dict_;
   auto it = dict.find(key);
   if (it != dict.end()) {
     return QString::fromUtf8(it->second.c_str());
@@ -39,19 +39,19 @@ QString I18n::Get(const char* key) const {
   return QString::fromUtf8(key);
 }
 
-QString I18n::GetCategoryName(size_t cat_index, const QString& default_name) const {
+QString I18n::GetCategoryName(size_t cat_index, const QString &default_name) const {
   std::string key = "cat_name_" + std::to_string(cat_index);
   QString val = Get(key.c_str());
   return val.isEmpty() ? default_name : val;
 }
 
-QString I18n::GetCategoryDesc(size_t cat_index, const QString& default_desc) const {
+QString I18n::GetCategoryDesc(size_t cat_index, const QString &default_desc) const {
   std::string key = "cat_desc_" + std::to_string(cat_index);
   QString val = Get(key.c_str());
   return val.isEmpty() ? default_desc : val;
 }
 
-QString I18n::GetFormatDesc(const QString& ext, const QString& default_desc) const {
+QString I18n::GetFormatDesc(const QString &ext, const QString &default_desc) const {
   if (current_lang_ == Language::kChinese) {
     return default_desc;
   }
@@ -149,7 +149,9 @@ void I18n::InitDictionary() {
       // Settings - Extensions Tab
       {"group_ocr", "高级解析能力"},
       {"check_embedded_ocr", "提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)"},
-      {"tip_embedded_ocr", "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n    不勾选可获得极致解析性能（纯文本毫秒级完成索引）。"},
+      {"tip_embedded_ocr",
+       "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n    "
+       "不勾选可获得极致解析性能（纯文本毫秒级完成索引）。"},
       {"label_tree_title", "支持与索引的文件格式分类（勾选以启用全文索引）："},
       {"tree_header_col0", "分类 / 格式扩展名"},
       {"tree_header_col1", "说明与处理引擎"},
@@ -197,7 +199,9 @@ void I18n::InitDictionary() {
       // Rebuild & Actions
       {"btn_rebuild", "清空并重建索引..."},
       {"rebuild_confirm_title", "确认重建索引"},
-      {"rebuild_confirm_text", "此操作将彻底清空当前所有的全文倒排索引与密态缓存，\n并对所有配置的监控目录从头进行全量重新解析与构建。\n\n确定要继续吗？"},
+      {"rebuild_confirm_text",
+       "此操作将彻底清空当前所有的全文倒排索引与密态缓存，\n并对所有配置的监控目录从头进行全量重新解析与构建。\n\n确定"
+       "要继续吗？"},
 
       // Content Preview Dialog
       {"preview_dlg_title", "文档正文预览 - %1"},
@@ -323,7 +327,9 @@ void I18n::InitDictionary() {
       // Settings - Extensions Tab
       {"group_ocr", "Advanced Parsing Capabilities"},
       {"check_embedded_ocr", "Extract && OCR embedded images in documents (Office / PDF / ODF)"},
-      {"tip_embedded_ocr", "💡 Unchecked by default. Extracts embedded images for PP-OCRv6 recognition.\n    Unchecked yields maximum indexing throughput (instant plain-text extraction)."},
+      {"tip_embedded_ocr",
+       "💡 Unchecked by default. Extracts embedded images for PP-OCRv6 recognition.\n    Unchecked yields maximum "
+       "indexing throughput (instant plain-text extraction)."},
       {"label_tree_title", "Supported file format categories (check to enable full-text indexing):"},
       {"tree_header_col0", "Category / Extension"},
       {"tree_header_col1", "Description & Parser Engine"},
@@ -371,7 +377,9 @@ void I18n::InitDictionary() {
       // Rebuild & Actions
       {"btn_rebuild", "Rebuild Index..."},
       {"rebuild_confirm_title", "Confirm Index Rebuild"},
-      {"rebuild_confirm_text", "This will clear all inverted indices and encrypted caches,\nand completely rebuild indices from scratch for all configured directories.\n\nAre you sure you want to proceed?"},
+      {"rebuild_confirm_text",
+       "This will clear all inverted indices and encrypted caches,\nand completely rebuild indices from scratch for "
+       "all configured directories.\n\nAre you sure you want to proceed?"},
 
       // Content Preview Dialog
       {"preview_dlg_title", "Content Preview - %1"},

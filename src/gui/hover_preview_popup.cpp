@@ -23,15 +23,14 @@ QString FormatFileSize(uint64_t bytes) {
 
 }  // namespace
 
-HoverPreviewPopup::HoverPreviewPopup(QWidget* parent)
-    : QWidget(parent, Qt::ToolTip | Qt::FramelessWindowHint) {
+HoverPreviewPopup::HoverPreviewPopup(QWidget *parent) : QWidget(parent, Qt::ToolTip | Qt::FramelessWindowHint) {
   setAttribute(Qt::WA_ShowWithoutActivating);
   setAttribute(Qt::WA_TranslucentBackground);
 
-  auto* root_layout = new QVBoxLayout(this);
+  auto *root_layout = new QVBoxLayout(this);
   root_layout->setContentsMargins(8, 8, 8, 8);
 
-  auto* card = new QWidget(this);
+  auto *card = new QWidget(this);
   card->setObjectName("PreviewCard");
   card->setStyleSheet(
       "#PreviewCard {"
@@ -40,7 +39,7 @@ HoverPreviewPopup::HoverPreviewPopup(QWidget* parent)
       "  border-radius: 8px;"
       "}");
 
-  auto* card_layout = new QVBoxLayout(card);
+  auto *card_layout = new QVBoxLayout(card);
   card_layout->setContentsMargins(12, 10, 12, 10);
   card_layout->setSpacing(6);
 
@@ -68,7 +67,7 @@ HoverPreviewPopup::HoverPreviewPopup(QWidget* parent)
 
   root_layout->addWidget(card);
 
-  auto* shadow = new QGraphicsDropShadowEffect(this);
+  auto *shadow = new QGraphicsDropShadowEffect(this);
   shadow->setBlurRadius(16);
   shadow->setColor(QColor(0, 0, 0, 60));
   shadow->setOffset(0, 4);
@@ -77,17 +76,15 @@ HoverPreviewPopup::HoverPreviewPopup(QWidget* parent)
   setFixedWidth(460);
 }
 
-void HoverPreviewPopup::ShowSnippet(const QPoint& global_pos, const QString& title,
-                                    const QString& path, const QString& snippet_html,
-                                    uint64_t file_size, int64_t mtime, double score) {
+void HoverPreviewPopup::ShowSnippet(const QPoint &global_pos, const QString &title, const QString &path,
+                                    const QString &snippet_html, uint64_t file_size, int64_t mtime, double score) {
   title_label_->setText(title);
   path_label_->setText(path);
 
   // Style <mark> tags inside snippet
   QString styled_snippet = snippet_html;
   styled_snippet.replace(
-      "<mark>",
-      "<span style=\"background-color: #FFF59D; color: #C2185B; font-weight: bold; border-radius: 2px;\">");
+      "<mark>", "<span style=\"background-color: #FFF59D; color: #C2185B; font-weight: bold; border-radius: 2px;\">");
   styled_snippet.replace("</mark>", "</span>");
 
   if (styled_snippet.isEmpty()) {
@@ -100,8 +97,7 @@ void HoverPreviewPopup::ShowSnippet(const QPoint& global_pos, const QString& tit
     snippet_label_->setText(styled_snippet);
   }
 
-  QString date_str =
-      QDateTime::fromSecsSinceEpoch(mtime).toString("yyyy-MM-dd hh:mm");
+  QString date_str = QDateTime::fromSecsSinceEpoch(mtime).toString("yyyy-MM-dd hh:mm");
   meta_label_->setText(QString("大小: %1  |  修改时间: %2  |  相关度得分: %3")
                            .arg(FormatFileSize(file_size))
                            .arg(date_str)
@@ -111,7 +107,7 @@ void HoverPreviewPopup::ShowSnippet(const QPoint& global_pos, const QString& tit
 
   // Position smartly near cursor without overflowing screen
   QPoint target_pos = global_pos + QPoint(16, 16);
-  QScreen* screen = QGuiApplication::screenAt(global_pos);
+  QScreen *screen = QGuiApplication::screenAt(global_pos);
   if (screen) {
     QRect screen_geom = screen->availableGeometry();
     if (target_pos.x() + width() > screen_geom.right()) {

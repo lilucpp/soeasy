@@ -3,11 +3,15 @@
 
 #include <QLabel>
 #include <QMainWindow>
+#include <QProgressBar>
+#include <QPushButton>
 #include <QSplitter>
 #include <QStatusBar>
-
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "gui/content_preview_dialog.h"
@@ -17,12 +21,6 @@
 #include "gui/settings_dialog.h"
 #include "gui/title_bar.h"
 #include "service/index_pipeline.h"
-
-#include <atomic>
-#include <chrono>
-#include <thread>
-#include <QPushButton>
-#include <QProgressBar>
 
 namespace soeasy {
 namespace gui {
@@ -37,8 +35,7 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 
  public:
-  explicit MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
-                      QWidget* parent = nullptr);
+  explicit MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget *parent = nullptr);
   ~MainWindow() override;
 
   /**
@@ -47,26 +44,24 @@ class MainWindow : public QMainWindow {
   void StartBackgroundInitialIndex(bool force_incremental = false);
 
  signals:
-  void IndexProgressUpdated(int task_type, int indexed, int total, const QString& current_file);
+  void IndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file);
   void IndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
 
  protected:
-  void changeEvent(QEvent* event) override;
-  void showEvent(QShowEvent* event) override;
+  void changeEvent(QEvent *event) override;
+  void showEvent(QShowEvent *event) override;
 
  private slots:
-  void OnSearchTriggered(const QString& query, int mode, const QString& path_scope);
-  void OnFileSelected(int64_t doc_id, const QString& file_name,
-                      const QString& file_path);
-  void OnFileOpenRequested(int64_t doc_id, const QString& file_name,
-                           const QString& file_path);
+  void OnSearchTriggered(const QString &query, int mode, const QString &path_scope);
+  void OnFileSelected(int64_t doc_id, const QString &file_name, const QString &file_path);
+  void OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path);
   void OnLoadMoreRequested();
   void OnTogglePreview();
   void OnOpenSettings();
   void OnSettingsApplied();
   void OnRebuildIndexRequested();
 
-  void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString& current_file);
+  void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file);
   void OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
 
  private:
@@ -76,17 +71,17 @@ class MainWindow : public QMainWindow {
 
   std::shared_ptr<service::IndexPipeline> pipeline_;
 
-  TitleBar* title_bar_ = nullptr;
-  SearchBar* search_bar_ = nullptr;
-  QSplitter* splitter_ = nullptr;
-  ResultView* result_view_ = nullptr;
-  PreviewPanel* preview_panel_ = nullptr;
+  TitleBar *title_bar_ = nullptr;
+  SearchBar *search_bar_ = nullptr;
+  QSplitter *splitter_ = nullptr;
+  ResultView *result_view_ = nullptr;
+  PreviewPanel *preview_panel_ = nullptr;
 
-  QLabel* status_stats_label_ = nullptr;
-  QProgressBar* status_progress_bar_ = nullptr;
-  QPushButton* status_cancel_btn_ = nullptr;
-  QLabel* status_file_label_ = nullptr;
-  QLabel* status_latency_label_ = nullptr;
+  QLabel *status_stats_label_ = nullptr;
+  QProgressBar *status_progress_bar_ = nullptr;
+  QPushButton *status_cancel_btn_ = nullptr;
+  QLabel *status_file_label_ = nullptr;
+  QLabel *status_latency_label_ = nullptr;
 
   QString current_query_;
   int current_search_mode_ = 0;

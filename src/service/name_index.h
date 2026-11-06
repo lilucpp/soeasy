@@ -36,13 +36,13 @@ class NameIndex {
   ~NameIndex() = default;
 
   // Disallow copy and assign
-  NameIndex(const NameIndex&) = delete;
-  NameIndex& operator=(const NameIndex&) = delete;
+  NameIndex(const NameIndex &) = delete;
+  NameIndex &operator=(const NameIndex &) = delete;
 
   /**
    * @brief Insert or update a file record in the in-memory filename index.
    */
-  void Upsert(const NameRecord& record);
+  void Upsert(const NameRecord &record);
 
   /**
    * @brief Remove a file record by doc_id.
@@ -52,12 +52,12 @@ class NameIndex {
   /**
    * @brief Remove a file record by file path.
    */
-  void RemoveByPath(const std::string& file_path);
+  void RemoveByPath(const std::string &file_path);
 
   /**
    * @brief Retrieve metadata (file_size, mtime) for rapid in-memory incremental check.
    */
-  bool GetMetadata(int64_t doc_id, uint64_t* out_file_size, int64_t* out_mtime) const;
+  bool GetMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime) const;
 
   /**
    * @brief Instantaneous search by filename query with optional path scope filtering.
@@ -69,10 +69,8 @@ class NameIndex {
    * @param out_total_count Optional pointer to receive total number of matching documents
    * @return std::vector<NameMatchResult> Ranked results
    */
-  std::vector<NameMatchResult> Search(const std::string& query,
-                                      int limit = 50, int offset = 0,
-                                      const std::string& path_prefix = "",
-                                      int* out_total_count = nullptr) const;
+  std::vector<NameMatchResult> Search(const std::string &query, int limit = 50, int offset = 0,
+                                      const std::string &path_prefix = "", int *out_total_count = nullptr) const;
 
   /**
    * @brief Get total number of indexed files in memory.
@@ -85,8 +83,8 @@ class NameIndex {
   void Clear();
 
  private:
-  static std::string ToLower(const std::string& s);
-  static bool StartsWith(const std::string& str, const std::string& prefix);
+  static std::string ToLower(const std::string &s);
+  static bool StartsWith(const std::string &str, const std::string &prefix);
 
   mutable std::shared_mutex rw_mutex_;
   std::unordered_map<int64_t, NameRecord> records_by_id_;

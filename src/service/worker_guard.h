@@ -49,11 +49,7 @@ struct ParseTaskResult {
   double elapsed_ms = 0.0;
 };
 
-enum class WorkerState {
-  kIdle = 0,
-  kBusy = 1,
-  kKilledByWatchdog = 2
-};
+enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2 };
 
 struct WorkerInstance {
   pid_t pid = 0;
@@ -75,16 +71,16 @@ struct WorkerInstance {
 
 class WorkerGuard {
  public:
-  static constexpr uint32_t kDefaultTimeoutMs = 15000;          // 15s default
-  static constexpr uint32_t kDefaultStallTimeoutMs = 5000;      // 5s stall heartbeat
+  static constexpr uint32_t kDefaultTimeoutMs = 15000;                 // 15s default
+  static constexpr uint32_t kDefaultStallTimeoutMs = 5000;             // 5s stall heartbeat
   static constexpr size_t kDefaultMaxMemoryBytes = 512 * 1024 * 1024;  // 512MB RSS
 
   WorkerGuard();
   ~WorkerGuard();
 
   // Disallow copy and assign
-  WorkerGuard(const WorkerGuard&) = delete;
-  WorkerGuard& operator=(const WorkerGuard&) = delete;
+  WorkerGuard(const WorkerGuard &) = delete;
+  WorkerGuard &operator=(const WorkerGuard &) = delete;
 
   /**
    * @brief Initialize worker pool and shared memory pool.
@@ -96,8 +92,7 @@ class WorkerGuard {
    * @param shm_slot_capacity Capacity per slot in bytes
    * @return true on success
    */
-  bool Init(const std::string& worker_bin_path, size_t worker_count = 2,
-            uint32_t timeout_ms = kDefaultTimeoutMs,
+  bool Init(const std::string &worker_bin_path, size_t worker_count = 2, uint32_t timeout_ms = kDefaultTimeoutMs,
             size_t shm_slot_count = common::ShmSlotPool::kDefaultSlotCount,
             size_t shm_slot_capacity = common::ShmSlotPool::kDefaultSlotCapacity);
 
@@ -113,24 +108,24 @@ class WorkerGuard {
    * @param out_result Receives execution status, extracted size, and slot reference
    * @return true if execution completed (even if status is timeout/crash/failed)
    */
-  bool ExecuteTask(const ParseTask& task, ParseTaskResult* out_result);
+  bool ExecuteTask(const ParseTask &task, ParseTaskResult *out_result);
 
   /**
    * @brief Access shared memory slot pool for reading zero-copy extracted text.
    */
-  common::ShmSlotPool* shm_pool() { return &shm_pool_; }
+  common::ShmSlotPool *shm_pool() { return &shm_pool_; }
 
   size_t worker_count() const { return workers_.size(); }
   uint32_t timeout_ms() const { return timeout_ms_; }
   void set_timeout_ms(uint32_t ms) { timeout_ms_ = ms; }
 
-  void SetLoggingOptions(const std::string& level, bool enable_console, bool enable_sync,
-                         bool doctotext_logging = false, const std::string& doctotext_log_path = "",
+  void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
+                         bool doctotext_logging = false, const std::string &doctotext_log_path = "",
                          bool embedded_image_ocr = false);
 
  private:
   bool SpawnWorker(size_t index);
-  void KillWorker(size_t index, TaskStatus status, const std::string& reason);
+  void KillWorker(size_t index, TaskStatus status, const std::string &reason);
   void WatchdogLoop();
   static size_t GetProcessRssBytes(pid_t pid);
 

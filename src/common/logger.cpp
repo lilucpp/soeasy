@@ -24,21 +24,18 @@ spdlog::level::level_enum g_log_level = spdlog::level::info;
 
 }  // namespace
 
-void Logger::EnsureLogDirectoryExists(const std::string& file_path) {
+void Logger::EnsureLogDirectoryExists(const std::string &file_path) {
   try {
     std::filesystem::path p(file_path);
     if (p.has_parent_path()) {
       std::filesystem::create_directories(p.parent_path());
     }
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     std::cerr << "[-] Failed to create log directory: " << e.what() << "\n";
   }
 }
 
-void Logger::Init(const std::string& log_file,
-                  size_t max_size,
-                  size_t max_files,
-                  bool enable_console,
+void Logger::Init(const std::string &log_file, size_t max_size, size_t max_files, bool enable_console,
                   spdlog::level::level_enum level) {
   std::lock_guard<std::mutex> lock(g_logger_mutex);
 
@@ -62,13 +59,11 @@ void Logger::Init(const std::string& log_file,
   sinks.push_back(g_console_sink);
 
   try {
-    g_file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        log_file, max_size, max_files);
+    g_file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(log_file, max_size, max_files);
     g_file_sink->set_level(level);
     sinks.push_back(g_file_sink);
-  } catch (const std::exception& e) {
-    std::cerr << "[-] Failed to create rotating file sink for " << log_file
-              << ": " << e.what() << "\n";
+  } catch (const std::exception &e) {
+    std::cerr << "[-] Failed to create rotating file sink for " << log_file << ": " << e.what() << "\n";
   }
 
   g_logger = std::make_shared<spdlog::logger>("soeasy", sinks.begin(), sinks.end());
@@ -105,7 +100,7 @@ void Logger::SetLevel(spdlog::level::level_enum level) {
   }
 }
 
-void Logger::SetLevel(const std::string& level_str) {
+void Logger::SetLevel(const std::string &level_str) {
   SetLevel(ParseLevel(level_str));
 }
 
@@ -143,7 +138,7 @@ bool Logger::IsSyncMode() {
   return g_sync_mode;
 }
 
-spdlog::level::level_enum Logger::ParseLevel(const std::string& level_str) {
+spdlog::level::level_enum Logger::ParseLevel(const std::string &level_str) {
   std::string lower;
   lower.reserve(level_str.size());
   for (char c : level_str) lower.push_back(static_cast<char>(std::tolower(c)));
@@ -160,14 +155,22 @@ spdlog::level::level_enum Logger::ParseLevel(const std::string& level_str) {
 
 std::string Logger::LevelToString(spdlog::level::level_enum level) {
   switch (level) {
-    case spdlog::level::trace: return "trace";
-    case spdlog::level::debug: return "debug";
-    case spdlog::level::info: return "info";
-    case spdlog::level::warn: return "warn";
-    case spdlog::level::err: return "error";
-    case spdlog::level::critical: return "critical";
-    case spdlog::level::off: return "off";
-    default: return "info";
+    case spdlog::level::trace:
+      return "trace";
+    case spdlog::level::debug:
+      return "debug";
+    case spdlog::level::info:
+      return "info";
+    case spdlog::level::warn:
+      return "warn";
+    case spdlog::level::err:
+      return "error";
+    case spdlog::level::critical:
+      return "critical";
+    case spdlog::level::off:
+      return "off";
+    default:
+      return "info";
   }
 }
 
@@ -182,9 +185,9 @@ std::shared_ptr<spdlog::logger> Logger::Get() {
     sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
 
     try {
-      sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-          g_log_file_path, 10 * 1024 * 1024, 3));
-    } catch (...) {}
+      sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(g_log_file_path, 10 * 1024 * 1024, 3));
+    } catch (...) {
+    }
 
     g_logger = std::make_shared<spdlog::logger>("soeasy", sinks.begin(), sinks.end());
     g_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%t] %v");

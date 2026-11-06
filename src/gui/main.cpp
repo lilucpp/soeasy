@@ -9,7 +9,6 @@
 #include <QFont>
 #include <QMessageBox>
 #include <QStandardPaths>
-
 #include <iostream>
 #include <memory>
 #include <string>
@@ -22,24 +21,24 @@
 #include "service/worker_guard.h"
 #include "storage/storage_engine.h"
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 #ifdef _WIN32
   // Enable Per-Monitor DPI Awareness V2 on Windows 10/11
   // This completely disables blurry OS bitmap scaling (DPI virtualization)
   HMODULE user32 = LoadLibraryA("user32.dll");
   if (user32) {
-    typedef BOOL(WINAPI* SetProcessDpiAwarenessContextFunc)(void*);
-    auto set_context = reinterpret_cast<SetProcessDpiAwarenessContextFunc>(
-        GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+    typedef BOOL(WINAPI * SetProcessDpiAwarenessContextFunc)(void *);
+    auto set_context =
+        reinterpret_cast<SetProcessDpiAwarenessContextFunc>(GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
     if (set_context) {
       // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ((DPI_AWARENESS_CONTEXT)-4)
-      set_context(reinterpret_cast<void*>(-4));
+      set_context(reinterpret_cast<void *>(-4));
     } else {
       HMODULE shcore = LoadLibraryA("shcore.dll");
       if (shcore) {
-        typedef HRESULT(WINAPI* SetProcessDpiAwarenessFunc)(int);
-        auto set_awareness = reinterpret_cast<SetProcessDpiAwarenessFunc>(
-            GetProcAddress(shcore, "SetProcessDpiAwareness"));
+        typedef HRESULT(WINAPI * SetProcessDpiAwarenessFunc)(int);
+        auto set_awareness =
+            reinterpret_cast<SetProcessDpiAwarenessFunc>(GetProcAddress(shcore, "SetProcessDpiAwareness"));
         if (set_awareness) {
           set_awareness(2);  // PROCESS_PER_MONITOR_DPI_AWARE
         }
@@ -56,8 +55,7 @@ int main(int argc, char* argv[]) {
   QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 #endif
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
-      Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 #endif
 
   QApplication app(argc, argv);
@@ -86,71 +84,48 @@ int main(int argc, char* argv[]) {
   parser.addHelpOption();
   parser.addVersionOption();
 
-  QCommandLineOption db_option(
-      QStringList() << "d" << "db",
-      "Path to encrypted SQLite3MC database file.",
-      "path");
+  QCommandLineOption db_option(QStringList() << "d" << "db", "Path to encrypted SQLite3MC database file.", "path");
   parser.addOption(db_option);
 
-  QCommandLineOption worker_option(
-      QStringList() << "w" << "worker",
-      "Path to soeasy-worker binary.",
-      "path");
+  QCommandLineOption worker_option(QStringList() << "w" << "worker", "Path to soeasy-worker binary.", "path");
   parser.addOption(worker_option);
 
-  QCommandLineOption dict_option(
-      QStringList() << "dict",
-      "Path to Jieba dictionary directory.",
-      "path");
+  QCommandLineOption dict_option(QStringList() << "dict", "Path to Jieba dictionary directory.", "path");
   parser.addOption(dict_option);
 
-  QCommandLineOption log_level_option(
-      QStringList() << "log-level",
-      "Set logging level (trace, debug, info, warn, error).",
-      "level");
+  QCommandLineOption log_level_option(QStringList() << "log-level",
+                                      "Set logging level (trace, debug, info, warn, error).", "level");
   parser.addOption(log_level_option);
 
-  QCommandLineOption log_console_option(
-      QStringList() << "log-console",
-      "Mirror logs to console stdout (debugging).");
+  QCommandLineOption log_console_option(QStringList() << "log-console", "Mirror logs to console stdout (debugging).");
   parser.addOption(log_console_option);
 
-  QCommandLineOption no_log_console_option(
-      QStringList() << "no-log-console",
-      "Disable console stdout logging for maximum performance.");
+  QCommandLineOption no_log_console_option(QStringList() << "no-log-console",
+                                           "Disable console stdout logging for maximum performance.");
   parser.addOption(no_log_console_option);
 
-  QCommandLineOption log_sync_option(
-      QStringList() << "log-sync",
-      "Enable synchronous log flushing (flush immediately on each write).");
+  QCommandLineOption log_sync_option(QStringList() << "log-sync",
+                                     "Enable synchronous log flushing (flush immediately on each write).");
   parser.addOption(log_sync_option);
 
-  QCommandLineOption debug_option(
-      QStringList() << "debug",
-      "Enable debug mode (equivalent to --log-level=debug --log-console --log-sync).");
+  QCommandLineOption debug_option(QStringList() << "debug",
+                                  "Enable debug mode (equivalent to --log-level=debug --log-console --log-sync).");
   parser.addOption(debug_option);
 
-  QCommandLineOption dt_log_option(
-      QStringList() << "doctotext-logging",
-      "Enable DocToText verbose logging to file.");
+  QCommandLineOption dt_log_option(QStringList() << "doctotext-logging", "Enable DocToText verbose logging to file.");
   parser.addOption(dt_log_option);
 
-  QCommandLineOption no_dt_log_option(
-      QStringList() << "no-doctotext-logging",
-      "Disable DocToText verbose logging.");
+  QCommandLineOption no_dt_log_option(QStringList() << "no-doctotext-logging", "Disable DocToText verbose logging.");
   parser.addOption(no_dt_log_option);
 
-  QCommandLineOption dt_log_path_option(
-      QStringList() << "doctotext-log-path",
-      "Set path for DocToText verbose log file.",
-      "path");
+  QCommandLineOption dt_log_path_option(QStringList() << "doctotext-log-path",
+                                        "Set path for DocToText verbose log file.", "path");
   parser.addOption(dt_log_path_option);
 
   parser.process(app);
 
   // Determine data storage directory: ~/.local/share/soeasy or ~/.config/soeasy
-  QString app_data_dir =
-      QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+  QString app_data_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
   if (app_data_dir.isEmpty()) {
     app_data_dir = QDir::homePath() + "/.soeasy";
   }
@@ -163,10 +138,8 @@ int main(int argc, char* argv[]) {
 
   bool config_loaded = config->LoadFromFile(config_path.toStdString());
   if (!config_loaded || config->GetIndexedDirectories().empty()) {
-    QString docs =
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    QString desktop =
-        QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    QString desktop = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
     if (!docs.isEmpty() && QDir(docs).exists()) {
       config->AddIndexedDirectory(docs.toStdString());
     }
@@ -229,10 +202,8 @@ int main(int argc, char* argv[]) {
   LOG_INFO("   SoEasy Desktop Search Engine Starting (v1.0.0)");
   LOG_INFO("   AppData Directory: {}", app_data_dir.toStdString());
   LOG_INFO("   Rolling Log File:  {} (3 files x 10MB)", log_path.toStdString());
-  LOG_INFO("   Logging Level:     {} | Console: {} | Sync Flush: {}",
-           soeasy::common::Logger::LevelToString(level_enum),
-           enable_console ? "ENABLED" : "DISABLED",
-           enable_sync ? "ENABLED" : "DISABLED");
+  LOG_INFO("   Logging Level:     {} | Console: {} | Sync Flush: {}", soeasy::common::Logger::LevelToString(level_enum),
+           enable_console ? "ENABLED" : "DISABLED", enable_sync ? "ENABLED" : "DISABLED");
   LOG_INFO("========================================================");
 
   if (!config_loaded) {
@@ -254,10 +225,8 @@ int main(int argc, char* argv[]) {
 #else
     QString exe_suffix = "";
 #endif
-    QString candidate1 =
-        QCoreApplication::applicationDirPath() + "/soeasy-worker" + exe_suffix;
-    QString candidate2 =
-        QCoreApplication::applicationDirPath() + "/../bin/soeasy-worker" + exe_suffix;
+    QString candidate1 = QCoreApplication::applicationDirPath() + "/soeasy-worker" + exe_suffix;
+    QString candidate2 = QCoreApplication::applicationDirPath() + "/../bin/soeasy-worker" + exe_suffix;
     QString candidate3 = "./soeasy-worker" + exe_suffix;
 
     if (QFileInfo::exists(candidate1)) {
@@ -273,15 +242,13 @@ int main(int argc, char* argv[]) {
   QString dict_dir = parser.value(dict_option);
   if (dict_dir.isEmpty()) {
     QString app_dir = QCoreApplication::applicationDirPath();
-    QStringList dict_candidates = {
-        app_dir + "/dict",
-        app_dir + "/../dict",
-        app_dir + "/../third_party/cppjieba/dict",
-        app_dir + "/../../third_party/cppjieba/dict",
-        "/usr/local/share/soeasy/dict",
-        "/usr/share/soeasy/dict"
-    };
-    for (const auto& candidate : dict_candidates) {
+    QStringList dict_candidates = {app_dir + "/dict",
+                                   app_dir + "/../dict",
+                                   app_dir + "/../third_party/cppjieba/dict",
+                                   app_dir + "/../../third_party/cppjieba/dict",
+                                   "/usr/local/share/soeasy/dict",
+                                   "/usr/share/soeasy/dict"};
+    for (const auto &candidate : dict_candidates) {
       if (QFileInfo::exists(candidate + "/jieba.dict.utf8")) {
         dict_dir = candidate;
         break;
@@ -293,19 +260,16 @@ int main(int argc, char* argv[]) {
   auto storage_engine = std::make_shared<soeasy::storage::StorageEngine>();
   const std::string kEncryptionKey = "soeasy_master_page_key_2026";
   if (!storage_engine->Open(db_path.toStdString(), kEncryptionKey, dict_dir.toStdString())) {
-    QMessageBox::critical(
-        nullptr, "SoEasy - 启动错误",
-        QString("无法打开加密索引数据库:\n%1\n请检查权限或磁盘空间。")
-            .arg(db_path));
+    QMessageBox::critical(nullptr, "SoEasy - 启动错误",
+                          QString("无法打开加密索引数据库:\n%1\n请检查权限或磁盘空间。").arg(db_path));
     return 1;
   }
 
   // 3. Initialize Worker Guard with configured worker count and 15s base timeout
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  worker_guard->SetLoggingOptions(
-      soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync,
-      config->doctotext_logging(), config->doctotext_log_path(),
-      config->enable_embedded_image_ocr());
+  worker_guard->SetLoggingOptions(soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync,
+                                  config->doctotext_logging(), config->doctotext_log_path(),
+                                  config->enable_embedded_image_ocr());
   if (!worker_guard->Init(worker_bin.toStdString(), config->worker_count(),
                           soeasy::service::WorkerGuard::kDefaultTimeoutMs)) {
     std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "
@@ -313,11 +277,9 @@ int main(int argc, char* argv[]) {
   }
 
   // 4. Initialize Index Pipeline
-  auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(
-      config, worker_guard, storage_engine);
+  auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(config, worker_guard, storage_engine);
   if (!pipeline->Init()) {
-    QMessageBox::critical(nullptr, "SoEasy - 启动错误",
-                          "初始化索引流水线与文件监视引擎失败。");
+    QMessageBox::critical(nullptr, "SoEasy - 启动错误", "初始化索引流水线与文件监视引擎失败。");
     return 1;
   }
 

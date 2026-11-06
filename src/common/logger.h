@@ -20,17 +20,15 @@ class Logger {
    * @param enable_console Whether to mirror logs to stdout/stderr (default: false for performance)
    * @param level Default log level (default: info)
    */
-  static void Init(const std::string& log_file = "logs/soeasy.log",
-                   size_t max_size = 10 * 1024 * 1024,
-                   size_t max_files = 3,
-                   bool enable_console = false,
+  static void Init(const std::string &log_file = "logs/soeasy.log", size_t max_size = 10 * 1024 * 1024,
+                   size_t max_files = 3, bool enable_console = false,
                    spdlog::level::level_enum level = spdlog::level::info);
 
   /**
    * @brief Dynamically set log level at runtime.
    */
   static void SetLevel(spdlog::level::level_enum level);
-  static void SetLevel(const std::string& level_str);
+  static void SetLevel(const std::string &level_str);
   static spdlog::level::level_enum GetLevel();
 
   /**
@@ -48,7 +46,7 @@ class Logger {
   /**
    * @brief Parse string to spdlog level enum (e.g. "debug", "info", "warn").
    */
-  static spdlog::level::level_enum ParseLevel(const std::string& level_str);
+  static spdlog::level::level_enum ParseLevel(const std::string &level_str);
 
   /**
    * @brief Convert spdlog level enum to lowercase string.
@@ -71,18 +69,18 @@ class Logger {
   static std::string GetLogFilePath();
 
  private:
-  static void EnsureLogDirectoryExists(const std::string& file_path);
+  static void EnsureLogDirectoryExists(const std::string &file_path);
 };
 
 }  // namespace common
 }  // namespace soeasy
 
 // Standard log macros
-#define LOG_TRACE(...)    ::soeasy::common::Logger::Get()->trace(__VA_ARGS__)
-#define LOG_DEBUG(...)    ::soeasy::common::Logger::Get()->debug(__VA_ARGS__)
-#define LOG_INFO(...)     ::soeasy::common::Logger::Get()->info(__VA_ARGS__)
-#define LOG_WARN(...)     ::soeasy::common::Logger::Get()->warn(__VA_ARGS__)
-#define LOG_ERROR(...)    ::soeasy::common::Logger::Get()->error(__VA_ARGS__)
+#define LOG_TRACE(...) ::soeasy::common::Logger::Get()->trace(__VA_ARGS__)
+#define LOG_DEBUG(...) ::soeasy::common::Logger::Get()->debug(__VA_ARGS__)
+#define LOG_INFO(...) ::soeasy::common::Logger::Get()->info(__VA_ARGS__)
+#define LOG_WARN(...) ::soeasy::common::Logger::Get()->warn(__VA_ARGS__)
+#define LOG_ERROR(...) ::soeasy::common::Logger::Get()->error(__VA_ARGS__)
 #define LOG_CRITICAL(...) ::soeasy::common::Logger::Get()->critical(__VA_ARGS__)
 
 #endif  // SOEASY_SRC_COMMON_LOGGER_H_

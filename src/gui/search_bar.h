@@ -21,20 +21,20 @@ class SearchBar : public QWidget {
   Q_OBJECT
 
  public:
-  explicit SearchBar(QWidget* parent = nullptr);
+  explicit SearchBar(QWidget *parent = nullptr);
   ~SearchBar() override = default;
 
   QString query() const;
   SearchMode mode() const;
   QString path_scope() const;
 
-  void SetQuery(const QString& query);
+  void SetQuery(const QString &query);
   void SetMode(SearchMode mode);
-  void SetPathScope(const QString& path);
+  void SetPathScope(const QString &path);
   void RetranslateUi();
 
  signals:
-  void SearchTriggered(const QString& query, int mode, const QString& path_scope);
+  void SearchTriggered(const QString &query, int mode, const QString &path_scope);
   void SettingsRequested();
   void PreviewToggleRequested();
 
@@ -47,16 +47,16 @@ class SearchBar : public QWidget {
  private:
   void SetupUi();
 
-  QLineEdit* query_edit_ = nullptr;
-  QComboBox* mode_combo_ = nullptr;
-  QLineEdit* scope_edit_ = nullptr;
-  QLabel* label_scope_ = nullptr;
-  QPushButton* btn_scope_browse_ = nullptr;
-  QPushButton* btn_scope_clear_ = nullptr;
-  QPushButton* btn_settings_ = nullptr;
-  QPushButton* btn_toggle_preview_ = nullptr;
+  QLineEdit *query_edit_ = nullptr;
+  QComboBox *mode_combo_ = nullptr;
+  QLineEdit *scope_edit_ = nullptr;
+  QLabel *label_scope_ = nullptr;
+  QPushButton *btn_scope_browse_ = nullptr;
+  QPushButton *btn_scope_clear_ = nullptr;
+  QPushButton *btn_settings_ = nullptr;
+  QPushButton *btn_toggle_preview_ = nullptr;
 
-  QTimer* debounce_timer_ = nullptr;
+  QTimer *debounce_timer_ = nullptr;
 };
 
 }  // namespace gui

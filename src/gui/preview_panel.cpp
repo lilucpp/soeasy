@@ -1,6 +1,4 @@
 #include "gui/preview_panel.h"
-#include "gui/icon_provider.h"
-#include "gui/i18n.h"
 
 #include <QDateTime>
 #include <QDesktopServices>
@@ -10,9 +8,11 @@
 #include <QTextCursor>
 #include <QUrl>
 #include <QVBoxLayout>
-
 #include <chrono>
 #include <fstream>
+
+#include "gui/i18n.h"
+#include "gui/icon_provider.h"
 
 namespace soeasy {
 namespace gui {
@@ -31,23 +31,22 @@ QString FormatFileSize(uint64_t bytes) {
 
 }  // namespace
 
-PreviewPanel::PreviewPanel(QWidget* parent) : QWidget(parent) {
+PreviewPanel::PreviewPanel(QWidget *parent) : QWidget(parent) {
   SetupUi();
   ClearPreview();
 }
 
-void PreviewPanel::SetStorageEngine(
-    std::shared_ptr<storage::StorageEngine> storage) {
+void PreviewPanel::SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage) {
   storage_ = std::move(storage);
 }
 
 void PreviewPanel::SetupUi() {
-  auto* main_layout = new QVBoxLayout(this);
+  auto *main_layout = new QVBoxLayout(this);
   main_layout->setContentsMargins(0, 0, 0, 0);
   main_layout->setSpacing(6);
 
   // 1. Header Card: File Info & Quick Actions
-  auto* header_card = new QWidget(this);
+  auto *header_card = new QWidget(this);
   header_card->setObjectName("PreviewHeaderCard");
   header_card->setStyleSheet(
       "#PreviewHeaderCard {"
@@ -55,11 +54,11 @@ void PreviewPanel::SetupUi() {
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
       "}");
-  auto* header_layout = new QVBoxLayout(header_card);
+  auto *header_layout = new QVBoxLayout(header_card);
   header_layout->setContentsMargins(10, 8, 10, 8);
   header_layout->setSpacing(4);
 
-  auto* title_row = new QHBoxLayout();
+  auto *title_row = new QHBoxLayout();
   title_row->setSpacing(8);
 
   icon_label_ = new QLabel(header_card);
@@ -68,8 +67,7 @@ void PreviewPanel::SetupUi() {
   icon_label_->setStyleSheet("border: none; background: transparent; padding: 0px;");
 
   title_label_ = new QLabel("未选中文件", header_card);
-  title_label_->setStyleSheet(
-      "font-size: 13px; font-weight: bold; color: #1E293B; border: none;");
+  title_label_->setStyleSheet("font-size: 13px; font-weight: bold; color: #1E293B; border: none;");
 
   btn_open_file_ = new QPushButton("打开文件", header_card);
   btn_open_file_->setStyleSheet(
@@ -104,8 +102,7 @@ void PreviewPanel::SetupUi() {
   header_layout->addLayout(title_row);
 
   path_label_ = new QLabel(header_card);
-  path_label_->setStyleSheet(
-      "font-size: 11px; color: #64748B; border: none; font-family: monospace;");
+  path_label_->setStyleSheet("font-size: 11px; color: #64748B; border: none; font-family: monospace;");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
   path_label_->setWordWrap(true);
   header_layout->addWidget(path_label_);
@@ -113,7 +110,7 @@ void PreviewPanel::SetupUi() {
   main_layout->addWidget(header_card);
 
   // 2. Navigation / In-Document Search Bar
-  auto* nav_layout = new QHBoxLayout();
+  auto *nav_layout = new QHBoxLayout();
   nav_layout->setSpacing(6);
 
   label_jump_ = new QLabel("关键词跳转:", this);
@@ -210,10 +207,8 @@ void PreviewPanel::SetupUi() {
   main_layout->addWidget(meta_label_);
 
   // Connections
-  connect(btn_open_file_, &QPushButton::clicked, this,
-          &PreviewPanel::OnOpenWithDefaultApp);
-  connect(btn_open_folder_, &QPushButton::clicked, this,
-          &PreviewPanel::OnOpenFolder);
+  connect(btn_open_file_, &QPushButton::clicked, this, &PreviewPanel::OnOpenWithDefaultApp);
+  connect(btn_open_folder_, &QPushButton::clicked, this, &PreviewPanel::OnOpenFolder);
   connect(btn_next_, &QPushButton::clicked, this, &PreviewPanel::OnFindNext);
   connect(btn_prev_, &QPushButton::clicked, this, &PreviewPanel::OnFindPrev);
   connect(in_doc_search_edit_, &QLineEdit::textChanged, this, [this]() {
@@ -281,9 +276,8 @@ void PreviewPanel::ClearPreview() {
   meta_label_->clear();
 }
 
-void PreviewPanel::LoadDocument(int64_t doc_id, const QString& file_name,
-                                const QString& file_path,
-                                const std::vector<std::string>& keywords) {
+void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const QString &file_path,
+                                const std::vector<std::string> &keywords) {
   current_doc_id_ = doc_id;
   current_file_name_ = file_name;
   current_file_path_ = file_path;
@@ -292,8 +286,7 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString& file_name,
   QFileInfo fi(file_path);
   QString ext = fi.suffix();
 
-  icon_label_->setPixmap(
-      IconProvider::GetFileIcon(ext).pixmap(24, 24));
+  icon_label_->setPixmap(IconProvider::GetFileIcon(ext).pixmap(24, 24));
   title_label_->setText(file_name);
   path_label_->setText(file_path);
 
@@ -314,8 +307,7 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString& file_name,
     auto t0 = std::chrono::high_resolution_clock::now();
     ok = storage_->GetDocumentContent(doc_id, &decompressed_utf8);
     auto t1 = std::chrono::high_resolution_clock::now();
-    decompress_ms =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
+    decompress_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
   }
 
   // Fallback: read directly from local file on disk (capped at 1MB to prevent UI hang)
@@ -335,8 +327,7 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString& file_name,
   }
 
   if (decompressed_utf8.empty()) {
-    text_viewer_->setHtml(
-        "<p style='color:#94A3B8; font-style:italic;'>无法读取文档内容或正文为空。</p>");
+    text_viewer_->setHtml("<p style='color:#94A3B8; font-style:italic;'>无法读取文档内容或正文为空。</p>");
     meta_label_->setText(QString("大小: %1  |  修改时间: %2")
                              .arg(FormatFileSize(fi.size()))
                              .arg(fi.lastModified().toString("yyyy-MM-dd hh:mm")));
@@ -371,7 +362,7 @@ void PreviewPanel::HighlightOccurrences() {
     return;
   }
 
-  QTextDocument* doc = text_viewer_->document();
+  QTextDocument *doc = text_viewer_->document();
   QTextCharFormat highlight_format;
   highlight_format.setBackground(QColor("#FFF59D"));
   highlight_format.setForeground(QColor("#B71C1C"));
@@ -389,7 +380,7 @@ void PreviewPanel::HighlightOccurrences() {
   QTextCursor edit_cursor(doc);
   edit_cursor.beginEditBlock();
 
-  for (const auto& kw : current_keywords_) {
+  for (const auto &kw : current_keywords_) {
     if (kw.empty()) continue;
     QString query_qstr = QString::fromStdString(kw);
 
@@ -413,8 +404,11 @@ void PreviewPanel::HighlightOccurrences() {
 
   if (!match_positions_.empty()) {
     std::sort(match_positions_.begin(), match_positions_.end());
-    match_count_label_->setText(
-        Tr("match_count").arg(1).arg(QString("%1%2").arg(match_positions_.size()).arg(match_positions_.size() >= kMaxHighlights ? "+" : "")));
+    match_count_label_->setText(Tr("match_count")
+                                    .arg(1)
+                                    .arg(QString("%1%2")
+                                             .arg(match_positions_.size())
+                                             .arg(match_positions_.size() >= kMaxHighlights ? "+" : "")));
     JumpToMatch(0);
   } else {
     match_count_label_->setText(Tr("match_count").arg(0).arg(0));
@@ -427,8 +421,7 @@ void PreviewPanel::JumpToMatch(int index) {
   }
 
   current_match_idx_ = index;
-  match_count_label_->setText(
-      Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
+  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
 
   int pos = match_positions_[current_match_idx_];
   QTextCursor cursor = text_viewer_->textCursor();
@@ -445,8 +438,7 @@ void PreviewPanel::OnFindNext() {
 
 void PreviewPanel::OnFindPrev() {
   if (match_positions_.empty()) return;
-  int prev_idx = (current_match_idx_ - 1 + match_positions_.size()) %
-                 match_positions_.size();
+  int prev_idx = (current_match_idx_ - 1 + match_positions_.size()) % match_positions_.size();
   JumpToMatch(prev_idx);
 }
 

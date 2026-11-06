@@ -6,13 +6,12 @@
 
 #include <memory>
 #include <mutex>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <string>
 #include <vector>
-
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/calib3d.hpp>
 #if __has_include(<opencv2/geometry.hpp>)
 #include <opencv2/geometry.hpp>
 #endif
@@ -29,21 +28,19 @@ class PPOCRv6Engine : public IOcrEngine {
   PPOCRv6Engine();
   ~PPOCRv6Engine() override = default;
 
-  bool Initialize(const OcrConfig& config) override;
-  OcrResult Recognize(const cv::Mat& bgr_image) override;
-  OcrResult RecognizeFile(const std::string& file_path) override;
+  bool Initialize(const OcrConfig &config) override;
+  OcrResult Recognize(const cv::Mat &bgr_image) override;
+  OcrResult RecognizeFile(const std::string &file_path) override;
   void SetMode(OcrMode mode) override;
   OcrEngineType GetType() const override { return OcrEngineType::kPPOCRv6; }
 
-  static cv::Size DetResize(cv::Mat& img, int limit_side_len = 736,
-                            int max_side_limit = 4000, int align = 32);
-  static std::vector<float> DetPreprocess(const cv::Mat& img_bgr);
-  static cv::Mat GetRotateCrop(const cv::Mat& img, const std::vector<OcrPoint>& pts);
-  static std::vector<float> RecPreprocess(const cv::Mat& crop_bgr, int target_h = 48,
-                                          int target_w = 320, int max_img_w = 3200);
-  static std::string CtcDecode(const float* logits, int T, int C,
-                               const std::vector<std::string>& char_dict,
-                               float* out_conf = nullptr);
+  static cv::Size DetResize(cv::Mat &img, int limit_side_len = 736, int max_side_limit = 4000, int align = 32);
+  static std::vector<float> DetPreprocess(const cv::Mat &img_bgr);
+  static cv::Mat GetRotateCrop(const cv::Mat &img, const std::vector<OcrPoint> &pts);
+  static std::vector<float> RecPreprocess(const cv::Mat &crop_bgr, int target_h = 48, int target_w = 320,
+                                          int max_img_w = 3200);
+  static std::string CtcDecode(const float *logits, int T, int C, const std::vector<std::string> &char_dict,
+                               float *out_conf = nullptr);
 
  private:
   OcrConfig config_;
@@ -55,7 +52,7 @@ class PPOCRv6Engine : public IOcrEngine {
   std::mutex mutex_;
   bool initialized_ = false;
 
-  void ApplySessionThreads(Ort::SessionOptions& opts, OcrMode mode);
+  void ApplySessionThreads(Ort::SessionOptions &opts, OcrMode mode);
 };
 
 }  // namespace ocr

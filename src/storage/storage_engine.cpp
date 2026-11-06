@@ -1,8 +1,8 @@
 #include "storage_engine.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -17,8 +17,7 @@
 namespace soeasy {
 namespace storage {
 
-std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(
-    const std::string& query) {
+std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(const std::string &query) {
   std::vector<std::string> kws;
   std::istringstream iss(query);
   std::string token;
@@ -32,7 +31,8 @@ std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(
     while (!token.empty() && (token.front() == '"' || token.front() == '\'' || token.front() == '(')) {
       token.erase(token.begin());
     }
-    while (!token.empty() && (token.back() == '"' || token.back() == '\'' || token.back() == ')' || token.back() == '*')) {
+    while (!token.empty() &&
+           (token.back() == '"' || token.back() == '\'' || token.back() == ')' || token.back() == '*')) {
       token.pop_back();
     }
     if (!token.empty()) {
@@ -42,8 +42,7 @@ std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(
   return kws;
 }
 
-namespace {
-}  // namespace
+namespace {}  // namespace
 
 StorageEngine::StorageEngine() = default;
 
@@ -91,7 +90,7 @@ bool StorageEngine::BeginTransaction() {
   if (IsInTransaction()) {
     return true;  // Transaction already active
   }
-  char* err = nullptr;
+  char *err = nullptr;
   int rc = sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
     last_error_ = err ? err : "BEGIN TRANSACTION failed";
@@ -110,7 +109,7 @@ bool StorageEngine::CommitTransaction() {
   if (!IsInTransaction()) {
     return true;  // Nothing to commit
   }
-  char* err = nullptr;
+  char *err = nullptr;
   int rc = sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, &err);
   uncommitted_count_ = 0;
   if (rc != SQLITE_OK) {
@@ -129,7 +128,7 @@ bool StorageEngine::RollbackTransaction() {
   if (!IsInTransaction()) {
     return true;
   }
-  char* err = nullptr;
+  char *err = nullptr;
   int rc = sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, &err);
   uncommitted_count_ = 0;
   if (rc != SQLITE_OK) {
@@ -152,9 +151,8 @@ bool StorageEngine::OptimizeFtsIndex() {
     last_error_ = "Database not open";
     return false;
   }
-  char* err = nullptr;
-  int rc = sqlite3_exec(db_, "INSERT INTO fts_docs(fts_docs) VALUES('optimize');",
-                        nullptr, nullptr, &err);
+  char *err = nullptr;
+  int rc = sqlite3_exec(db_, "INSERT INTO fts_docs(fts_docs) VALUES('optimize');", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
     last_error_ = err ? err : "OptimizeFtsIndex failed";
     sqlite3_free(err);
@@ -168,7 +166,7 @@ bool StorageEngine::CheckpointWal() {
     last_error_ = "Database not open";
     return false;
   }
-  char* err = nullptr;
+  char *err = nullptr;
   int rc = sqlite3_exec(db_, "PRAGMA wal_checkpoint(TRUNCATE);", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
     last_error_ = err ? err : "PRAGMA wal_checkpoint failed";
@@ -206,13 +204,11 @@ std::string StorageEngine::GetLastError() const {
   return "Database not open";
 }
 
-bool StorageEngine::Open(const std::string& db_path, const std::string& key,
-                         const std::string& dict_dir) {
+bool StorageEngine::Open(const std::string &db_path, const std::string &key, const std::string &dict_dir) {
   Close();
   last_error_.clear();
 
-  int rc = sqlite3_open_v2(db_path.c_str(), &db_,
-                           SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+  int rc = sqlite3_open_v2(db_path.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
   if (rc != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(db_);
     Close();
@@ -227,8 +223,7 @@ bool StorageEngine::Open(const std::string& db_path, const std::string& key,
   // Register FTS5 Jieba tokenizer before compiling FTS5 tables
   rc = RegisterFts5JiebaTokenizer(db_, dict_dir);
   if (rc != SQLITE_OK) {
-    last_error_ = "Failed to register FTS5 Jieba tokenizer: " +
-                  std::string(sqlite3_errmsg(db_));
+    last_error_ = "Failed to register FTS5 Jieba tokenizer: " + std::string(sqlite3_errmsg(db_));
     Close();
     return false;
   }
@@ -241,19 +236,17 @@ bool StorageEngine::Open(const std::string& db_path, const std::string& key,
   return true;
 }
 
-bool StorageEngine::ExecutePragmas(const std::string& key) {
-  char* err_msg = nullptr;
+bool StorageEngine::ExecutePragmas(const std::string &key) {
+  char *err_msg = nullptr;
 
   // Configure SQLite3MultipleCiphers for AES-128-CBC and 1 KDF iteration
-  if (sqlite3_exec(db_, "PRAGMA cipher = 'aes128cbc';", nullptr, nullptr,
-                   &err_msg) != SQLITE_OK) {
+  if (sqlite3_exec(db_, "PRAGMA cipher = 'aes128cbc';", nullptr, nullptr, &err_msg) != SQLITE_OK) {
     last_error_ = err_msg ? err_msg : "PRAGMA cipher failed";
     sqlite3_free(err_msg);
     return false;
   }
 
-  if (sqlite3_exec(db_, "PRAGMA kdf_iter = 1;", nullptr, nullptr,
-                   &err_msg) != SQLITE_OK) {
+  if (sqlite3_exec(db_, "PRAGMA kdf_iter = 1;", nullptr, nullptr, &err_msg) != SQLITE_OK) {
     last_error_ = err_msg ? err_msg : "PRAGMA kdf_iter failed";
     sqlite3_free(err_msg);
     return false;
@@ -261,8 +254,7 @@ bool StorageEngine::ExecutePragmas(const std::string& key) {
 
   // Set encryption key
   std::string key_sql = "PRAGMA key = '" + key + "';";
-  if (sqlite3_exec(db_, key_sql.c_str(), nullptr, nullptr,
-                   &err_msg) != SQLITE_OK) {
+  if (sqlite3_exec(db_, key_sql.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK) {
     last_error_ = err_msg ? err_msg : "PRAGMA key failed";
     sqlite3_free(err_msg);
     return false;
@@ -272,12 +264,10 @@ bool StorageEngine::ExecutePragmas(const std::string& key) {
   sqlite3_exec(db_, "PRAGMA page_size = 32768;", nullptr, nullptr, nullptr);
 
   // Verify password by testing access to schema
-  sqlite3_stmt* check_stmt = nullptr;
-  int rc = sqlite3_prepare_v2(db_, "SELECT count(*) FROM sqlite_master;", -1,
-                              &check_stmt, nullptr);
+  sqlite3_stmt *check_stmt = nullptr;
+  int rc = sqlite3_prepare_v2(db_, "SELECT count(*) FROM sqlite_master;", -1, &check_stmt, nullptr);
   if (rc != SQLITE_OK) {
-    last_error_ = "Database key verification failed: " +
-                  std::string(sqlite3_errmsg(db_));
+    last_error_ = "Database key verification failed: " + std::string(sqlite3_errmsg(db_));
     return false;
   }
   sqlite3_step(check_stmt);
@@ -293,7 +283,7 @@ bool StorageEngine::ExecutePragmas(const std::string& key) {
 }
 
 bool StorageEngine::InitTables() {
-  const char* schema_sql = R"SQL(
+  const char *schema_sql = R"SQL(
     -- 1. Metadata and quick file name lookup
     CREATE TABLE IF NOT EXISTS files (
         doc_id      INTEGER PRIMARY KEY,
@@ -335,7 +325,7 @@ bool StorageEngine::InitTables() {
     );
   )SQL";
 
-  char* err_msg = nullptr;
+  char *err_msg = nullptr;
   int rc = sqlite3_exec(db_, schema_sql, nullptr, nullptr, &err_msg);
   if (rc != SQLITE_OK) {
     last_error_ = err_msg ? err_msg : "Schema initialization failed";
@@ -345,14 +335,9 @@ bool StorageEngine::InitTables() {
   return true;
 }
 
-bool StorageEngine::IndexDocument(int64_t doc_id,
-                                  const std::string& file_path,
-                                  const std::string& file_name,
-                                  const std::string& ext,
-                                  uint64_t file_size,
-                                  int64_t mtime,
-                                  int parse_level,
-                                  const std::string& utf8_content) {
+bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
+                                  const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
+                                  const std::string &utf8_content) {
   if (!db_) {
     last_error_ = "Database not open";
     return false;
@@ -363,11 +348,9 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
   size_t max_compressed_size = ZSTD_compressBound(raw_size);
   std::vector<uint8_t> compressed(max_compressed_size);
 
-  size_t compressed_size = ZSTD_compress(
-      compressed.data(), max_compressed_size, utf8_content.data(), raw_size, 3);
+  size_t compressed_size = ZSTD_compress(compressed.data(), max_compressed_size, utf8_content.data(), raw_size, 3);
   if (ZSTD_isError(compressed_size)) {
-    last_error_ = "Zstd compression error: " +
-                  std::string(ZSTD_getErrorName(compressed_size));
+    last_error_ = "Zstd compression error: " + std::string(ZSTD_getErrorName(compressed_size));
     return false;
   }
   compressed.resize(compressed_size);
@@ -379,8 +362,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
     summary.assign(utf8_content.data(), summary_len);
     if (!utf8::is_valid(summary.begin(), summary.end())) {
       std::string cleaned;
-      utf8::replace_invalid(summary.begin(), summary.end(),
-                            std::back_inserter(cleaned));
+      utf8::replace_invalid(summary.begin(), summary.end(), std::back_inserter(cleaned));
       summary = std::move(cleaned);
     }
   }
@@ -392,7 +374,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
 
   // 2. Insert into files table
   if (!stmt_files_insert_) {
-    const char* files_sql = R"SQL(
+    const char *files_sql = R"SQL(
       INSERT INTO files (doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)
       ON CONFLICT(doc_id) DO UPDATE SET
@@ -431,7 +413,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
 
   // 3. Insert into doc_contents table
   if (!stmt_contents_insert_) {
-    const char* contents_sql = R"SQL(
+    const char *contents_sql = R"SQL(
       INSERT INTO doc_contents (doc_id, raw_size, summary, zstd_body)
       VALUES (?1, ?2, ?3, ?4)
       ON CONFLICT(doc_id) DO UPDATE SET
@@ -439,8 +421,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
           summary=excluded.summary,
           zstd_body=excluded.zstd_body;
     )SQL";
-    if (sqlite3_prepare_v2(db_, contents_sql, -1, &stmt_contents_insert_, nullptr) !=
-        SQLITE_OK) {
+    if (sqlite3_prepare_v2(db_, contents_sql, -1, &stmt_contents_insert_, nullptr) != SQLITE_OK) {
       last_error_ = sqlite3_errmsg(db_);
       if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
@@ -452,8 +433,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
   sqlite3_bind_int64(stmt_contents_insert_, 1, doc_id);
   sqlite3_bind_int64(stmt_contents_insert_, 2, static_cast<int64_t>(raw_size));
   sqlite3_bind_text(stmt_contents_insert_, 3, summary.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_blob(stmt_contents_insert_, 4, compressed.data(),
-                    static_cast<int>(compressed.size()), SQLITE_TRANSIENT);
+  sqlite3_bind_blob(stmt_contents_insert_, 4, compressed.data(), static_cast<int>(compressed.size()), SQLITE_TRANSIENT);
 
   if (sqlite3_step(stmt_contents_insert_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(db_);
@@ -465,7 +445,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
 
   // 4. Update fts_docs table (delete old rowid if exists, then insert)
   if (!stmt_fts_del_) {
-    const char* fts_del_sql = "DELETE FROM fts_docs WHERE rowid = ?1;";
+    const char *fts_del_sql = "DELETE FROM fts_docs WHERE rowid = ?1;";
     sqlite3_prepare_v2(db_, fts_del_sql, -1, &stmt_fts_del_, nullptr);
   }
   if (stmt_fts_del_) {
@@ -477,10 +457,8 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
   }
 
   if (!stmt_fts_ins_) {
-    const char* fts_ins_sql =
-        "INSERT INTO fts_docs (rowid, file_name, body) VALUES (?1, ?2, ?3);";
-    if (sqlite3_prepare_v2(db_, fts_ins_sql, -1, &stmt_fts_ins_, nullptr) !=
-        SQLITE_OK) {
+    const char *fts_ins_sql = "INSERT INTO fts_docs (rowid, file_name, body) VALUES (?1, ?2, ?3);";
+    if (sqlite3_prepare_v2(db_, fts_ins_sql, -1, &stmt_fts_ins_, nullptr) != SQLITE_OK) {
       last_error_ = sqlite3_errmsg(db_);
       if (!is_outer_tx) sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
@@ -491,8 +469,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id,
   sqlite3_clear_bindings(stmt_fts_ins_);
   sqlite3_bind_int64(stmt_fts_ins_, 1, doc_id);
   sqlite3_bind_text(stmt_fts_ins_, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_fts_ins_, 3, utf8_content.c_str(), -1,
-                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_fts_ins_, 3, utf8_content.c_str(), -1, SQLITE_TRANSIENT);
 
   if (sqlite3_step(stmt_fts_ins_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(db_);
@@ -520,9 +497,8 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
     sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
   }
 
-  sqlite3_stmt* stmt = nullptr;
-  sqlite3_prepare_v2(db_, "DELETE FROM files WHERE doc_id = ?1;", -1, &stmt,
-                     nullptr);
+  sqlite3_stmt *stmt = nullptr;
+  sqlite3_prepare_v2(db_, "DELETE FROM files WHERE doc_id = ?1;", -1, &stmt, nullptr);
   if (stmt) {
     sqlite3_bind_int64(stmt, 1, doc_id);
     sqlite3_step(stmt);
@@ -530,8 +506,7 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
   }
 
   stmt = nullptr;
-  sqlite3_prepare_v2(db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1,
-                     &stmt, nullptr);
+  sqlite3_prepare_v2(db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, &stmt, nullptr);
   if (stmt) {
     sqlite3_bind_int64(stmt, 1, doc_id);
     sqlite3_step(stmt);
@@ -539,8 +514,7 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
   }
 
   stmt = nullptr;
-  sqlite3_prepare_v2(db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, &stmt,
-                     nullptr);
+  sqlite3_prepare_v2(db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, &stmt, nullptr);
   if (stmt) {
     sqlite3_bind_int64(stmt, 1, doc_id);
     sqlite3_step(stmt);
@@ -564,8 +538,8 @@ bool StorageEngine::ClearAll() {
 
   sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
 
-  char* err_msg = nullptr;
-  const char* sql = R"SQL(
+  char *err_msg = nullptr;
+  const char *sql = R"SQL(
     DELETE FROM files;
     DELETE FROM doc_contents;
     DELETE FROM ext_stats;
@@ -590,11 +564,8 @@ bool StorageEngine::ClearAll() {
   return InitTables();
 }
 
-
-std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
-                                                    int limit, int offset,
-                                                    const std::string& path_prefix,
-                                                    int* out_total_count) {
+std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, int limit, int offset,
+                                                    const std::string &path_prefix, int *out_total_count) {
   std::vector<SearchResultItem> results;
   if (out_total_count) {
     *out_total_count = 0;
@@ -611,10 +582,10 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
 
   // Calculate total matched count if requested
   if (out_total_count) {
-    const char* count_sql = has_prefix
-        ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2;"
-        : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
-    sqlite3_stmt* count_stmt = nullptr;
+    const char *count_sql = has_prefix ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid "
+                                         "WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2;"
+                                       : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
+    sqlite3_stmt *count_stmt = nullptr;
     if (sqlite3_prepare_v2(db_, count_sql, -1, &count_stmt, nullptr) == SQLITE_OK) {
       sqlite3_bind_text(count_stmt, 1, query.c_str(), -1, SQLITE_TRANSIENT);
       if (has_prefix) {
@@ -627,8 +598,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
     }
   }
 
-  const char* search_sql = has_prefix
-      ? R"SQL(
+  const char *search_sql = has_prefix ? R"SQL(
           SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
           FROM fts_docs AS fts
           JOIN files AS f ON f.doc_id = fts.rowid
@@ -636,7 +606,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
           ORDER BY score ASC
           LIMIT ?2 OFFSET ?3;
         )SQL"
-      : R"SQL(
+                                      : R"SQL(
           SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
           FROM fts_docs AS fts
           JOIN files AS f ON f.doc_id = fts.rowid
@@ -645,7 +615,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
           LIMIT ?2 OFFSET ?3;
         )SQL";
 
-  sqlite3_stmt* stmt = nullptr;
+  sqlite3_stmt *stmt = nullptr;
   if (sqlite3_prepare_v2(db_, search_sql, -1, &stmt, nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(db_);
     return results;
@@ -661,11 +631,9 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     SearchResultItem item;
     item.doc_id = sqlite3_column_int64(stmt, 0);
-    item.file_name =
-        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-    item.file_path =
-        reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-    item.ext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+    item.file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+    item.file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+    item.ext = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
     item.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
     item.mtime = sqlite3_column_int64(stmt, 5);
     item.rank = sqlite3_column_double(stmt, 6);
@@ -679,7 +647,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
   auto keywords = ExtractKeywordsFromQuery(query);
   const size_t max_body_snippets = std::min(results.size(), size_t(10));
   for (size_t i = 0; i < results.size(); ++i) {
-    auto& item = results[i];
+    auto &item = results[i];
     if (i < max_body_snippets) {
       std::string full_text;
       if (GetDocumentContent(item.doc_id, &full_text) && !full_text.empty()) {
@@ -698,8 +666,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string& query,
   return results;
 }
 
-bool StorageEngine::GetDocumentContent(int64_t doc_id,
-                                       std::string* out_content) {
+bool StorageEngine::GetDocumentContent(int64_t doc_id, std::string *out_content) {
   if (!out_content) {
     last_error_ = "Output pointer is null";
     return false;
@@ -709,9 +676,8 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id,
     return false;
   }
 
-  const char* sql =
-      "SELECT raw_size, zstd_body FROM doc_contents WHERE doc_id = ?1;";
-  sqlite3_stmt* stmt = nullptr;
+  const char *sql = "SELECT raw_size, zstd_body FROM doc_contents WHERE doc_id = ?1;";
+  sqlite3_stmt *stmt = nullptr;
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(db_);
     return false;
@@ -726,7 +692,7 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id,
   }
 
   size_t raw_size = static_cast<size_t>(sqlite3_column_int64(stmt, 0));
-  const void* blob_data = sqlite3_column_blob(stmt, 1);
+  const void *blob_data = sqlite3_column_blob(stmt, 1);
   int blob_bytes = sqlite3_column_bytes(stmt, 1);
 
   if (!blob_data || blob_bytes <= 0 || raw_size == 0) {
@@ -736,13 +702,11 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id,
   }
 
   out_content->resize(raw_size);
-  size_t decompressed_size = ZSTD_decompress(
-      &(*out_content)[0], raw_size, blob_data, static_cast<size_t>(blob_bytes));
+  size_t decompressed_size = ZSTD_decompress(&(*out_content)[0], raw_size, blob_data, static_cast<size_t>(blob_bytes));
   sqlite3_finalize(stmt);
 
   if (ZSTD_isError(decompressed_size)) {
-    last_error_ = "Zstd decompression error: " +
-                  std::string(ZSTD_getErrorName(decompressed_size));
+    last_error_ = "Zstd decompression error: " + std::string(ZSTD_getErrorName(decompressed_size));
     out_content->clear();
     return false;
   }
@@ -750,15 +714,14 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id,
   return true;
 }
 
-bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t* out_file_size,
-                                    int64_t* out_mtime, int* out_parse_stat) {
+bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) {
   if (!db_) {
     last_error_ = "Database not open";
     return false;
   }
 
   if (!stmt_meta_select_) {
-    const char* sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
+    const char *sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt_meta_select_, nullptr) != SQLITE_OK) {
       last_error_ = sqlite3_errmsg(db_);
       return false;
@@ -792,10 +755,10 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
     return results;
   }
 
-  const char* sql =
+  const char *sql =
       "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat "
       "FROM files;";
-  sqlite3_stmt* stmt = nullptr;
+  sqlite3_stmt *stmt = nullptr;
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(db_);
     return results;
@@ -804,12 +767,12 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     FileMetaRecord r;
     r.doc_id = sqlite3_column_int64(stmt, 0);
-    const unsigned char* name = sqlite3_column_text(stmt, 1);
-    if (name) r.file_name = reinterpret_cast<const char*>(name);
-    const unsigned char* path = sqlite3_column_text(stmt, 2);
-    if (path) r.file_path = reinterpret_cast<const char*>(path);
-    const unsigned char* ext = sqlite3_column_text(stmt, 3);
-    if (ext) r.ext = reinterpret_cast<const char*>(ext);
+    const unsigned char *name = sqlite3_column_text(stmt, 1);
+    if (name) r.file_name = reinterpret_cast<const char *>(name);
+    const unsigned char *path = sqlite3_column_text(stmt, 2);
+    if (path) r.file_path = reinterpret_cast<const char *>(path);
+    const unsigned char *ext = sqlite3_column_text(stmt, 3);
+    if (ext) r.ext = reinterpret_cast<const char *>(ext);
     r.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
     r.mtime = sqlite3_column_int64(stmt, 5);
     r.parse_level = sqlite3_column_int(stmt, 6);
@@ -820,17 +783,15 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
   return results;
 }
 
-std::string StorageEngine::GenerateSnippet(
-    const std::string& full_text,
-    const std::vector<std::string>& keywords,
-    size_t max_chars) {
+std::string StorageEngine::GenerateSnippet(const std::string &full_text, const std::vector<std::string> &keywords,
+                                           size_t max_chars) {
   if (full_text.empty() || keywords.empty()) {
     return "";
   }
 
   // Lowercase version of full_text for case-insensitive search
   std::string lower_text = full_text;
-  for (char& c : lower_text) {
+  for (char &c : lower_text) {
     if (c >= 'A' && c <= 'Z') {
       c = static_cast<char>(c + 32);
     }
@@ -838,10 +799,10 @@ std::string StorageEngine::GenerateSnippet(
 
   // Find the earliest matching keyword position
   size_t best_pos = std::string::npos;
-  for (const auto& kw : keywords) {
+  for (const auto &kw : keywords) {
     if (kw.empty()) continue;
     std::string lower_kw = kw;
-    for (char& c : lower_kw) {
+    for (char &c : lower_kw) {
       if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
     }
     size_t pos = lower_text.find(lower_kw);
@@ -862,20 +823,17 @@ std::string StorageEngine::GenerateSnippet(
     end_pos = std::min(full_text.size(), start_pos + max_chars);
 
     // Adjust start_pos to valid UTF-8 character boundary
-    while (start_pos > 0 &&
-           (static_cast<unsigned char>(full_text[start_pos]) & 0xC0) == 0x80) {
+    while (start_pos > 0 && (static_cast<unsigned char>(full_text[start_pos]) & 0xC0) == 0x80) {
       --start_pos;
     }
     // Adjust end_pos to valid UTF-8 character boundary
-    while (end_pos < full_text.size() &&
-           (static_cast<unsigned char>(full_text[end_pos]) & 0xC0) == 0x80) {
+    while (end_pos < full_text.size() && (static_cast<unsigned char>(full_text[end_pos]) & 0xC0) == 0x80) {
       ++end_pos;
     }
   } else {
     // No keyword found; take prefix of text
     end_pos = std::min(full_text.size(), max_chars);
-    while (end_pos < full_text.size() &&
-           (static_cast<unsigned char>(full_text[end_pos]) & 0xC0) == 0x80) {
+    while (end_pos < full_text.size() && (static_cast<unsigned char>(full_text[end_pos]) & 0xC0) == 0x80) {
       ++end_pos;
     }
   }
@@ -885,13 +843,12 @@ std::string StorageEngine::GenerateSnippet(
   // Validate UTF-8 encoding
   if (!utf8::is_valid(raw_snippet.begin(), raw_snippet.end())) {
     std::string cleaned;
-    utf8::replace_invalid(raw_snippet.begin(), raw_snippet.end(),
-                          std::back_inserter(cleaned));
+    utf8::replace_invalid(raw_snippet.begin(), raw_snippet.end(), std::back_inserter(cleaned));
     raw_snippet = std::move(cleaned);
   }
 
   std::string lower_snippet = raw_snippet;
-  for (char& c : lower_snippet) {
+  for (char &c : lower_snippet) {
     if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
   }
 
@@ -901,10 +858,10 @@ std::string StorageEngine::GenerateSnippet(
   };
   std::vector<Span> spans;
 
-  for (const auto& kw : keywords) {
+  for (const auto &kw : keywords) {
     if (kw.empty()) continue;
     std::string lower_kw = kw;
-    for (char& c : lower_kw) {
+    for (char &c : lower_kw) {
       if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
     }
 
@@ -916,14 +873,14 @@ std::string StorageEngine::GenerateSnippet(
   }
 
   // Sort spans by start position ascending
-  std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) {
+  std::sort(spans.begin(), spans.end(), [](const Span &a, const Span &b) {
     if (a.start != b.start) return a.start < b.start;
     return a.end > b.end;
   });
 
   // Merge overlapping or adjacent spans
   std::vector<Span> merged;
-  for (const auto& s : spans) {
+  for (const auto &s : spans) {
     if (merged.empty()) {
       merged.push_back(s);
     } else {
@@ -935,16 +892,26 @@ std::string StorageEngine::GenerateSnippet(
     }
   }
 
-  auto EscapeHtml = [](const std::string& str) -> std::string {
+  auto EscapeHtml = [](const std::string &str) -> std::string {
     std::string out;
     out.reserve(str.size() + 16);
     for (char c : str) {
       switch (c) {
-        case '&': out.append("&amp;"); break;
-        case '<': out.append("&lt;"); break;
-        case '>': out.append("&gt;"); break;
-        case '"': out.append("&quot;"); break;
-        default:  out.push_back(c); break;
+        case '&':
+          out.append("&amp;");
+          break;
+        case '<':
+          out.append("&lt;");
+          break;
+        case '>':
+          out.append("&gt;");
+          break;
+        case '"':
+          out.append("&quot;");
+          break;
+        default:
+          out.push_back(c);
+          break;
       }
     }
     return out;
@@ -952,7 +919,7 @@ std::string StorageEngine::GenerateSnippet(
 
   std::string formatted;
   size_t last_idx = 0;
-  for (const auto& span : merged) {
+  for (const auto &span : merged) {
     if (span.start > last_idx) {
       formatted.append(EscapeHtml(raw_snippet.substr(last_idx, span.start - last_idx)));
     }

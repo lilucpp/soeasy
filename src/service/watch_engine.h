@@ -16,13 +16,12 @@ namespace service {
 
 class WatchEngine : public efsw::FileWatchListener {
  public:
-  WatchEngine(std::shared_ptr<IndexConfig> config,
-              std::shared_ptr<EventDebouncer> debouncer);
+  WatchEngine(std::shared_ptr<IndexConfig> config, std::shared_ptr<EventDebouncer> debouncer);
   ~WatchEngine() override;
 
   // Disallow copy and assign
-  WatchEngine(const WatchEngine&) = delete;
-  WatchEngine& operator=(const WatchEngine&) = delete;
+  WatchEngine(const WatchEngine &) = delete;
+  WatchEngine &operator=(const WatchEngine &) = delete;
 
   /**
    * @brief Start watching directories and start event debouncing.
@@ -48,12 +47,12 @@ class WatchEngine : public efsw::FileWatchListener {
    * @param dir_path Absolute directory path
    * @return true on success, false if path invalid or error
    */
-  bool AddWatch(const std::string& dir_path);
+  bool AddWatch(const std::string &dir_path);
 
   /**
    * @brief Remove an existing directory watch.
    */
-  void RemoveWatch(const std::string& dir_path);
+  void RemoveWatch(const std::string &dir_path);
 
   /**
    * @brief Get list of currently monitored root directories.
@@ -63,13 +62,11 @@ class WatchEngine : public efsw::FileWatchListener {
   /**
    * @brief efsw::FileWatchListener callback implementation.
    */
-  void handleFileAction(efsw::WatchID watchid, const std::string& dir,
-                        const std::string& filename, efsw::Action action,
-                        const std::string& old_filename = "") override;
+  void handleFileAction(efsw::WatchID watchid, const std::string &dir, const std::string &filename, efsw::Action action,
+                        const std::string &old_filename = "") override;
 
  private:
-  static std::string CombinePath(const std::string& dir,
-                                 const std::string& filename);
+  static std::string CombinePath(const std::string &dir, const std::string &filename);
 
   std::shared_ptr<IndexConfig> config_;
   std::shared_ptr<EventDebouncer> debouncer_;

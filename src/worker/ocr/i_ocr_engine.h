@@ -5,9 +5,8 @@
 #define SOEASY_SRC_WORKER_OCR_I_OCR_ENGINE_H_
 
 #include <memory>
-#include <string>
-
 #include <opencv2/core.hpp>
+#include <string>
 
 #include "worker/ocr/ocr_types.h"
 
@@ -26,17 +25,17 @@ class IOcrEngine {
   /**
    * @brief Initialize or re-initialize the engine with given configuration.
    */
-  virtual bool Initialize(const OcrConfig& config) = 0;
+  virtual bool Initialize(const OcrConfig &config) = 0;
 
   /**
    * @brief Perform OCR recognition on an in-memory BGR image matrix.
    */
-  virtual OcrResult Recognize(const cv::Mat& bgr_image) = 0;
+  virtual OcrResult Recognize(const cv::Mat &bgr_image) = 0;
 
   /**
    * @brief Perform OCR recognition on an image file on disk.
    */
-  virtual OcrResult RecognizeFile(const std::string& file_path) = 0;
+  virtual OcrResult RecognizeFile(const std::string &file_path) = 0;
 
   /**
    * @brief Dynamically toggle resource mode between Normal (1 thread) and HighPerformance.

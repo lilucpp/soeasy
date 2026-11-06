@@ -34,26 +34,27 @@ struct BenchResult {
 };
 
 // Helper to collect test files
-std::vector<std::pair<std::string, std::string>> CollectFiles(const std::string& root_dir,
-                                                             const std::vector<std::string>& target_exts,
-                                                             size_t max_count) {
+std::vector<std::pair<std::string, std::string>> CollectFiles(const std::string &root_dir,
+                                                              const std::vector<std::string> &target_exts,
+                                                              size_t max_count) {
   std::vector<std::pair<std::string, std::string>> results;
   if (!fs::exists(root_dir)) return results;
 
-  for (const auto& entry : fs::recursive_directory_iterator(root_dir, fs::directory_options::skip_permission_denied)) {
+  for (const auto &entry : fs::recursive_directory_iterator(root_dir, fs::directory_options::skip_permission_denied)) {
     if (!entry.is_regular_file()) continue;
     std::string ext = entry.path().extension().string();
     if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
-    for (auto& c : ext) c = std::tolower(c);
+    for (auto &c : ext) c = std::tolower(c);
 
-    for (const auto& target : target_exts) {
+    for (const auto &target : target_exts) {
       if (ext == target) {
         try {
           if (fs::file_size(entry.path()) > 0) {
             results.push_back({entry.path().string(), ext});
             if (results.size() >= max_count) return results;
           }
-        } catch (...) {}
+        } catch (...) {
+        }
         break;
       }
     }
@@ -75,7 +76,7 @@ void RunMicroBenchmark() {
   const size_t dummy_bytes = 48512;
   const double dummy_cost = 1.25;
 
-  auto test_logger = [&](const std::string& label, std::shared_ptr<spdlog::logger> logger) {
+  auto test_logger = [&](const std::string &label, std::shared_ptr<spdlog::logger> logger) {
     auto t1 = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; ++i) {
       logger->info("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms",
@@ -86,10 +87,9 @@ void RunMicroBenchmark() {
     double us_per_op = (cost_ms * 1000.0) / iterations;
     double ops_per_sec = (iterations / (cost_ms / 1000.0));
 
-    std::cout << std::left << std::setw(38) << label
-              << " | Total: " << std::setw(8) << std::fixed << std::setprecision(2) << cost_ms << " ms"
-              << " | " << std::setw(6) << std::setprecision(2) << us_per_op << " μs/log"
-              << " | " << std::setw(10) << static_cast<size_t>(ops_per_sec) << " logs/sec\n";
+    std::cout << std::left << std::setw(38) << label << " | Total: " << std::setw(8) << std::fixed
+              << std::setprecision(2) << cost_ms << " ms" << " | " << std::setw(6) << std::setprecision(2) << us_per_op
+              << " μs/log" << " | " << std::setw(10) << static_cast<size_t>(ops_per_sec) << " logs/sec\n";
   };
 
   std::string tmp_dir = fs::temp_directory_path().string();
@@ -98,7 +98,8 @@ void RunMicroBenchmark() {
   {
     std::vector<spdlog::sink_ptr> sinks;
     sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
-    sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_default.log", 10 * 1024 * 1024, 3));
+    sinks.push_back(
+        std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_default.log", 10 * 1024 * 1024, 3));
     auto logger = std::make_shared<spdlog::logger>("bench_default", sinks.begin(), sinks.end());
     logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%t] %v");
     test_logger("Mode 1: Console(stdout) + File (Default)", logger);
@@ -106,7 +107,8 @@ void RunMicroBenchmark() {
 
   // 2. File Sink Only (Console Disabled)
   {
-    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_file.log", 10 * 1024 * 1024, 3);
+    auto sink =
+        std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_file.log", 10 * 1024 * 1024, 3);
     auto logger = std::make_shared<spdlog::logger>("bench_file", sink);
     logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%t] %v");
     test_logger("Mode 2: File Only (Console Disabled)", logger);
@@ -115,16 +117,18 @@ void RunMicroBenchmark() {
   // 3. Async Logger with background worker thread
   {
     spdlog::init_thread_pool(8192, 1);
-    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_async.log", 10 * 1024 * 1024, 3);
-    auto logger = std::make_shared<spdlog::async_logger>(
-        "bench_async", sink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
+    auto sink =
+        std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_async.log", 10 * 1024 * 1024, 3);
+    auto logger = std::make_shared<spdlog::async_logger>("bench_async", sink, spdlog::thread_pool(),
+                                                         spdlog::async_overflow_policy::block);
     logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%t] %v");
     test_logger("Mode 3: Async File Logger", logger);
   }
 
   // 4. Log Level WARN (Info Logs Discarded at Call Site)
   {
-    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_warn.log", 10 * 1024 * 1024, 3);
+    auto sink =
+        std::make_shared<spdlog::sinks::rotating_file_sink_mt>(tmp_dir + "/bench_warn.log", 10 * 1024 * 1024, 3);
     auto logger = std::make_shared<spdlog::logger>("bench_warn", sink);
     logger->set_level(spdlog::level::warn);
     test_logger("Mode 4: Level WARN (Zero overhead skip)", logger);
@@ -134,11 +138,10 @@ void RunMicroBenchmark() {
 // -------------------------------------------------------------
 // Part 2: Real Parsing on test_dataset Files with Different Log Modes
 // -------------------------------------------------------------
-void RunDatasetBenchmark(const std::string& dataset_name,
-                        const std::vector<std::pair<std::string, std::string>>& files) {
+void RunDatasetBenchmark(const std::string &dataset_name,
+                         const std::vector<std::pair<std::string, std::string>> &files) {
   std::cout << "\n======================================================\n";
-  std::cout << " [2/3] Dataset Parsing Test: " << dataset_name
-            << " (" << files.size() << " files)\n";
+  std::cout << " [2/3] Dataset Parsing Test: " << dataset_name << " (" << files.size() << " files)\n";
   std::cout << "======================================================\n";
 
   if (files.empty()) {
@@ -150,7 +153,7 @@ void RunDatasetBenchmark(const std::string& dataset_name,
   soeasy::worker::L2OfficeParser l2_parser;
   soeasy::worker::L3ImageParser l3_parser(soeasy::worker::ocr::OcrMode::kNormal, soeasy::test::FindModelsDir());
 
-  auto parse_file = [&](const std::string& path, const std::string& ext, std::string* out) {
+  auto parse_file = [&](const std::string &path, const std::string &ext, std::string *out) {
     bool is_scanned_pdf = false;
     if (l3_parser.IsSupported(ext)) {
       return l3_parser.Parse(path, ext, out);
@@ -161,16 +164,11 @@ void RunDatasetBenchmark(const std::string& dataset_name,
     }
   };
 
-  enum class TestMode {
-    kBaselineNoLog,
-    kConsoleAndFile,
-    kFileOnly,
-    kLogLevelWarn
-  };
+  enum class TestMode { kBaselineNoLog, kConsoleAndFile, kFileOnly, kLogLevelWarn };
 
   const std::string ds_log_file = (fs::temp_directory_path() / "dataset_run.log").string();
 
-  auto test_run = [&](const std::string& label, TestMode mode) {
+  auto test_run = [&](const std::string &label, TestMode mode) {
     std::shared_ptr<spdlog::logger> logger;
     if (mode == TestMode::kConsoleAndFile) {
       std::vector<spdlog::sink_ptr> sinks;
@@ -194,7 +192,7 @@ void RunDatasetBenchmark(const std::string& dataset_name,
 
     auto start_all = std::chrono::high_resolution_clock::now();
 
-    for (const auto& [path, ext] : files) {
+    for (const auto &[path, ext] : files) {
       std::string text;
       auto t_p1 = std::chrono::high_resolution_clock::now();
       bool ok = parse_file(path, ext, &text);
@@ -207,13 +205,12 @@ void RunDatasetBenchmark(const std::string& dataset_name,
         success_count++;
         total_extracted += text.size();
         if (logger) {
-          logger->info("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms",
-                       path, ext, text.size(), parse_ms);
+          logger->info("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", path,
+                       ext, text.size(), parse_ms);
         }
       } else {
         if (logger) {
-          logger->error("[Worker] Parse FAILED | file: '{}' | ext: '{}' | cost: {:.2f} ms",
-                        path, ext, parse_ms);
+          logger->error("[Worker] Parse FAILED | file: '{}' | ext: '{}' | cost: {:.2f} ms", path, ext, parse_ms);
         }
       }
     }
@@ -225,12 +222,11 @@ void RunDatasetBenchmark(const std::string& dataset_name,
     double percent_overhead = (total_ms > 0) ? (log_overhead_ms / total_ms * 100.0) : 0.0;
     double fps = (files.size() / (total_ms / 1000.0));
 
-    std::cout << std::left << std::setw(32) << label
-              << " | Total: " << std::setw(8) << std::fixed << std::setprecision(2) << total_ms << " ms"
-              << " | Parse: " << std::setw(8) << pure_parse_acc_ms << " ms"
-              << " | Log: " << std::setw(7) << log_overhead_ms << " ms"
-              << " (" << std::setw(5) << std::setprecision(1) << percent_overhead << "%)"
-              << " | Throughput: " << std::setw(7) << std::setprecision(1) << fps << " files/s\n";
+    std::cout << std::left << std::setw(32) << label << " | Total: " << std::setw(8) << std::fixed
+              << std::setprecision(2) << total_ms << " ms" << " | Parse: " << std::setw(8) << pure_parse_acc_ms << " ms"
+              << " | Log: " << std::setw(7) << log_overhead_ms << " ms" << " (" << std::setw(5) << std::setprecision(1)
+              << percent_overhead << "%)" << " | Throughput: " << std::setw(7) << std::setprecision(1) << fps
+              << " files/s\n";
   };
 
   test_run("1. Baseline (No logging)", TestMode::kBaselineNoLog);
@@ -251,7 +247,7 @@ void RunDoubleLogBenchmark() {
   std::cout << "Simulating dual logging for " << files_count << " files...\n";
 
   const std::string bench_dual_log = (fs::temp_directory_path() / "bench_dual.log").string();
-  auto test_dual = [&](const std::string& label, bool enable_console, spdlog::level::level_enum level) {
+  auto test_dual = [&](const std::string &label, bool enable_console, spdlog::level::level_enum level) {
     std::vector<spdlog::sink_ptr> sinks;
     if (enable_console) {
       sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
@@ -263,18 +259,22 @@ void RunDoubleLogBenchmark() {
     auto t1 = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < files_count; ++i) {
       // 1. Worker logging
-      logger->info("[Worker] Parse SUCCESS | file: '/path/test_{}.md' | ext: 'md' | extracted: 1024 bytes | cost: 0.15 ms", i);
+      logger->info(
+          "[Worker] Parse SUCCESS | file: '/path/test_{}.md' | ext: 'md' | extracted: 1024 bytes | cost: 0.15 ms", i);
       // 2. Main pipeline logging
-      logger->info("[Parser] SUCCESS parsed & indexed '/path/test_{}.md' (ext: 'md', size: 1024 B, extracted: 1024 B) | parse: 0.15 ms, total: 0.40 ms", i);
+      logger->info(
+          "[Parser] SUCCESS parsed & indexed '/path/test_{}.md' (ext: 'md', size: 1024 B, extracted: 1024 B) | parse: "
+          "0.15 ms, total: 0.40 ms",
+          i);
     }
     auto t2 = std::chrono::high_resolution_clock::now();
     double total_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
     double us_per_file = (total_ms * 1000.0) / files_count;
 
-    std::cout << std::left << std::setw(38) << label
-              << " | Total: " << std::setw(8) << std::fixed << std::setprecision(2) << total_ms << " ms"
-              << " | " << std::setw(6) << std::setprecision(2) << us_per_file << " μs/file"
-              << " | " << std::setw(10) << static_cast<size_t>(files_count / (total_ms / 1000.0)) << " files/sec\n";
+    std::cout << std::left << std::setw(38) << label << " | Total: " << std::setw(8) << std::fixed
+              << std::setprecision(2) << total_ms << " ms" << " | " << std::setw(6) << std::setprecision(2)
+              << us_per_file << " μs/file" << " | " << std::setw(10)
+              << static_cast<size_t>(files_count / (total_ms / 1000.0)) << " files/sec\n";
   };
 
   test_dual("Console + File (Current Default)", true, spdlog::level::info);
@@ -282,7 +282,7 @@ void RunDoubleLogBenchmark() {
   test_dual("Level WARN (Console Disabled)", false, spdlog::level::warn);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   const std::string ds_root = soeasy::test::FindTestDatasetDir();
 
   bool full_dataset = false;
@@ -292,7 +292,7 @@ int main(int argc, char* argv[]) {
       full_dataset = true;
     }
   }
-  const char* env_full = std::getenv("SOEASY_TEST_FULL_IMAGES");
+  const char *env_full = std::getenv("SOEASY_TEST_FULL_IMAGES");
   if (env_full && (std::string(env_full) == "1" || std::string(env_full) == "true")) {
     full_dataset = true;
   }
@@ -304,7 +304,8 @@ int main(int argc, char* argv[]) {
   std::cout << "######################################################\n";
   std::cout << "  SoEasy Parser Log Printing Performance Investigation\n";
   std::cout << "  Dataset: " << ds_root << "\n";
-  std::cout << "  Mode: " << (full_dataset ? "FULL DATASET BENCHMARK" : "FAST TEST SUITE (Representative Sample)") << "\n";
+  std::cout << "  Mode: " << (full_dataset ? "FULL DATASET BENCHMARK" : "FAST TEST SUITE (Representative Sample)")
+            << "\n";
   if (!full_dataset) {
     std::cout << "  (Tip: Run with --full or SOEASY_TEST_FULL_IMAGES=1 to test all dataset images)\n";
   }

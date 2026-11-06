@@ -1,7 +1,7 @@
 #include "service/name_index.h"
 
-#include <cctype>
 #include <algorithm>
+#include <cctype>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -12,9 +12,9 @@
 namespace soeasy {
 namespace service {
 
-std::string NameIndex::ToLower(const std::string& s) {
+std::string NameIndex::ToLower(const std::string &s) {
   std::string lower = s;
-  for (char& c : lower) {
+  for (char &c : lower) {
     if (c >= 'A' && c <= 'Z') {
       c = static_cast<char>(c + 32);
     }
@@ -22,14 +22,14 @@ std::string NameIndex::ToLower(const std::string& s) {
   return lower;
 }
 
-bool NameIndex::StartsWith(const std::string& str, const std::string& prefix) {
+bool NameIndex::StartsWith(const std::string &str, const std::string &prefix) {
   if (prefix.size() > str.size()) {
     return false;
   }
   return std::equal(prefix.begin(), prefix.end(), str.begin());
 }
 
-void NameIndex::Upsert(const NameRecord& record) {
+void NameIndex::Upsert(const NameRecord &record) {
   std::unique_lock<std::shared_mutex> lock(rw_mutex_);
 
   // If path already exists with a different ID, remove old mapping
@@ -51,7 +51,7 @@ void NameIndex::Remove(int64_t doc_id) {
   }
 }
 
-void NameIndex::RemoveByPath(const std::string& file_path) {
+void NameIndex::RemoveByPath(const std::string &file_path) {
   std::unique_lock<std::shared_mutex> lock(rw_mutex_);
   auto it = id_by_path_.find(file_path);
   if (it != id_by_path_.end()) {
@@ -60,8 +60,7 @@ void NameIndex::RemoveByPath(const std::string& file_path) {
   }
 }
 
-bool NameIndex::GetMetadata(int64_t doc_id, uint64_t* out_file_size,
-                            int64_t* out_mtime) const {
+bool NameIndex::GetMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime) const {
   std::shared_lock<std::shared_mutex> lock(rw_mutex_);
   auto it = records_by_id_.find(doc_id);
   if (it == records_by_id_.end()) {
@@ -76,9 +75,8 @@ bool NameIndex::GetMetadata(int64_t doc_id, uint64_t* out_file_size,
   return true;
 }
 
-std::vector<NameMatchResult> NameIndex::Search(
-    const std::string& query, int limit, int offset,
-    const std::string& path_prefix, int* out_total_count) const {
+std::vector<NameMatchResult> NameIndex::Search(const std::string &query, int limit, int offset,
+                                               const std::string &path_prefix, int *out_total_count) const {
   if (out_total_count) {
     *out_total_count = 0;
   }
@@ -90,8 +88,8 @@ std::vector<NameMatchResult> NameIndex::Search(
   std::string lower_query = ToLower(query);
   std::shared_lock<std::shared_mutex> lock(rw_mutex_);
 
-  for (const auto& pair : records_by_id_) {
-    const NameRecord& rec = pair.second;
+  for (const auto &pair : records_by_id_) {
+    const NameRecord &rec = pair.second;
 
     // Optional path scope constraint
     if (!path_prefix.empty()) {
@@ -124,7 +122,7 @@ std::vector<NameMatchResult> NameIndex::Search(
     if (lower_name == lower_query) {
       score = 100.0;  // Exact match
     } else if (pos == 0) {
-      score = 80.0;   // Prefix match
+      score = 80.0;  // Prefix match
     } else {
       score = 50.0 - std::min<double>(pos, 30.0);  // Substring match
     }
@@ -141,13 +139,12 @@ std::vector<NameMatchResult> NameIndex::Search(
   }
 
   // Sort by score descending, then mtime descending
-  std::sort(results.begin(), results.end(),
-            [](const NameMatchResult& a, const NameMatchResult& b) {
-              if (a.score != b.score) {
-                return a.score > b.score;
-              }
-              return a.mtime > b.mtime;
-            });
+  std::sort(results.begin(), results.end(), [](const NameMatchResult &a, const NameMatchResult &b) {
+    if (a.score != b.score) {
+      return a.score > b.score;
+    }
+    return a.mtime > b.mtime;
+  });
 
   if (out_total_count) {
     *out_total_count = static_cast<int>(results.size());

@@ -12,8 +12,7 @@
 namespace soeasy {
 namespace service {
 
-EventDebouncer::EventDebouncer(uint32_t debounce_ms)
-    : debounce_ms_(debounce_ms) {}
+EventDebouncer::EventDebouncer(uint32_t debounce_ms) : debounce_ms_(debounce_ms) {}
 
 EventDebouncer::~EventDebouncer() {
   Stop(false);
@@ -45,23 +44,19 @@ void EventDebouncer::Stop(bool flush_pending) {
   }
 }
 
-void EventDebouncer::PushEvent(const std::string& path, FileChangeAction action,
-                               const std::string& old_path) {
+void EventDebouncer::PushEvent(const std::string &path, FileChangeAction action, const std::string &old_path) {
   auto now = std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (action == FileChangeAction::kMoved && !old_path.empty()) {
     // Treat Move as Delete on old_path and Add on path
     auto it_old = pending_events_.find(old_path);
-    if (it_old != pending_events_.end() &&
-        it_old->second.action == FileChangeAction::kAdd) {
+    if (it_old != pending_events_.end() && it_old->second.action == FileChangeAction::kAdd) {
       pending_events_.erase(it_old);
     } else {
-      pending_events_[old_path] =
-          DebouncedEvent{old_path, "", FileChangeAction::kDelete, now};
+      pending_events_[old_path] = DebouncedEvent{old_path, "", FileChangeAction::kDelete, now};
     }
-    pending_events_[path] =
-        DebouncedEvent{path, old_path, FileChangeAction::kAdd, now};
+    pending_events_[path] = DebouncedEvent{path, old_path, FileChangeAction::kAdd, now};
     cv_.notify_one();
     return;
   }
@@ -81,14 +76,12 @@ void EventDebouncer::PushEvent(const std::string& path, FileChangeAction action,
       return;
     }
 
-    if (prev_action == FileChangeAction::kModified &&
-        action == FileChangeAction::kDelete) {
+    if (prev_action == FileChangeAction::kModified && action == FileChangeAction::kDelete) {
       it->second.action = FileChangeAction::kDelete;
       return;
     }
 
-    if (prev_action == FileChangeAction::kDelete &&
-        action == FileChangeAction::kAdd) {
+    if (prev_action == FileChangeAction::kDelete && action == FileChangeAction::kAdd) {
       it->second.action = FileChangeAction::kModified;
       return;
     }
@@ -108,14 +101,14 @@ void EventDebouncer::Flush() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     cb = callback_;
-    for (auto& pair : pending_events_) {
+    for (auto &pair : pending_events_) {
       ready_to_flush.push_back(std::move(pair.second));
     }
     pending_events_.clear();
   }
 
   if (cb) {
-    for (const auto& ev : ready_to_flush) {
+    for (const auto &ev : ready_to_flush) {
       cb(ev);
     }
   }
@@ -150,7 +143,7 @@ void EventDebouncer::FlushLoop() {
     }
 
     if (cb && !ready_to_flush.empty()) {
-      for (const auto& ev : ready_to_flush) {
+      for (const auto &ev : ready_to_flush) {
         cb(ev);
       }
     }

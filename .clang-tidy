@@ -1,0 +1,30 @@
+---
+# 启用工业级高信噪比 C++ 静态分析规则集
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-owning-memory,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  google-*,
+  -google-runtime-references,
+  readability-*,
+  -readability-magic-numbers,
+  misc-*
+
+# 将关键隐患直接视作编译错误阻止合入
+WarningsAsErrors: 'bugprone-*,performance-*'
+
+# 仅检查业务源码头文件，彻底屏蔽第三方三方库头文件产生的警告
+HeaderFilterRegex: '^(src|include)/.*'
+
+# 检查项特定配置
+CheckOptions:
+  google-explicit-constructor: true
+  modernize-use-nullptr: true
+  performance-move-const-arg: true
+...

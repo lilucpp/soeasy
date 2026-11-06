@@ -1,5 +1,4 @@
 #include "gui/content_preview_dialog.h"
-#include "gui/i18n.h"
 
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -11,19 +10,19 @@
 #include <QTextCursor>
 #include <QUrl>
 #include <QVBoxLayout>
-
 #include <chrono>
 #include <fstream>
 #include <string>
 #include <vector>
 
+#include "gui/i18n.h"
+
 namespace soeasy {
 namespace gui {
 
-ContentPreviewDialog::ContentPreviewDialog(
-    int64_t doc_id, const QString& file_name, const QString& file_path,
-    const std::vector<std::string>& keywords,
-    std::shared_ptr<storage::StorageEngine> storage, QWidget* parent)
+ContentPreviewDialog::ContentPreviewDialog(int64_t doc_id, const QString &file_name, const QString &file_path,
+                                           const std::vector<std::string> &keywords,
+                                           std::shared_ptr<storage::StorageEngine> storage, QWidget *parent)
     : QDialog(parent),
       doc_id_(doc_id),
       file_name_(file_name),
@@ -41,20 +40,21 @@ void ContentPreviewDialog::SetupUi() {
       "QDialog {"
       "  background-color: #FFFFFF;"
       "  color: #1E293B;"
-      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;"
+      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
+      "'WenQuanYi Micro Hei', sans-serif;"
       "}");
 
-  auto* main_layout = new QVBoxLayout(this);
+  auto *main_layout = new QVBoxLayout(this);
   main_layout->setSpacing(8);
 
   // Top header row: File path and actions
-  auto* top_layout = new QHBoxLayout();
+  auto *top_layout = new QHBoxLayout();
   path_label_ = new QLabel(file_path_, this);
   path_label_->setStyleSheet("font-size: 12px; color: #546E7A; font-family: monospace;");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-  auto* btn_open_folder = new QPushButton(Tr("btn_open_folder_sys"), this);
-  auto* btn_open_app = new QPushButton(Tr("btn_open_app_sys"), this);
+  auto *btn_open_folder = new QPushButton(Tr("btn_open_folder_sys"), this);
+  auto *btn_open_app = new QPushButton(Tr("btn_open_app_sys"), this);
   btn_open_folder->setStyleSheet("padding: 4px 10px;");
   btn_open_app->setStyleSheet("padding: 4px 10px;");
 
@@ -63,14 +63,12 @@ void ContentPreviewDialog::SetupUi() {
   top_layout->addWidget(btn_open_app);
   main_layout->addLayout(top_layout);
 
-  connect(btn_open_folder, &QPushButton::clicked, this,
-          &ContentPreviewDialog::OnOpenFolder);
-  connect(btn_open_app, &QPushButton::clicked, this,
-          &ContentPreviewDialog::OnOpenWithDefaultApp);
+  connect(btn_open_folder, &QPushButton::clicked, this, &ContentPreviewDialog::OnOpenFolder);
+  connect(btn_open_app, &QPushButton::clicked, this, &ContentPreviewDialog::OnOpenWithDefaultApp);
 
   // Search/Navigation bar inside document
-  auto* nav_layout = new QHBoxLayout();
-  auto* label_search = new QLabel(Tr("label_jump"), this);
+  auto *nav_layout = new QHBoxLayout();
+  auto *label_search = new QLabel(Tr("label_jump"), this);
   in_doc_search_edit_ = new QLineEdit(this);
   if (!keywords_.empty()) {
     in_doc_search_edit_->setText(QString::fromStdString(keywords_[0]));
@@ -78,8 +76,8 @@ void ContentPreviewDialog::SetupUi() {
   in_doc_search_edit_->setPlaceholderText(Tr("search_in_content_ph"));
   in_doc_search_edit_->setMaximumWidth(200);
 
-  auto* btn_prev = new QPushButton(Tr("btn_prev"), this);
-  auto* btn_next = new QPushButton(Tr("btn_next"), this);
+  auto *btn_prev = new QPushButton(Tr("btn_prev"), this);
+  auto *btn_next = new QPushButton(Tr("btn_next"), this);
   match_count_label_ = new QLabel(Tr("match_count").arg(0).arg(0), this);
   match_count_label_->setStyleSheet("color: #78909C;");
 
@@ -91,10 +89,8 @@ void ContentPreviewDialog::SetupUi() {
   nav_layout->addStretch();
   main_layout->addLayout(nav_layout);
 
-  connect(btn_next, &QPushButton::clicked, this,
-          &ContentPreviewDialog::OnFindNext);
-  connect(btn_prev, &QPushButton::clicked, this,
-          &ContentPreviewDialog::OnFindPrev);
+  connect(btn_next, &QPushButton::clicked, this, &ContentPreviewDialog::OnFindNext);
+  connect(btn_prev, &QPushButton::clicked, this, &ContentPreviewDialog::OnFindPrev);
   connect(in_doc_search_edit_, &QLineEdit::textChanged, this, [this]() {
     keywords_.clear();
     QString text = in_doc_search_edit_->text().trimmed();
@@ -129,8 +125,7 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
     auto t0 = std::chrono::high_resolution_clock::now();
     ok = storage_->GetDocumentContent(doc_id_, &decompressed_utf8);
     auto t1 = std::chrono::high_resolution_clock::now();
-    decompress_ms =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
+    decompress_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
   }
 
   // Fallback: read directly from local file on disk (capped at 2MB to prevent UI hang)
@@ -151,8 +146,7 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
   }
 
   if (decompressed_utf8.empty()) {
-    text_viewer_->setHtml(
-        "<p style='color:#B0BEC5; font-style:italic;'>无法读取文档内容或文档为空。</p>");
+    text_viewer_->setHtml("<p style='color:#B0BEC5; font-style:italic;'>无法读取文档内容或文档为空。</p>");
     return;
   }
 
@@ -164,10 +158,7 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
   }
 
   if (decompress_ms > 0.0 && path_label_) {
-    path_label_->setToolTip(
-        QString("文件路径: %1\n密态解密耗时: %2 ms")
-            .arg(file_path_)
-            .arg(decompress_ms, 0, 'f', 2));
+    path_label_->setToolTip(QString("文件路径: %1\n密态解密耗时: %2 ms").arg(file_path_).arg(decompress_ms, 0, 'f', 2));
   }
 
   text_viewer_->setPlainText(QString::fromStdString(decompressed_utf8));
@@ -183,7 +174,7 @@ void ContentPreviewDialog::HighlightOccurrences() {
     return;
   }
 
-  QTextDocument* doc = text_viewer_->document();
+  QTextDocument *doc = text_viewer_->document();
   QTextCharFormat highlight_format;
   highlight_format.setBackground(QColor("#FFF59D"));
   highlight_format.setForeground(QColor("#B71C1C"));
@@ -195,7 +186,7 @@ void ContentPreviewDialog::HighlightOccurrences() {
   QTextCharFormat default_format;
   clear_cursor.setCharFormat(default_format);
 
-  for (const auto& kw : keywords_) {
+  for (const auto &kw : keywords_) {
     if (kw.empty()) continue;
     QString query_qstr = QString::fromStdString(kw);
 
@@ -212,9 +203,7 @@ void ContentPreviewDialog::HighlightOccurrences() {
 
   // Sort match positions
   std::sort(match_positions_.begin(), match_positions_.end());
-  match_positions_.erase(
-      std::unique(match_positions_.begin(), match_positions_.end()),
-      match_positions_.end());
+  match_positions_.erase(std::unique(match_positions_.begin(), match_positions_.end()), match_positions_.end());
 
   if (!match_positions_.empty()) {
     JumpToMatch(0);
@@ -243,8 +232,7 @@ void ContentPreviewDialog::JumpToMatch(int index) {
   text_viewer_->setTextCursor(cursor);
   text_viewer_->ensureCursorVisible();
 
-  match_count_label_->setText(
-      Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
+  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
 }
 
 void ContentPreviewDialog::OnFindNext() {

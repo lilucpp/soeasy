@@ -18,7 +18,7 @@ namespace ocr {
 
 ImageFilter::ImageFilter(FilterOptions options) : options_(options) {}
 
-FilterDecision ImageFilter::PrecheckFile(const std::string& file_path, uint64_t file_size) const {
+FilterDecision ImageFilter::PrecheckFile(const std::string &file_path, uint64_t file_size) const {
   if (options_.filter_cache_thumbnails && IsCacheOrThumbnailPath(file_path)) {
     return FilterDecision::kIconOrThumbnailPath;
   }
@@ -50,37 +50,37 @@ FilterDecision ImageFilter::PrecheckFile(const std::string& file_path, uint64_t 
   return FilterDecision::kPass;
 }
 
-bool ImageFilter::IsCacheOrThumbnailPath(const std::string& file_path) {
+bool ImageFilter::IsCacheOrThumbnailPath(const std::string &file_path) {
   std::string lower = file_path;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-  static const char* kPathKeywords[] = {
-      "/weappicon/", "/thumb/", "/thumbs/", "/emoji/", "/emojis/",
-      "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"
-  };
-  for (const char* kw : kPathKeywords) {
+  static const char *kPathKeywords[] = {"/weappicon/", "/thumb/",     "/thumbs/", "/emoji/",  "/emojis/",
+                                        "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"};
+  for (const char *kw : kPathKeywords) {
     if (lower.find(kw) != std::string::npos) {
       return true;
     }
   }
 
   // Suffix checks on filename
-  if (lower.find("_thumb.") != std::string::npos ||
-      lower.find("_thumbnail.") != std::string::npos) {
+  if (lower.find("_thumb.") != std::string::npos || lower.find("_thumbnail.") != std::string::npos) {
     return true;
   }
 
   return false;
 }
 
-size_t ImageFilter::CountEffectiveChars(const std::string& text) {
+size_t ImageFilter::CountEffectiveChars(const std::string &text) {
   size_t count = 0;
-  for (size_t i = 0; i < text.size(); ) {
+  for (size_t i = 0; i < text.size();) {
     unsigned char c = text[i];
     size_t seq_len = 1;
-    if (c >= 0xF0) seq_len = 4;
-    else if (c >= 0xE0) seq_len = 3;
-    else if (c >= 0xC0) seq_len = 2;
+    if (c >= 0xF0)
+      seq_len = 4;
+    else if (c >= 0xE0)
+      seq_len = 3;
+    else if (c >= 0xC0)
+      seq_len = 2;
 
     if (seq_len == 1) {
       if (!isspace(c) && !ispunct(c) && c != '`' && c != '~' && c != '^') {
@@ -91,9 +91,9 @@ size_t ImageFilter::CountEffectiveChars(const std::string& text) {
       unsigned char c2 = static_cast<unsigned char>(text[i + 2]);
       bool is_cjk_punct = false;
       if (c == 0xEF && c1 == 0xBC) {
-        if (c2 >= 0x81 && c2 <= 0x9F) is_cjk_punct = true; // Full-width ASCII symbols/punct
+        if (c2 >= 0x81 && c2 <= 0x9F) is_cjk_punct = true;  // Full-width ASCII symbols/punct
       } else if (c == 0xE3 && c1 == 0x80) {
-        if (c2 >= 0x81 && c2 <= 0x8F) is_cjk_punct = true; // CJK punctuation marks
+        if (c2 >= 0x81 && c2 <= 0x8F) is_cjk_punct = true;  // CJK punctuation marks
       }
       if (!is_cjk_punct) {
         count++;
@@ -106,7 +106,7 @@ size_t ImageFilter::CountEffectiveChars(const std::string& text) {
   return count;
 }
 
-FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat& bgr_image) const {
+FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat &bgr_image) const {
   if (bgr_image.empty()) {
     return FilterDecision::kUnreadable;
   }
@@ -123,22 +123,20 @@ FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat& bgr_image) const {
   // Tier 2: Check pixel variance (stddev)
   cv::Scalar mean, stddev;
   cv::meanStdDev(bgr_image, mean, stddev);
-  if (stddev[0] < options_.min_std_dev &&
-      stddev[1] < options_.min_std_dev &&
-      stddev[2] < options_.min_std_dev) {
+  if (stddev[0] < options_.min_std_dev && stddev[1] < options_.min_std_dev && stddev[2] < options_.min_std_dev) {
     return FilterDecision::kSolidColorOrBlank;
   }
 
   return FilterDecision::kPass;
 }
 
-ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string& file_path) {
+ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string &file_path) {
   ImageDimension dim;
   auto f = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
   if (!f.is_open()) return dim;
 
   uint8_t buf[256];
-  f.read(reinterpret_cast<char*>(buf), sizeof(buf));
+  f.read(reinterpret_cast<char *>(buf), sizeof(buf));
   size_t bytes = static_cast<size_t>(f.gcount());
   if (bytes < 10) return dim;
 
@@ -167,8 +165,8 @@ ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string& file_path) 
   }
 
   // 4. WebP: RIFF ... WEBP
-  if (bytes >= 30 && buf[0] == 'R' && buf[1] == 'I' && buf[2] == 'F' && buf[3] == 'F' &&
-      buf[8] == 'W' && buf[9] == 'E' && buf[10] == 'B' && buf[11] == 'P') {
+  if (bytes >= 30 && buf[0] == 'R' && buf[1] == 'I' && buf[2] == 'F' && buf[3] == 'F' && buf[8] == 'W' &&
+      buf[9] == 'E' && buf[10] == 'B' && buf[11] == 'P') {
     // VP8
     if (buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == ' ') {
       dim.width = (buf[26] | (buf[27] << 8)) & 0x3FFF;
@@ -198,7 +196,7 @@ ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string& file_path) 
     f.seekg(2, std::ios::beg);
     while (f) {
       uint8_t marker_buf[4];
-      f.read(reinterpret_cast<char*>(marker_buf), 4);
+      f.read(reinterpret_cast<char *>(marker_buf), 4);
       if (f.gcount() < 4) break;
       if (marker_buf[0] != 0xFF) break;
 
@@ -207,7 +205,7 @@ ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string& file_path) 
       if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2) {
         // Read SOF: precision(1), height(2), width(2)
         uint8_t sof[5];
-        f.read(reinterpret_cast<char*>(sof), 5);
+        f.read(reinterpret_cast<char *>(sof), 5);
         if (f.gcount() == 5) {
           dim.height = (sof[1] << 8) | sof[2];
           dim.width = (sof[3] << 8) | sof[4];

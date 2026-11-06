@@ -15,7 +15,7 @@ namespace storage {
  * @param dict_dir Directory containing jieba dictionary files
  * @return int SQLITE_OK on success, or SQLite error code
  */
-int RegisterFts5JiebaTokenizer(sqlite3* db, const std::string& dict_dir);
+int RegisterFts5JiebaTokenizer(sqlite3 *db, const std::string &dict_dir);
 
 }  // namespace storage
 }  // namespace soeasy

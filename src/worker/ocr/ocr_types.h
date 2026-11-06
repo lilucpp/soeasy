@@ -17,10 +17,7 @@ enum class OcrMode {
   kHighPerformance = 1  // High performance: multi-threaded parallel inference
 };
 
-enum class OcrEngineType {
-  kPPOCRv6 = 0,
-  kCustom = 1
-};
+enum class OcrEngineType { kPPOCRv6 = 0, kCustom = 1 };
 
 struct OcrPoint {
   float x = 0.0f;

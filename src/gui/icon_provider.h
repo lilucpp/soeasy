@@ -9,15 +9,13 @@ namespace gui {
 
 class IconProvider {
  public:
-  static QIcon GetFileIcon(const QString& extension_or_filename);
+  static QIcon GetFileIcon(const QString &extension_or_filename);
   static QIcon GetSearchIcon();
   static QIcon GetAppIcon();
   static QString GetDownArrowImagePath();
 
  private:
-  static QIcon RenderFileBadgeIcon(const QString& badge_text,
-                                   const QString& bg_color_hex,
-                                   bool fold_corner = true);
+  static QIcon RenderFileBadgeIcon(const QString &badge_text, const QString &bg_color_hex, bool fold_corner = true);
   static QIcon RenderTextDocumentIcon();
 };
 

@@ -4,6 +4,7 @@
 #include "common/encoding_utils.h"
 
 #include <sys/stat.h>
+
 #include <algorithm>
 #include <vector>
 
@@ -16,7 +17,7 @@
 namespace soeasy {
 namespace common {
 
-std::string EncodingUtils::ToUtf8(const std::string& input) {
+std::string EncodingUtils::ToUtf8(const std::string &input) {
   if (input.empty()) {
     return "";
   }
@@ -28,12 +29,10 @@ std::string EncodingUtils::ToUtf8(const std::string& input) {
 
 #ifdef _WIN32
   // 2. On Windows: treat as current ANSI Code Page (CP_ACP, e.g. GBK 936, Windows-1252)
-  int wlen = MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()),
-                                 nullptr, 0);
+  int wlen = MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()), nullptr, 0);
   if (wlen > 0) {
     std::wstring wstr(wlen, 0);
-    MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()),
-                        &wstr[0], wlen);
+    MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()), &wstr[0], wlen);
     return WideToUtf8(wstr);
   }
 #endif
@@ -45,7 +44,7 @@ std::string EncodingUtils::ToUtf8(const std::string& input) {
   return sanitized;
 }
 
-std::wstring EncodingUtils::Utf8ToWide(const std::string& utf8_str) {
+std::wstring EncodingUtils::Utf8ToWide(const std::string &utf8_str) {
   if (utf8_str.empty()) {
     return L"";
   }
@@ -56,7 +55,7 @@ std::wstring EncodingUtils::Utf8ToWide(const std::string& utf8_str) {
   }
 }
 
-std::string EncodingUtils::WideToUtf8(const std::wstring& wstr) {
+std::string EncodingUtils::WideToUtf8(const std::wstring &wstr) {
   if (wstr.empty()) {
     return "";
   }
@@ -67,7 +66,7 @@ std::string EncodingUtils::WideToUtf8(const std::wstring& wstr) {
   }
 }
 
-std::string EncodingUtils::ToNativeAnsiPath(const std::string& utf8_path) {
+std::string EncodingUtils::ToNativeAnsiPath(const std::string &utf8_path) {
 #ifdef _WIN32
   if (utf8_path.empty()) {
     return "";
@@ -108,12 +107,12 @@ std::string EncodingUtils::ToNativeAnsiPath(const std::string& utf8_path) {
 }
 
 #ifdef _WIN32
-std::string EncodingUtils::Utf8ToAnsi(const std::string& utf8_str) {
+std::string EncodingUtils::Utf8ToAnsi(const std::string &utf8_str) {
   return ToNativeAnsiPath(utf8_str);
 }
 #endif
 
-std::filesystem::path EncodingUtils::PathFromUtf8(const std::string& utf8_path) {
+std::filesystem::path EncodingUtils::PathFromUtf8(const std::string &utf8_path) {
 #ifdef _WIN32
   return std::filesystem::path(Utf8ToWide(utf8_path));
 #else
@@ -121,7 +120,7 @@ std::filesystem::path EncodingUtils::PathFromUtf8(const std::string& utf8_path) 
 #endif
 }
 
-std::string EncodingUtils::PathToUtf8(const std::filesystem::path& p) {
+std::string EncodingUtils::PathToUtf8(const std::filesystem::path &p) {
 #ifdef _WIN32
   return WideToUtf8(p.wstring());
 #else
@@ -129,8 +128,7 @@ std::string EncodingUtils::PathToUtf8(const std::filesystem::path& p) {
 #endif
 }
 
-bool EncodingUtils::GetFileStat(const std::string& utf8_path, uint64_t* out_size,
-                                int64_t* out_mtime) {
+bool EncodingUtils::GetFileStat(const std::string &utf8_path, uint64_t *out_size, int64_t *out_mtime) {
 #ifdef _WIN32
   std::wstring wpath = Utf8ToWide(utf8_path);
   if (wpath.empty()) {
@@ -172,17 +170,15 @@ bool EncodingUtils::GetFileStat(const std::string& utf8_path, uint64_t* out_size
 #endif
 }
 
-boost::nowide::ifstream EncodingUtils::OpenIfstream(const std::string& utf8_path,
-                                                   std::ios::openmode mode) {
+boost::nowide::ifstream EncodingUtils::OpenIfstream(const std::string &utf8_path, std::ios::openmode mode) {
   return boost::nowide::ifstream(utf8_path, mode);
 }
 
-FILE* EncodingUtils::FopenUtf8(const std::string& utf8_path, const char* mode) {
+FILE *EncodingUtils::FopenUtf8(const std::string &utf8_path, const char *mode) {
   return boost::nowide::fopen(utf8_path.c_str(), mode);
 }
 
-bool EncodingUtils::ReadFileBinary(const std::string& utf8_path,
-                                   std::string* out_data, size_t max_bytes) {
+bool EncodingUtils::ReadFileBinary(const std::string &utf8_path, std::string *out_data, size_t max_bytes) {
   if (!out_data) {
     return false;
   }
@@ -198,8 +194,7 @@ bool EncodingUtils::ReadFileBinary(const std::string& utf8_path,
     ifs.read(&(*out_data)[0], max_bytes);
     out_data->resize(ifs.gcount());
   } else {
-    out_data->assign((std::istreambuf_iterator<char>(ifs)),
-                     std::istreambuf_iterator<char>());
+    out_data->assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
   }
   return true;
 }

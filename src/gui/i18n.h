@@ -15,17 +15,17 @@ enum class Language {
 
 class I18n {
  public:
-  static I18n& Instance();
+  static I18n &Instance();
 
-  void SetLanguage(const std::string& lang_code);
+  void SetLanguage(const std::string &lang_code);
   std::string GetLanguageCode() const;
   Language current_language() const { return current_lang_; }
 
-  QString Get(const char* key) const;
+  QString Get(const char *key) const;
 
-  QString GetCategoryName(size_t cat_index, const QString& default_name) const;
-  QString GetCategoryDesc(size_t cat_index, const QString& default_desc) const;
-  QString GetFormatDesc(const QString& ext, const QString& default_desc) const;
+  QString GetCategoryName(size_t cat_index, const QString &default_name) const;
+  QString GetCategoryDesc(size_t cat_index, const QString &default_desc) const;
+  QString GetFormatDesc(const QString &ext, const QString &default_desc) const;
 
  private:
   I18n();
@@ -39,7 +39,7 @@ class I18n {
 /**
  * @brief Global helper function for UI text translation.
  */
-inline QString Tr(const char* key) {
+inline QString Tr(const char *key) {
   return I18n::Instance().Get(key);
 }
 

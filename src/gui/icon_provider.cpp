@@ -19,9 +19,7 @@ static QMap<QString, QIcon> s_icon_cache;
 
 }  // namespace
 
-QIcon IconProvider::RenderFileBadgeIcon(const QString& badge_text,
-                                        const QString& bg_color_hex,
-                                        bool fold_corner) {
+QIcon IconProvider::RenderFileBadgeIcon(const QString &badge_text, const QString &bg_color_hex, bool fold_corner) {
   const int size = 32;
   QPixmap pix(size, size);
   pix.fill(Qt::transparent);
@@ -135,7 +133,7 @@ QIcon IconProvider::RenderTextDocumentIcon() {
   return QIcon(pix);
 }
 
-QIcon IconProvider::GetFileIcon(const QString& extension_or_filename) {
+QIcon IconProvider::GetFileIcon(const QString &extension_or_filename) {
   QString ext = extension_or_filename.toLower();
   if (ext.contains('.')) {
     ext = QFileInfo(extension_or_filename).suffix().toLower();
@@ -158,9 +156,8 @@ QIcon IconProvider::GetFileIcon(const QString& extension_or_filename) {
     icon = RenderFileBadgeIcon("X", "#2E7D32", true);
   } else if (ext == "ppt" || ext == "pptx") {
     icon = RenderFileBadgeIcon("P", "#E65100", true);
-  } else if (ext == "cpp" || ext == "c" || ext == "h" || ext == "hpp" ||
-             ext == "py" || ext == "java" || ext == "js" || ext == "ts" ||
-             ext == "json" || ext == "xml" || ext == "html" || ext == "css") {
+  } else if (ext == "cpp" || ext == "c" || ext == "h" || ext == "hpp" || ext == "py" || ext == "java" || ext == "js" ||
+             ext == "ts" || ext == "json" || ext == "xml" || ext == "html" || ext == "css") {
     icon = RenderFileBadgeIcon("</>", "#00897B", true);
   } else {
     icon = RenderFileBadgeIcon("", "#90A4AE", true);

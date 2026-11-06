@@ -22,7 +22,7 @@ namespace common {
 namespace {
 
 // 64-bit FNV-1a checksum for rapid zero-copy slot payload verification
-uint64_t FastChecksum64(const uint8_t* data, size_t len) {
+uint64_t FastChecksum64(const uint8_t *data, size_t len) {
   constexpr uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
   constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
   uint64_t hash = kFnvOffsetBasis;
@@ -47,27 +47,26 @@ size_t ShmSlotPool::GetSlotStride() const {
   return (raw + 63) & ~63ULL;
 }
 
-uint8_t* ShmSlotPool::GetSlotBase(uint32_t slot_id) const {
+uint8_t *ShmSlotPool::GetSlotBase(uint32_t slot_id) const {
   if (!base_addr_ || slot_id >= slot_count_) {
     return nullptr;
   }
   return base_addr_ + (static_cast<size_t>(slot_id) * GetSlotStride());
 }
 
-SlotHeader* ShmSlotPool::GetSlotHeader(uint32_t slot_id) const {
-  return reinterpret_cast<SlotHeader*>(GetSlotBase(slot_id));
+SlotHeader *ShmSlotPool::GetSlotHeader(uint32_t slot_id) const {
+  return reinterpret_cast<SlotHeader *>(GetSlotBase(slot_id));
 }
 
-uint8_t* ShmSlotPool::GetSlotData(uint32_t slot_id) const {
-  uint8_t* base = GetSlotBase(slot_id);
+uint8_t *ShmSlotPool::GetSlotData(uint32_t slot_id) const {
+  uint8_t *base = GetSlotBase(slot_id);
   if (!base) {
     return nullptr;
   }
   return base + sizeof(SlotHeader);
 }
 
-bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
-                         size_t slot_capacity) {
+bool ShmSlotPool::Create(const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
   Close();
 
   shm_name_ = shm_name;
@@ -78,7 +77,7 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
 
 #ifdef _WIN32
   std::string win_name = shm_name_;
-  for (char& c : win_name) {
+  for (char &c : win_name) {
     if (c == '/') c = '_';
   }
   if (win_name.rfind("Local\\", 0) != 0 && win_name.rfind("Global\\", 0) != 0) {
@@ -88,21 +87,20 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
   DWORD size_high = static_cast<DWORD>((total_shm_size_ >> 32) & 0xFFFFFFFF);
   DWORD size_low = static_cast<DWORD>(total_shm_size_ & 0xFFFFFFFF);
 
-  HANDLE hMap = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                                   size_high, size_low, win_name.c_str());
+  HANDLE hMap = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, size_high, size_low, win_name.c_str());
   if (!hMap) {
     return false;
   }
   win_map_handle_ = hMap;
 
-  void* addr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, total_shm_size_);
+  void *addr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, total_shm_size_);
   if (!addr) {
     CloseHandle(hMap);
     win_map_handle_ = nullptr;
     return false;
   }
 
-  base_addr_ = static_cast<uint8_t*>(addr);
+  base_addr_ = static_cast<uint8_t *>(addr);
   std::memset(base_addr_, 0, total_shm_size_);
 #else
   // Remove stale shm segment if leftover from a crash
@@ -120,8 +118,7 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
     return false;
   }
 
-  void* addr = mmap(nullptr, total_shm_size_, PROT_READ | PROT_WRITE,
-                    MAP_SHARED, shm_fd_, 0);
+  void *addr = mmap(nullptr, total_shm_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
   if (addr == MAP_FAILED) {
     close(shm_fd_);
     shm_fd_ = -1;
@@ -129,12 +126,12 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
     return false;
   }
 
-  base_addr_ = static_cast<uint8_t*>(addr);
+  base_addr_ = static_cast<uint8_t *>(addr);
   std::memset(base_addr_, 0, total_shm_size_);
 #endif
 
   for (uint32_t i = 0; i < slot_count_; ++i) {
-    SlotHeader* header = GetSlotHeader(i);
+    SlotHeader *header = GetSlotHeader(i);
     header->state.store(kSlotFree, std::memory_order_relaxed);
     header->slot_id = i;
     header->data_bytes = 0;
@@ -144,8 +141,7 @@ bool ShmSlotPool::Create(const std::string& shm_name, size_t slot_count,
   return true;
 }
 
-bool ShmSlotPool::Attach(const std::string& shm_name, size_t slot_count,
-                         size_t slot_capacity) {
+bool ShmSlotPool::Attach(const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
   Close();
 
   shm_name_ = shm_name;
@@ -156,7 +152,7 @@ bool ShmSlotPool::Attach(const std::string& shm_name, size_t slot_count,
 
 #ifdef _WIN32
   std::string win_name = shm_name_;
-  for (char& c : win_name) {
+  for (char &c : win_name) {
     if (c == '/') c = '_';
   }
   if (win_name.rfind("Local\\", 0) != 0 && win_name.rfind("Global\\", 0) != 0) {
@@ -169,29 +165,28 @@ bool ShmSlotPool::Attach(const std::string& shm_name, size_t slot_count,
   }
   win_map_handle_ = hMap;
 
-  void* addr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, total_shm_size_);
+  void *addr = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, total_shm_size_);
   if (!addr) {
     CloseHandle(hMap);
     win_map_handle_ = nullptr;
     return false;
   }
 
-  base_addr_ = static_cast<uint8_t*>(addr);
+  base_addr_ = static_cast<uint8_t *>(addr);
 #else
   shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0660);
   if (shm_fd_ < 0) {
     return false;
   }
 
-  void* addr = mmap(nullptr, total_shm_size_, PROT_READ | PROT_WRITE,
-                    MAP_SHARED, shm_fd_, 0);
+  void *addr = mmap(nullptr, total_shm_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
   if (addr == MAP_FAILED) {
     close(shm_fd_);
     shm_fd_ = -1;
     return false;
   }
 
-  base_addr_ = static_cast<uint8_t*>(addr);
+  base_addr_ = static_cast<uint8_t *>(addr);
 #endif
   return true;
 }
@@ -226,20 +221,20 @@ void ShmSlotPool::Close() {
   total_shm_size_ = 0;
 }
 
-bool ShmSlotPool::AllocateSlot(uint32_t* out_slot_id, uint8_t** out_data_ptr) {
+bool ShmSlotPool::AllocateSlot(uint32_t *out_slot_id, uint8_t **out_data_ptr) {
   if (!base_addr_ || !out_slot_id || !out_data_ptr) {
     return false;
   }
 
   for (uint32_t i = 0; i < slot_count_; ++i) {
-    SlotHeader* header = GetSlotHeader(i);
+    SlotHeader *header = GetSlotHeader(i);
     uint32_t expected = kSlotFree;
-    if (header->state.compare_exchange_strong(
-            expected, kSlotAllocated, std::memory_order_acq_rel)) {
+    if (header->state.compare_exchange_strong(expected, kSlotAllocated, std::memory_order_acq_rel)) {
       header->data_bytes = 0;
       header->checksum = 0;
-      uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch()).count();
+      uint64_t now_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+              .count();
       header->last_heartbeat_ms.store(now_ms, std::memory_order_relaxed);
       *out_slot_id = i;
       *out_data_ptr = GetSlotData(i);
@@ -255,8 +250,8 @@ bool ShmSlotPool::CommitWrite(uint32_t slot_id, size_t data_bytes) {
     return false;
   }
 
-  SlotHeader* header = GetSlotHeader(slot_id);
-  const uint8_t* data = GetSlotData(slot_id);
+  SlotHeader *header = GetSlotHeader(slot_id);
+  const uint8_t *data = GetSlotData(slot_id);
   header->data_bytes = data_bytes;
   header->checksum = FastChecksum64(data, data_bytes);
 
@@ -264,13 +259,12 @@ bool ShmSlotPool::CommitWrite(uint32_t slot_id, size_t data_bytes) {
   return true;
 }
 
-bool ShmSlotPool::ReadSlot(uint32_t slot_id, const uint8_t** out_data_ptr,
-                           size_t* out_data_bytes) {
+bool ShmSlotPool::ReadSlot(uint32_t slot_id, const uint8_t **out_data_ptr, size_t *out_data_bytes) {
   if (!base_addr_ || slot_id >= slot_count_ || !out_data_ptr || !out_data_bytes) {
     return false;
   }
 
-  SlotHeader* header = GetSlotHeader(slot_id);
+  SlotHeader *header = GetSlotHeader(slot_id);
   uint32_t cur_state = header->state.load(std::memory_order_acquire);
   if (cur_state != kSlotWritten) {
     return false;
@@ -281,7 +275,7 @@ bool ShmSlotPool::ReadSlot(uint32_t slot_id, const uint8_t** out_data_ptr,
     return false;
   }
 
-  const uint8_t* data = GetSlotData(slot_id);
+  const uint8_t *data = GetSlotData(slot_id);
   uint64_t expected_checksum = header->checksum;
   if (FastChecksum64(data, bytes) != expected_checksum) {
     return false;  // Memory corruption detected
@@ -296,7 +290,7 @@ void ShmSlotPool::ReleaseSlot(uint32_t slot_id) {
   if (!base_addr_ || slot_id >= slot_count_) {
     return;
   }
-  SlotHeader* header = GetSlotHeader(slot_id);
+  SlotHeader *header = GetSlotHeader(slot_id);
   header->state.store(kSlotFree, std::memory_order_release);
 }
 
@@ -304,9 +298,10 @@ void ShmSlotPool::TouchHeartbeat(uint32_t slot_id) {
   if (!base_addr_ || slot_id >= slot_count_) {
     return;
   }
-  SlotHeader* header = GetSlotHeader(slot_id);
-  uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now().time_since_epoch()).count();
+  SlotHeader *header = GetSlotHeader(slot_id);
+  uint64_t now_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count();
   header->last_heartbeat_ms.store(now_ms, std::memory_order_relaxed);
 }
 
@@ -314,11 +309,11 @@ uint64_t ShmSlotPool::GetSlotLastHeartbeat(uint32_t slot_id) const {
   if (!base_addr_ || slot_id >= slot_count_) {
     return 0;
   }
-  SlotHeader* header = GetSlotHeader(slot_id);
+  SlotHeader *header = GetSlotHeader(slot_id);
   return header->last_heartbeat_ms.load(std::memory_order_relaxed);
 }
 
-uint8_t* ShmSlotPool::GetWritableSlotData(uint32_t slot_id) {
+uint8_t *ShmSlotPool::GetWritableSlotData(uint32_t slot_id) {
   return GetSlotData(slot_id);
 }
 

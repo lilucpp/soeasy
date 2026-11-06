@@ -14,14 +14,14 @@
 
 namespace {
 
-void WriteFile(const std::string& path, const std::string& content) {
+void WriteFile(const std::string &path, const std::string &content) {
   std::ofstream ofs(path, std::ios::binary);
   ofs.write(content.data(), content.size());
 }
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   std::cout << "========================================================\n";
   std::cout << "   SoEasy (Sou Easy) 混合 IPC 与解析沙箱独立实证 Demo (Phase 2)\n";
   std::cout << "   Cap'n Proto + 共享内存槽位池 + 多进程沙箱守卫 (熔断/自愈)\n";
@@ -43,8 +43,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   std::cout << "[+] WorkerGuard 初始化成功! 启动工作进程数: " << guard.worker_count()
-            << ", 槽位数: " << guard.shm_pool()->slot_count()
-            << ", 槽位容量: 8MB (总池 64MB), 耗时: " << std::fixed
+            << ", 槽位数: " << guard.shm_pool()->slot_count() << ", 槽位容量: 8MB (总池 64MB), 耗时: " << std::fixed
             << std::setprecision(2) << init_ms << " ms\n\n";
 
   // -------------------------------------------------------------
@@ -55,8 +54,7 @@ int main(int argc, char* argv[]) {
   std::string expected_content;
   expected_content.reserve(2 * 1024 * 1024);
   for (int i = 0; i < 5000; ++i) {
-    expected_content += "第 " + std::to_string(i) +
-                        " 行：SoEasy 桌面搜索引擎混合 IPC 与共享内存技术规范验证。\n";
+    expected_content += "第 " + std::to_string(i) + " 行：SoEasy 桌面搜索引擎混合 IPC 与共享内存技术规范验证。\n";
   }
   WriteFile(large_doc_path, expected_content);
 
@@ -74,7 +72,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Read extracted content from SHM slot
-  const uint8_t* shm_data = nullptr;
+  const uint8_t *shm_data = nullptr;
   size_t shm_bytes = 0;
   bool read_ok = guard.shm_pool()->ReadSlot(res1.slot_id, &shm_data, &shm_bytes);
   if (!read_ok || shm_bytes != expected_content.size()) {
@@ -91,10 +89,9 @@ int main(int argc, char* argv[]) {
 
   guard.shm_pool()->ReleaseSlot(res1.slot_id);
   double mb_sec = (shm_bytes / 1048576.0) / (cost_ms / 1000.0);
-  std::cout << "    • 文档大小: " << shm_bytes << " 字节 ("
-            << std::fixed << std::setprecision(2) << (shm_bytes / 1048576.0) << " MB)\n";
-  std::cout << "    • 解析与传输耗时: " << cost_ms << " ms, 吞吐速率: "
-            << mb_sec << " MB/s\n";
+  std::cout << "    • 文档大小: " << shm_bytes << " 字节 (" << std::fixed << std::setprecision(2)
+            << (shm_bytes / 1048576.0) << " MB)\n";
+  std::cout << "    • 解析与传输耗时: " << cost_ms << " ms, 吞吐速率: " << mb_sec << " MB/s\n";
   std::cout << "[+] 大文档零拷贝解析与 SHM 读写校验 100% 一致通过!\n\n";
 
   // -------------------------------------------------------------
@@ -117,15 +114,13 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  const uint8_t* html_text_ptr = nullptr;
+  const uint8_t *html_text_ptr = nullptr;
   size_t html_text_len = 0;
   guard.shm_pool()->ReadSlot(res2.slot_id, &html_text_ptr, &html_text_len);
-  std::string parsed_html(reinterpret_cast<const char*>(html_text_ptr),
-                          html_text_len);
+  std::string parsed_html(reinterpret_cast<const char *>(html_text_ptr), html_text_len);
   guard.shm_pool()->ReleaseSlot(res2.slot_id);
 
-  if (parsed_html.find("<h1>") != std::string::npos ||
-      parsed_html.find("<p>") != std::string::npos) {
+  if (parsed_html.find("<h1>") != std::string::npos || parsed_html.find("<p>") != std::string::npos) {
     std::cerr << "[-] HTML 标签未被正确剥离: " << parsed_html << "\n";
     return 1;
   }
@@ -138,24 +133,20 @@ int main(int argc, char* argv[]) {
   std::cout << "[Step 4] 验证死循环文档超时熔断强杀与自愈 (Watchdog SIGKILL)...\n";
   std::cout << "    (向 Worker 下发死循环恶意任务，设定熔断阈值: 1500 ms)...\n";
   std::string hang_doc_path = (std::filesystem::temp_directory_path() / "TEST_TRIGGER_HANG_malicious.txt").string();
-  soeasy::service::ParseTask task_hang{
-      103, hang_doc_path, "txt", 1};
+  soeasy::service::ParseTask task_hang{103, hang_doc_path, "txt", 1};
   soeasy::service::ParseTaskResult res_hang;
 
   auto t_hang_start = std::chrono::high_resolution_clock::now();
   guard.ExecuteTask(task_hang, &res_hang);
   auto t_hang_end = std::chrono::high_resolution_clock::now();
-  double hang_ms =
-      std::chrono::duration<double, std::milli>(t_hang_end - t_hang_start).count();
+  double hang_ms = std::chrono::duration<double, std::milli>(t_hang_end - t_hang_start).count();
 
   if (res_hang.status != soeasy::service::TaskStatus::kTimeout) {
-    std::cerr << "[-] 预期超时熔断未触发! 实际状态: "
-              << static_cast<int>(res_hang.status) << "\n";
+    std::cerr << "[-] 预期超时熔断未触发! 实际状态: " << static_cast<int>(res_hang.status) << "\n";
     return 1;
   }
-  std::cout << "[+] 超时熔断拦截成功! 耗时: " << hang_ms
-            << " ms, 状态: TaskStatus::kTimeout (" << res_hang.error_message
-            << ")\n";
+  std::cout << "[+] 超时熔断拦截成功! 耗时: " << hang_ms << " ms, 状态: TaskStatus::kTimeout ("
+            << res_hang.error_message << ")\n";
   std::cout << "[+] 恶性卡死子进程已被安全强杀，且无内存槽位泄漏!\n\n";
 
   // -------------------------------------------------------------
@@ -164,18 +155,15 @@ int main(int argc, char* argv[]) {
   std::cout << "[Step 5] 验证段错误异常崩溃自愈与 Worker 自动拉起...\n";
   std::cout << "    (向 Worker 下发触发 SIGSEGV 的畸形任务)...\n";
   std::string crash_doc_path = (std::filesystem::temp_directory_path() / "TEST_TRIGGER_CRASH_exploit.bin").string();
-  soeasy::service::ParseTask task_crash{
-      104, crash_doc_path, "bin", 1};
+  soeasy::service::ParseTask task_crash{104, crash_doc_path, "bin", 1};
   soeasy::service::ParseTaskResult res_crash;
 
   guard.ExecuteTask(task_crash, &res_crash);
   if (res_crash.status != soeasy::service::TaskStatus::kCrashed) {
-    std::cerr << "[-] 预期崩溃捕获失败! 实际状态: "
-              << static_cast<int>(res_crash.status) << "\n";
+    std::cerr << "[-] 预期崩溃捕获失败! 实际状态: " << static_cast<int>(res_crash.status) << "\n";
     return 1;
   }
-  std::cout << "[+] 崩溃异常成功被沙箱捕获! 状态: TaskStatus::kCrashed ("
-            << res_crash.error_message << ")\n";
+  std::cout << "[+] 崩溃异常成功被沙箱捕获! 状态: TaskStatus::kCrashed (" << res_crash.error_message << ")\n";
   std::cout << "[+] 沙箱守卫已在后台无缝重启干净的 Worker 子进程替代!\n\n";
 
   // -------------------------------------------------------------
@@ -202,25 +190,21 @@ int main(int argc, char* argv[]) {
   int success_count = 0;
 
   for (int i = 0; i < kBurstCount; ++i) {
-    soeasy::service::ParseTask burst_task{
-        200 + i, (i % 2 == 0) ? large_doc_path : html_doc_path,
-        (i % 2 == 0) ? "txt" : "html", 1};
+    soeasy::service::ParseTask burst_task{200 + i, (i % 2 == 0) ? large_doc_path : html_doc_path,
+                                          (i % 2 == 0) ? "txt" : "html", 1};
     soeasy::service::ParseTaskResult burst_res;
-    if (guard.ExecuteTask(burst_task, &burst_res) &&
-        burst_res.status == soeasy::service::TaskStatus::kSuccess) {
+    if (guard.ExecuteTask(burst_task, &burst_res) && burst_res.status == soeasy::service::TaskStatus::kSuccess) {
       guard.shm_pool()->ReleaseSlot(burst_res.slot_id);
       success_count++;
     }
   }
   auto burst_t1 = std::chrono::high_resolution_clock::now();
-  double burst_ms =
-      std::chrono::duration<double, std::milli>(burst_t1 - burst_t0).count();
+  double burst_ms = std::chrono::duration<double, std::milli>(burst_t1 - burst_t0).count();
   double qps = (kBurstCount / (burst_ms / 1000.0));
 
-  std::cout << "    • 总任务数: " << kBurstCount << ", 成功完成: "
-            << success_count << ", 总耗时: " << burst_ms << " ms\n";
-  std::cout << "    • 解析调度吞吐量: " << std::fixed << std::setprecision(1)
-            << qps << " 文件/秒\n\n";
+  std::cout << "    • 总任务数: " << kBurstCount << ", 成功完成: " << success_count << ", 总耗时: " << burst_ms
+            << " ms\n";
+  std::cout << "    • 解析调度吞吐量: " << std::fixed << std::setprecision(1) << qps << " 文件/秒\n\n";
 
   guard.Shutdown();
 

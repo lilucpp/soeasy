@@ -39,8 +39,8 @@ class ShmSlotPool {
   ~ShmSlotPool();
 
   // Disallow copy and assign
-  ShmSlotPool(const ShmSlotPool&) = delete;
-  ShmSlotPool& operator=(const ShmSlotPool&) = delete;
+  ShmSlotPool(const ShmSlotPool &) = delete;
+  ShmSlotPool &operator=(const ShmSlotPool &) = delete;
 
   /**
    * @brief Create a brand new POSIX shared memory pool (called by Master service).
@@ -50,8 +50,7 @@ class ShmSlotPool {
    * @param slot_capacity Maximum usable payload bytes per slot
    * @return true on success, false on error
    */
-  bool Create(const std::string& shm_name,
-              size_t slot_count = kDefaultSlotCount,
+  bool Create(const std::string &shm_name, size_t slot_count = kDefaultSlotCount,
               size_t slot_capacity = kDefaultSlotCapacity);
 
   /**
@@ -62,8 +61,7 @@ class ShmSlotPool {
    * @param slot_capacity Maximum usable payload bytes per slot
    * @return true on success, false on error
    */
-  bool Attach(const std::string& shm_name,
-              size_t slot_count = kDefaultSlotCount,
+  bool Attach(const std::string &shm_name, size_t slot_count = kDefaultSlotCount,
               size_t slot_capacity = kDefaultSlotCapacity);
 
   /**
@@ -78,7 +76,7 @@ class ShmSlotPool {
    * @param out_data_ptr Receives pointer to writable data region
    * @return true if a slot was acquired, false if pool is exhausted
    */
-  bool AllocateSlot(uint32_t* out_slot_id, uint8_t** out_data_ptr);
+  bool AllocateSlot(uint32_t *out_slot_id, uint8_t **out_data_ptr);
 
   /**
    * @brief Mark slot as written and ready for Master consumption.
@@ -97,8 +95,7 @@ class ShmSlotPool {
    * @param out_data_bytes Receives actual payload byte count
    * @return true on success
    */
-  bool ReadSlot(uint32_t slot_id, const uint8_t** out_data_ptr,
-                size_t* out_data_bytes);
+  bool ReadSlot(uint32_t slot_id, const uint8_t **out_data_ptr, size_t *out_data_bytes);
 
   /**
    * @brief Free an allocated or read slot back to the available pool.
@@ -120,17 +117,17 @@ class ShmSlotPool {
   /**
    * @brief Get pointer to writable payload buffer for a slot.
    */
-  uint8_t* GetWritableSlotData(uint32_t slot_id);
+  uint8_t *GetWritableSlotData(uint32_t slot_id);
 
-  const std::string& shm_name() const { return shm_name_; }
+  const std::string &shm_name() const { return shm_name_; }
   size_t slot_count() const { return slot_count_; }
   size_t slot_capacity() const { return slot_capacity_; }
   bool is_valid() const { return base_addr_ != nullptr; }
 
  private:
-  uint8_t* GetSlotBase(uint32_t slot_id) const;
-  SlotHeader* GetSlotHeader(uint32_t slot_id) const;
-  uint8_t* GetSlotData(uint32_t slot_id) const;
+  uint8_t *GetSlotBase(uint32_t slot_id) const;
+  SlotHeader *GetSlotHeader(uint32_t slot_id) const;
+  uint8_t *GetSlotData(uint32_t slot_id) const;
   size_t GetSlotStride() const;
 
   std::string shm_name_;
@@ -139,9 +136,9 @@ class ShmSlotPool {
   size_t total_shm_size_ = 0;
   int shm_fd_ = -1;
 #ifdef _WIN32
-  void* win_map_handle_ = nullptr;
+  void *win_map_handle_ = nullptr;
 #endif
-  uint8_t* base_addr_ = nullptr;
+  uint8_t *base_addr_ = nullptr;
   bool is_creator_ = false;
 };
 

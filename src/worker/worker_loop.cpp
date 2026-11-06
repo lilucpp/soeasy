@@ -8,15 +8,15 @@
 #include <unistd.h>
 #endif
 
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include <kj/io.h>
+
 #include <chrono>
 #include <csignal>
 #include <cstring>
 #include <iostream>
 #include <string>
-
-#include <capnp/message.h>
-#include <capnp/serialize.h>
-#include <kj/io.h>
 
 #include "common/logger.h"
 #include "common/shm_pool.h"
@@ -28,13 +28,9 @@
 namespace soeasy {
 namespace worker {
 
-static void ProcessTask(const soeasy::ipc::ParseRequest::Reader& request,
-                        common::ShmSlotPool& shm_pool,
-                        size_t slot_capacity,
-                        L1TextParser& l1_parser,
-                        L2OfficeParser& l2_parser,
-                        L3ImageParser& l3_parser,
-                        capnp::MallocMessageBuilder& response_builder) {
+static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common::ShmSlotPool &shm_pool,
+                        size_t slot_capacity, L1TextParser &l1_parser, L2OfficeParser &l2_parser,
+                        L3ImageParser &l3_parser, capnp::MallocMessageBuilder &response_builder) {
   int64_t doc_id = request.getDocId();
   std::string file_path = request.getFilePath();
   std::string ext = request.getExt();
@@ -53,7 +49,8 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader& request,
 
   // Check for test hooks: intentional crash to verify crash recovery
   if (file_path.find("TEST_TRIGGER_CRASH") != std::string::npos) {
-    volatile int* null_ptr = nullptr;
+    volatile int *null_ptr = nullptr;
+    // cppcheck-suppress nullPointer
     *null_ptr = 42;  // Trigger SIGSEGV
   }
 
@@ -73,30 +70,28 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader& request,
   }
   shm_pool.TouchHeartbeat(slot_id);
   auto parse_end = std::chrono::high_resolution_clock::now();
-  double cost_ms =
-      std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
+  double cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
   auto result = response_builder.initRoot<soeasy::ipc::ParseResult>();
   result.setDocId(doc_id);
   result.setIsScannedPdf(is_scanned_pdf);
 
   if (!parse_ok) {
-    LOG_ERROR("[Worker] Parse FAILED | file: '{}' | ext: '{}' | cost: {:.2f} ms",
-              file_path, ext, cost_ms);
+    LOG_ERROR("[Worker] Parse FAILED | file: '{}' | ext: '{}' | cost: {:.2f} ms", file_path, ext, cost_ms);
     result.setStatusCode(soeasy::ipc::ParseStatusCode::FAILED);
     result.setExtractedBytes(0);
     result.setPageCount(0);
     result.setMessage("Failed to parse document");
   } else {
-    LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms",
-             file_path, ext, extracted_utf8.size(), cost_ms);
+    LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path, ext,
+             extracted_utf8.size(), cost_ms);
     size_t text_bytes = extracted_utf8.size();
     if (text_bytes > slot_capacity) {
       text_bytes = slot_capacity;
     }
 
     // Write zero-copy into shared memory slot
-    uint8_t* slot_data = shm_pool.GetWritableSlotData(slot_id);
+    uint8_t *slot_data = shm_pool.GetWritableSlotData(slot_id);
     if (slot_data && text_bytes > 0) {
       std::memcpy(slot_data, extracted_utf8.data(), text_bytes);
       shm_pool.CommitWrite(slot_id, text_bytes);
@@ -113,8 +108,7 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader& request,
 }
 
 #ifdef _WIN32
-int RunWorkerLoop(void* pipe_handle, const std::string& shm_name,
-                  size_t slot_count, size_t slot_capacity) {
+int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
   common::ShmSlotPool shm_pool;
   if (!shm_pool.Attach(shm_name, slot_count, slot_capacity)) {
     return 1;
@@ -133,11 +127,10 @@ int RunWorkerLoop(void* pipe_handle, const std::string& shm_name,
       auto request = reader.getRoot<soeasy::ipc::ParseRequest>();
 
       capnp::MallocMessageBuilder response_builder;
-      ProcessTask(request, shm_pool, slot_capacity, l1_parser, l2_parser, l3_parser,
-                  response_builder);
+      ProcessTask(request, shm_pool, slot_capacity, l1_parser, l2_parser, l3_parser, response_builder);
 
       capnp::writeMessage(output_stream, response_builder);
-    } catch (const kj::Exception& e) {
+    } catch (const kj::Exception &e) {
       break;
     } catch (...) {
       break;
@@ -147,8 +140,7 @@ int RunWorkerLoop(void* pipe_handle, const std::string& shm_name,
   return 0;
 }
 #else
-int RunWorkerLoop(int socket_fd, const std::string& shm_name,
-                  size_t slot_count, size_t slot_capacity) {
+int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
   // Guarantee worker is immediately killed by kernel if master process dies
   prctl(PR_SET_PDEATHSIG, SIGKILL);
 
@@ -167,11 +159,10 @@ int RunWorkerLoop(int socket_fd, const std::string& shm_name,
       auto request = reader.getRoot<soeasy::ipc::ParseRequest>();
 
       capnp::MallocMessageBuilder response_builder;
-      ProcessTask(request, shm_pool, slot_capacity, l1_parser, l2_parser, l3_parser,
-                  response_builder);
+      ProcessTask(request, shm_pool, slot_capacity, l1_parser, l2_parser, l3_parser, response_builder);
 
       capnp::writeMessageToFd(socket_fd, response_builder);
-    } catch (const kj::Exception& e) {
+    } catch (const kj::Exception &e) {
       break;
     } catch (...) {
       break;

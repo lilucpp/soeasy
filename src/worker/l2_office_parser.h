@@ -18,15 +18,15 @@ class L2OfficeParser {
   ~L2OfficeParser() = default;
 
   // Disallow copy and assign
-  L2OfficeParser(const L2OfficeParser&) = delete;
-  L2OfficeParser& operator=(const L2OfficeParser&) = delete;
+  L2OfficeParser(const L2OfficeParser &) = delete;
+  L2OfficeParser &operator=(const L2OfficeParser &) = delete;
 
   /**
    * @brief Check if this extension is handled by L2OfficeParser.
    *
    * @param ext File extension in lowercase without dot (e.g. "docx", "pdf", "xlsx")
    */
-  bool IsSupported(const std::string& ext) const;
+  bool IsSupported(const std::string &ext) const;
 
   /**
    * @brief Parse an office document from file into normalized UTF-8 plain text.
@@ -37,8 +37,8 @@ class L2OfficeParser {
    * @param is_scanned_pdf Optional flag indicating scanned / image-only PDF
    * @return true on success
    */
-  bool Parse(const std::string& file_path, const std::string& ext,
-             std::string* out_utf8_text, bool* is_scanned_pdf = nullptr);
+  bool Parse(const std::string &file_path, const std::string &ext, std::string *out_utf8_text,
+             bool *is_scanned_pdf = nullptr);
 
   /**
    * @brief Configure DocToText logging. Default disabled. When enabled, verbose logs output to log_file_path.
@@ -46,7 +46,7 @@ class L2OfficeParser {
    * @param enable Whether DocToText detailed logging is enabled
    * @param log_file_path Path to the log file to append DocToText output
    */
-  static void SetLogging(bool enable, const std::string& log_file_path = "");
+  static void SetLogging(bool enable, const std::string &log_file_path = "");
 
   /**
    * @brief Configure whether embedded images in Office / PDF documents are extracted and OCR'd.
@@ -58,24 +58,21 @@ class L2OfficeParser {
   static bool embedded_image_ocr();
 
   // Document format extractors
-  static bool ParseDocx(const std::string& file_path, std::string* out_utf8);
-  static bool ParseXlsx(const std::string& file_path, std::string* out_utf8);
-  static bool ParsePptx(const std::string& file_path, std::string* out_utf8);
-  static bool ParsePdf(const std::string& file_path, std::string* out_utf8,
-                       bool* is_scanned);
-  static bool ParseLegacyOffice(const std::string& file_path,
-                                const std::string& ext, std::string* out_utf8);
+  static bool ParseDocx(const std::string &file_path, std::string *out_utf8);
+  static bool ParseXlsx(const std::string &file_path, std::string *out_utf8);
+  static bool ParsePptx(const std::string &file_path, std::string *out_utf8);
+  static bool ParsePdf(const std::string &file_path, std::string *out_utf8, bool *is_scanned);
+  static bool ParseLegacyOffice(const std::string &file_path, const std::string &ext, std::string *out_utf8);
 
   /**
    * @brief Extract clean text content from OOXML XML markup.
    */
-  static std::string ExtractXmlText(const std::string& xml_content,
-                                    bool insert_newlines = true);
+  static std::string ExtractXmlText(const std::string &xml_content, bool insert_newlines = true);
 
   /**
    * @brief Unescape standard XML entities (&amp;, &lt;, &gt;, &quot;, &apos;).
    */
-  static std::string UnescapeXmlEntities(const std::string& text);
+  static std::string UnescapeXmlEntities(const std::string &text);
 
  private:
   std::unordered_set<std::string> supported_exts_;

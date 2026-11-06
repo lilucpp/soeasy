@@ -1,0 +1,30 @@
+---
+# 基于 Google C++ 编码规范
+BasedOnStyle: Google
+
+# 1. 禁用指针位置推断，强制严格按照配置执行
+DerivePointerAlignment: false
+
+# 2. 指针和引用靠右对齐（例如：char *p; const string &ref;）
+PointerAlignment: Right
+
+# 3. 每行最大列宽限制为 120 字符（适合现代宽屏，提升可读性）
+ColumnLimit: 120
+
+# 常用配套优化（保持 Google 严谨性）
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+Standard: Latest
+AccessModifierOffset: -1
+NamespaceIndentation: None
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+FixNamespaceComments: true
+ReflowComments: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+EmptyLineBeforeAccessModifier: LogicalBlock
+...

@@ -16,8 +16,7 @@ namespace worker {
  * @param slot_capacity Capacity per slot in bytes
  * @return int Exit status code
  */
-int RunWorkerLoop(void* pipe_handle, const std::string& shm_name,
-                  size_t slot_count, size_t slot_capacity);
+int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_count, size_t slot_capacity);
 #else
 /**
  * @brief Run the worker message processing loop until socket disconnect.
@@ -28,8 +27,7 @@ int RunWorkerLoop(void* pipe_handle, const std::string& shm_name,
  * @param slot_capacity Capacity per slot in bytes
  * @return int Exit status code
  */
-int RunWorkerLoop(int socket_fd, const std::string& shm_name,
-                  size_t slot_count, size_t slot_capacity);
+int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count, size_t slot_capacity);
 #endif
 
 }  // namespace worker

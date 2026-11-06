@@ -29,7 +29,7 @@ struct DebouncedEvent {
   std::chrono::steady_clock::time_point last_event_time;
 };
 
-using ChangeCallback = std::function<void(const DebouncedEvent& event)>;
+using ChangeCallback = std::function<void(const DebouncedEvent &event)>;
 
 class EventDebouncer {
  public:
@@ -39,8 +39,8 @@ class EventDebouncer {
   ~EventDebouncer();
 
   // Disallow copy and assign
-  EventDebouncer(const EventDebouncer&) = delete;
-  EventDebouncer& operator=(const EventDebouncer&) = delete;
+  EventDebouncer(const EventDebouncer &) = delete;
+  EventDebouncer &operator=(const EventDebouncer &) = delete;
 
   /**
    * @brief Set output callback invoked when debounced change settles.
@@ -54,8 +54,7 @@ class EventDebouncer {
    * @param action Change action type
    * @param old_path Previous path if renamed/moved
    */
-  void PushEvent(const std::string& path, FileChangeAction action,
-                 const std::string& old_path = "");
+  void PushEvent(const std::string &path, FileChangeAction action, const std::string &old_path = "");
 
   /**
    * @brief Start background debounce timer flush loop.

@@ -17,18 +17,17 @@ namespace worker {
 
 class L3ImageParser {
  public:
-  explicit L3ImageParser(ocr::OcrMode mode = ocr::OcrMode::kNormal,
-                         const std::string& models_dir = "");
+  explicit L3ImageParser(ocr::OcrMode mode = ocr::OcrMode::kNormal, const std::string &models_dir = "");
   ~L3ImageParser() = default;
 
   // Disallow copy and assign
-  L3ImageParser(const L3ImageParser&) = delete;
-  L3ImageParser& operator=(const L3ImageParser&) = delete;
+  L3ImageParser(const L3ImageParser &) = delete;
+  L3ImageParser &operator=(const L3ImageParser &) = delete;
 
   /**
    * @brief Check if file extension is an image format handled by L3ImageParser.
    */
-  bool IsSupported(const std::string& ext) const;
+  bool IsSupported(const std::string &ext) const;
 
   /**
    * @brief Parse an image file into recognized plain text via OCR or XML parsing.
@@ -38,8 +37,7 @@ class L3ImageParser {
    * @param out_utf8_text Output extracted text string
    * @return true on success (or clean skip on filtered icons/blanks), false on fatal read error
    */
-  bool Parse(const std::string& file_path, const std::string& ext,
-             std::string* out_utf8_text);
+  bool Parse(const std::string &file_path, const std::string &ext, std::string *out_utf8_text);
 
   /**
    * @brief Toggle resource mode between Normal (<=1 thread) and HighPerformance.
@@ -49,7 +47,7 @@ class L3ImageParser {
   /**
    * @brief Parse SVG XML to extract text nodes directly without OCR rasterization.
    */
-  static bool ParseSvgText(const std::string& file_path, std::string* out_utf8);
+  static bool ParseSvgText(const std::string &file_path, std::string *out_utf8);
 
   void set_min_effective_chars(size_t min_chars) { min_effective_chars_ = min_chars; }
   size_t min_effective_chars() const { return min_effective_chars_; }

@@ -1,12 +1,13 @@
 #include "gui/result_view.h"
-#include "gui/icon_provider.h"
-#include "gui/i18n.h"
 
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QScrollBar>
 #include <QTableWidgetItem>
+
+#include "gui/i18n.h"
+#include "gui/icon_provider.h"
 
 namespace soeasy {
 namespace gui {
@@ -25,7 +26,7 @@ QString FormatFileSize(uint64_t bytes) {
 
 }  // namespace
 
-ResultView::ResultView(QWidget* parent) : QTableWidget(parent) {
+ResultView::ResultView(QWidget *parent) : QTableWidget(parent) {
   SetupTable();
 
   hover_popup_ = new HoverPreviewPopup(this);
@@ -129,15 +130,13 @@ void ResultView::SetupTable() {
       "  background: transparent;"
       "}");
 
-  connect(this, &QTableWidget::cellDoubleClicked, this,
-          &ResultView::OnItemDoubleClicked);
-  connect(this, &QTableWidget::currentCellChanged, this,
-          [this](int currentRow, int, int, int) {
-            if (currentRow >= 0 && currentRow < static_cast<int>(current_items_.size())) {
-              const auto& it = current_items_[currentRow];
-              emit FileSelected(it.doc_id, it.file_name, it.file_path);
-            }
-          });
+  connect(this, &QTableWidget::cellDoubleClicked, this, &ResultView::OnItemDoubleClicked);
+  connect(this, &QTableWidget::currentCellChanged, this, [this](int currentRow, int, int, int) {
+    if (currentRow >= 0 && currentRow < static_cast<int>(current_items_.size())) {
+      const auto &it = current_items_[currentRow];
+      emit FileSelected(it.doc_id, it.file_name, it.file_path);
+    }
+  });
 
   // Viewport scroll lazy loading
   scroll_timer_ = new QTimer(this);
@@ -155,12 +154,11 @@ void ResultView::SetupTable() {
   });
 }
 
-void ResultView::SetStorageEngine(
-    std::shared_ptr<storage::StorageEngine> storage) {
+void ResultView::SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage) {
   storage_ = std::move(storage);
 }
 
-void ResultView::SetCurrentQuery(const QString& query) {
+void ResultView::SetCurrentQuery(const QString &query) {
   if (current_query_ != query) {
     current_query_ = query;
     snippet_lru_cache_.clear();
@@ -199,12 +197,11 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
   start_row = std::max(0, start_row);
   end_row = std::min(static_cast<int>(current_items_.size()) - 1, end_row);
 
-  auto keywords =
-      storage::StorageEngine::ExtractKeywordsFromQuery(current_query_.toStdString());
+  auto keywords = storage::StorageEngine::ExtractKeywordsFromQuery(current_query_.toStdString());
   if (keywords.empty()) return;
 
   for (int r = start_row; r <= end_row; ++r) {
-    auto& item = current_items_[r];
+    auto &item = current_items_[r];
     if (item.has_body_snippet) continue;
 
     auto it = snippet_lru_cache_.find(item.doc_id);
@@ -216,8 +213,7 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
 
     std::string full_text;
     if (storage_->GetDocumentContent(item.doc_id, &full_text) && !full_text.empty()) {
-      std::string snip =
-          storage::StorageEngine::GenerateSnippet(full_text, keywords, 140);
+      std::string snip = storage::StorageEngine::GenerateSnippet(full_text, keywords, 140);
       if (!snip.empty()) {
         if (snippet_lru_cache_.size() >= 300) {
           snippet_lru_cache_.erase(snippet_lru_cache_.begin());
@@ -230,29 +226,28 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
   }
 }
 
-void ResultView::PopulateRow(int row, const DisplayResultItem& it) {
-  auto* seq_item = new QTableWidgetItem(QString::number(row + 1));
+void ResultView::PopulateRow(int row, const DisplayResultItem &it) {
+  auto *seq_item = new QTableWidgetItem(QString::number(row + 1));
   seq_item->setTextAlignment(Qt::AlignCenter);
   seq_item->setForeground(QColor("#94A3B8"));
 
   QFileInfo fi(it.file_path);
   QString ext = it.ext.isEmpty() ? fi.suffix() : it.ext;
 
-  auto* name_item = new QTableWidgetItem(it.file_name);
+  auto *name_item = new QTableWidgetItem(it.file_name);
   name_item->setIcon(IconProvider::GetFileIcon(ext));
 
-  auto* path_item = new QTableWidgetItem(fi.absolutePath());
+  auto *path_item = new QTableWidgetItem(fi.absolutePath());
   path_item->setForeground(QColor("#64748B"));
 
-  auto* size_item = new QTableWidgetItem(FormatFileSize(it.file_size));
+  auto *size_item = new QTableWidgetItem(FormatFileSize(it.file_size));
   size_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-  QString date_str =
-      QDateTime::fromSecsSinceEpoch(it.mtime).toString("yyyy-MM-dd hh:mm");
-  auto* date_item = new QTableWidgetItem(date_str);
+  QString date_str = QDateTime::fromSecsSinceEpoch(it.mtime).toString("yyyy-MM-dd hh:mm");
+  auto *date_item = new QTableWidgetItem(date_str);
   date_item->setTextAlignment(Qt::AlignCenter);
 
-  auto* score_item = new QTableWidgetItem(QString::number(it.score, 'f', 2));
+  auto *score_item = new QTableWidgetItem(QString::number(it.score, 'f', 2));
   score_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
   setItem(row, 0, seq_item);
@@ -263,7 +258,7 @@ void ResultView::PopulateRow(int row, const DisplayResultItem& it) {
   setItem(row, 5, score_item);
 }
 
-void ResultView::SetResults(const std::vector<DisplayResultItem>& items) {
+void ResultView::SetResults(const std::vector<DisplayResultItem> &items) {
   ClearResults();
   current_items_ = items;
   setRowCount(static_cast<int>(items.size()));
@@ -273,7 +268,7 @@ void ResultView::SetResults(const std::vector<DisplayResultItem>& items) {
   }
 }
 
-void ResultView::AppendResults(const std::vector<DisplayResultItem>& items) {
+void ResultView::AppendResults(const std::vector<DisplayResultItem> &items) {
   if (items.empty()) {
     return;
   }
@@ -287,7 +282,7 @@ void ResultView::AppendResults(const std::vector<DisplayResultItem>& items) {
   }
 }
 
-void ResultView::mouseMoveEvent(QMouseEvent* event) {
+void ResultView::mouseMoveEvent(QMouseEvent *event) {
   QTableWidget::mouseMoveEvent(event);
 
   int row = rowAt(event->pos().y());
@@ -304,7 +299,7 @@ void ResultView::mouseMoveEvent(QMouseEvent* event) {
   }
 }
 
-void ResultView::leaveEvent(QEvent* event) {
+void ResultView::leaveEvent(QEvent *event) {
   QTableWidget::leaveEvent(event);
   hover_popup_->HidePopup();
   hover_timer_->stop();
@@ -314,9 +309,8 @@ void ResultView::leaveEvent(QEvent* event) {
 void ResultView::OnHoverTimerFired() {
   if (hover_row_ >= 0 && hover_row_ < static_cast<int>(current_items_.size())) {
     EnsureSnippetForRows(hover_row_, hover_row_);
-    const auto& it = current_items_[hover_row_];
-    hover_popup_->ShowSnippet(hover_pos_, it.file_name, it.file_path,
-                              it.snippet_html, it.file_size, it.mtime,
+    const auto &it = current_items_[hover_row_];
+    hover_popup_->ShowSnippet(hover_pos_, it.file_name, it.file_path, it.snippet_html, it.file_size, it.mtime,
                               it.score);
   }
 }
@@ -326,7 +320,7 @@ void ResultView::OnItemDoubleClicked(int row, int /*column*/) {
   hover_timer_->stop();
 
   if (row >= 0 && row < static_cast<int>(current_items_.size())) {
-    const auto& it = current_items_[row];
+    const auto &it = current_items_[row];
     emit FileOpenRequested(it.doc_id, it.file_name, it.file_path);
   }
 }
@@ -336,16 +330,16 @@ void ResultView::RetranslateUi() {
   headers << Tr("th_id") << Tr("th_filename") << Tr("th_path") << Tr("th_size") << Tr("th_mtime") << Tr("th_score");
   setHorizontalHeaderLabels(headers);
 
-  if (auto* item = horizontalHeaderItem(0)) {
+  if (auto *item = horizontalHeaderItem(0)) {
     item->setTextAlignment(Qt::AlignCenter);
   }
-  if (auto* item = horizontalHeaderItem(3)) {
+  if (auto *item = horizontalHeaderItem(3)) {
     item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
   }
-  if (auto* item = horizontalHeaderItem(4)) {
+  if (auto *item = horizontalHeaderItem(4)) {
     item->setTextAlignment(Qt::AlignCenter);
   }
-  if (auto* item = horizontalHeaderItem(5)) {
+  if (auto *item = horizontalHeaderItem(5)) {
     item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
   }
 }

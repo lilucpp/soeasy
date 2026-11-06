@@ -44,14 +44,10 @@ inline std::filesystem::path GetProjectRootDir() {
 inline std::string FindDictDir() {
   auto root = GetProjectRootDir();
   auto exe_dir = GetExecutableDir();
-  std::vector<std::filesystem::path> candidates = {
-      root / "third_party/cppjieba/dict",
-      exe_dir / "dict",
-      exe_dir / "../dict",
-      "/usr/local/share/soeasy/dict",
-      "/usr/share/soeasy/dict"
-  };
-  for (const auto& c : candidates) {
+  std::vector<std::filesystem::path> candidates = {root / "third_party/cppjieba/dict", exe_dir / "dict",
+                                                   exe_dir / "../dict", "/usr/local/share/soeasy/dict",
+                                                   "/usr/share/soeasy/dict"};
+  for (const auto &c : candidates) {
     if (std::filesystem::exists(c / "jieba.dict.utf8")) {
       return c.string();
     }
@@ -62,13 +58,9 @@ inline std::string FindDictDir() {
 inline std::string FindWorkerBin() {
   auto root = GetProjectRootDir();
   auto exe_dir = GetExecutableDir();
-  std::vector<std::filesystem::path> candidates = {
-      exe_dir / "soeasy-worker",
-      root / "build/soeasy-worker",
-      exe_dir / "bin/soeasy-worker",
-      exe_dir / "../bin/soeasy-worker"
-  };
-  for (const auto& c : candidates) {
+  std::vector<std::filesystem::path> candidates = {exe_dir / "soeasy-worker", root / "build/soeasy-worker",
+                                                   exe_dir / "bin/soeasy-worker", exe_dir / "../bin/soeasy-worker"};
+  for (const auto &c : candidates) {
     if (std::filesystem::exists(c)) {
       return c.string();
     }
@@ -80,13 +72,9 @@ inline std::string FindModelsDir() {
   auto root = GetProjectRootDir();
   auto exe_dir = GetExecutableDir();
   std::vector<std::filesystem::path> candidates = {
-      root / "models/ppocr_v6",
-      exe_dir / "models/ppocr_v6",
-      exe_dir / "../models/ppocr_v6",
-      "/usr/local/share/soeasy/models/ppocr_v6",
-      "/usr/share/soeasy/models/ppocr_v6"
-  };
-  for (const auto& c : candidates) {
+      root / "models/ppocr_v6", exe_dir / "models/ppocr_v6", exe_dir / "../models/ppocr_v6",
+      "/usr/local/share/soeasy/models/ppocr_v6", "/usr/share/soeasy/models/ppocr_v6"};
+  for (const auto &c : candidates) {
     if (std::filesystem::exists(c / "PP-OCRv6_tiny_det_onnx/inference.onnx")) {
       return c.string();
     }
@@ -96,12 +84,9 @@ inline std::string FindModelsDir() {
 
 inline std::string FindTestDatasetDir() {
   auto root = GetProjectRootDir();
-  std::vector<std::filesystem::path> candidates = {
-      root.parent_path() / "test_dataset",
-      root / "test_dataset",
-      root / "../test_dataset"
-  };
-  for (const auto& c : candidates) {
+  std::vector<std::filesystem::path> candidates = {root.parent_path() / "test_dataset", root / "test_dataset",
+                                                   root / "../test_dataset"};
+  for (const auto &c : candidates) {
     if (std::filesystem::exists(c)) {
       return c.string();
     }

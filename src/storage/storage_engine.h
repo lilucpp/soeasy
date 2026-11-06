@@ -40,8 +40,8 @@ class StorageEngine {
   ~StorageEngine();
 
   // Disallow copy and assign
-  StorageEngine(const StorageEngine&) = delete;
-  StorageEngine& operator=(const StorageEngine&) = delete;
+  StorageEngine(const StorageEngine &) = delete;
+  StorageEngine &operator=(const StorageEngine &) = delete;
 
   /**
    * @brief Open or create an encrypted SQLite database and initialize schemas.
@@ -51,8 +51,7 @@ class StorageEngine {
    * @param dict_dir Path to Jieba dictionary directory
    * @return true on success, false on error
    */
-  bool Open(const std::string& db_path, const std::string& key,
-            const std::string& dict_dir);
+  bool Open(const std::string &db_path, const std::string &key, const std::string &dict_dir);
 
   /**
    * @brief Close database connection.
@@ -122,10 +121,8 @@ class StorageEngine {
    * @param utf8_content Extracted full plain text
    * @return true on success
    */
-  bool IndexDocument(int64_t doc_id, const std::string& file_path,
-                     const std::string& file_name, const std::string& ext,
-                     uint64_t file_size, int64_t mtime, int parse_level,
-                     const std::string& utf8_content);
+  bool IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name, const std::string &ext,
+                     uint64_t file_size, int64_t mtime, int parse_level, const std::string &utf8_content);
 
   /**
    * @brief Delete document from both metadata, content, and FTS5 index.
@@ -147,10 +144,8 @@ class StorageEngine {
    * @param out_total_count Optional pointer to receive total number of matching documents
    * @return std::vector<SearchResultItem> List of matching documents
    */
-  std::vector<SearchResultItem> Search(const std::string& query,
-                                       int limit = 50, int offset = 0,
-                                       const std::string& path_prefix = "",
-                                       int* out_total_count = nullptr);
+  std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
+                                       const std::string &path_prefix = "", int *out_total_count = nullptr);
 
   /**
    * @brief Decompress and fetch original UTF-8 content from doc_contents.
@@ -159,7 +154,7 @@ class StorageEngine {
    * @param out_content Output string to receive decompressed text
    * @return true on success
    */
-  bool GetDocumentContent(int64_t doc_id, std::string* out_content);
+  bool GetDocumentContent(int64_t doc_id, std::string *out_content);
 
   /**
    * @brief Retrieve metadata (file_size, mtime, parse_stat) for incremental check.
@@ -170,8 +165,7 @@ class StorageEngine {
    * @param out_parse_stat Output pointer for parse status
    * @return true if document exists in files table
    */
-  bool GetFileMetadata(int64_t doc_id, uint64_t* out_file_size,
-                       int64_t* out_mtime, int* out_parse_stat = nullptr);
+  bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat = nullptr);
 
   /**
    * @brief Retrieve all indexed files metadata for rapid cold-restart.
@@ -181,16 +175,13 @@ class StorageEngine {
   /**
    * @brief Generate highlighted snippet with <mark> tags around keywords.
    */
-  static std::string GenerateSnippet(
-      const std::string& full_text,
-      const std::vector<std::string>& keywords,
-      size_t max_chars = 120);
+  static std::string GenerateSnippet(const std::string &full_text, const std::vector<std::string> &keywords,
+                                     size_t max_chars = 120);
 
   /**
    * @brief Extract clean keywords from an FTS5 search query string.
    */
-  static std::vector<std::string> ExtractKeywordsFromQuery(
-      const std::string& query);
+  static std::vector<std::string> ExtractKeywordsFromQuery(const std::string &query);
 
   /**
    * @brief Get low-level error message from SQLite.
@@ -198,19 +189,19 @@ class StorageEngine {
   std::string GetLastError() const;
 
  private:
-  bool ExecutePragmas(const std::string& key);
+  bool ExecutePragmas(const std::string &key);
   bool InitTables();
   void FinalizeCachedStatements();
 
-  sqlite3* db_ = nullptr;
+  sqlite3 *db_ = nullptr;
   std::string last_error_;
   size_t uncommitted_count_ = 0;
 
-  sqlite3_stmt* stmt_files_insert_ = nullptr;
-  sqlite3_stmt* stmt_contents_insert_ = nullptr;
-  sqlite3_stmt* stmt_fts_del_ = nullptr;
-  sqlite3_stmt* stmt_fts_ins_ = nullptr;
-  sqlite3_stmt* stmt_meta_select_ = nullptr;
+  sqlite3_stmt *stmt_files_insert_ = nullptr;
+  sqlite3_stmt *stmt_contents_insert_ = nullptr;
+  sqlite3_stmt *stmt_fts_del_ = nullptr;
+  sqlite3_stmt *stmt_fts_ins_ = nullptr;
+  sqlite3_stmt *stmt_meta_select_ = nullptr;
 };
 
 }  // namespace storage

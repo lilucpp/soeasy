@@ -2,6 +2,7 @@
 // Use of this source code is governed by an Apache-2.0 license.
 
 #include <sys/stat.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -18,18 +19,17 @@
 #include "tests/test_helper.h"
 #include "worker/l2_office_parser.h"
 
-#define CHECK(expr)                                                          \
-  do {                                                                       \
-    if (!(expr)) {                                                           \
-      std::cerr << "[-] CHECK FAILED: " #expr " at " << __FILE__ << ":"     \
-                << __LINE__ << std::endl;                                    \
-      std::abort();                                                          \
-    }                                                                        \
+#define CHECK(expr)                                                                               \
+  do {                                                                                            \
+    if (!(expr)) {                                                                                \
+      std::cerr << "[-] CHECK FAILED: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+      std::abort();                                                                               \
+    }                                                                                             \
   } while (0)
 
 namespace {
 
-uint64_t GetFileSize(const std::string& path) {
+uint64_t GetFileSize(const std::string &path) {
   struct stat st;
   if (stat(path.c_str(), &st) == 0) {
     return static_cast<uint64_t>(st.st_size);
@@ -37,7 +37,7 @@ uint64_t GetFileSize(const std::string& path) {
   return 0;
 }
 
-void CreateSampleDocx(const std::string& path) {
+void CreateSampleDocx(const std::string &path) {
   mz_zip_archive zip;
   std::memset(&zip, 0, sizeof(zip));
   CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
@@ -47,8 +47,7 @@ void CreateSampleDocx(const std::string& path) {
       "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n"
       "  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\n"
       "</Types>";
-  mz_zip_writer_add_mem(&zip, "[Content_Types].xml", content_types.data(),
-                        content_types.size(), MZ_BEST_COMPRESSION);
+  mz_zip_writer_add_mem(&zip, "[Content_Types].xml", content_types.data(), content_types.size(), MZ_BEST_COMPRESSION);
 
   const std::string document_xml =
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -65,14 +64,13 @@ void CreateSampleDocx(const std::string& path) {
       "    </w:p>\n"
       "  </w:body>\n"
       "</w:document>";
-  mz_zip_writer_add_mem(&zip, "word/document.xml", document_xml.data(),
-                        document_xml.size(), MZ_BEST_COMPRESSION);
+  mz_zip_writer_add_mem(&zip, "word/document.xml", document_xml.data(), document_xml.size(), MZ_BEST_COMPRESSION);
 
   CHECK(mz_zip_writer_finalize_archive(&zip));
   CHECK(mz_zip_writer_end(&zip));
 }
 
-void CreateSampleXlsx(const std::string& path) {
+void CreateSampleXlsx(const std::string &path) {
   mz_zip_archive zip;
   std::memset(&zip, 0, sizeof(zip));
   CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
@@ -84,8 +82,8 @@ void CreateSampleXlsx(const std::string& path) {
       "  <si><t>服务器集群购置费用</t></si>\n"
       "  <si><t>算法工程师与架构师薪酬开支</t></si>\n"
       "</sst>";
-  mz_zip_writer_add_mem(&zip, "xl/sharedStrings.xml", shared_strings.data(),
-                        shared_strings.size(), MZ_BEST_COMPRESSION);
+  mz_zip_writer_add_mem(&zip, "xl/sharedStrings.xml", shared_strings.data(), shared_strings.size(),
+                        MZ_BEST_COMPRESSION);
 
   const std::string sheet1 =
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -95,14 +93,13 @@ void CreateSampleXlsx(const std::string& path) {
       "    <row r=\"2\"><c r=\"A2\" t=\"s\"><v>1</v></c><c r=\"B2\"><v>850000</v></c></row>\n"
       "  </sheetData>\n"
       "</worksheet>";
-  mz_zip_writer_add_mem(&zip, "xl/worksheets/sheet1.xml", sheet1.data(),
-                        sheet1.size(), MZ_BEST_COMPRESSION);
+  mz_zip_writer_add_mem(&zip, "xl/worksheets/sheet1.xml", sheet1.data(), sheet1.size(), MZ_BEST_COMPRESSION);
 
   CHECK(mz_zip_writer_finalize_archive(&zip));
   CHECK(mz_zip_writer_end(&zip));
 }
 
-void CreateSamplePptx(const std::string& path) {
+void CreateSamplePptx(const std::string &path) {
   mz_zip_archive zip;
   std::memset(&zip, 0, sizeof(zip));
   CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
@@ -122,14 +119,13 @@ void CreateSamplePptx(const std::string& path) {
       "    </p:spTree>\n"
       "  </p:cSld>\n"
       "</p:sld>";
-  mz_zip_writer_add_mem(&zip, "ppt/slides/slide1.xml", slide1.data(),
-                        slide1.size(), MZ_BEST_COMPRESSION);
+  mz_zip_writer_add_mem(&zip, "ppt/slides/slide1.xml", slide1.data(), slide1.size(), MZ_BEST_COMPRESSION);
 
   CHECK(mz_zip_writer_finalize_archive(&zip));
   CHECK(mz_zip_writer_end(&zip));
 }
 
-void CreateSamplePdf(const std::string& path) {
+void CreateSamplePdf(const std::string &path) {
   // Generate a valid minimal PDF 1.4 document containing selectable text
   std::ofstream ofs(path, std::ios::binary);
   ofs << "%PDF-1.4\n"
@@ -146,7 +142,7 @@ void CreateSamplePdf(const std::string& path) {
       << "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n466\n%%EOF\n";
 }
 
-void CreateScannedSamplePdf(const std::string& path) {
+void CreateScannedSamplePdf(const std::string &path) {
   // Generate a larger PDF containing no extractable text stream (simulating scanned/image PDF)
   std::ofstream ofs(path, std::ios::binary);
   ofs << "%PDF-1.4\n"
@@ -164,7 +160,7 @@ void CreateScannedSamplePdf(const std::string& path) {
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   std::cout << "========================================================\n";
   std::cout << "   SoEasy L2 办公文档与富文本深度解析实证测试 (Phase 5)\n";
   std::cout << "   DocToText (lithiumFlower) + OOXML + PDF + 扫描件识别 + 沙箱与检索\n";
@@ -276,17 +272,14 @@ int main(int argc, char* argv[]) {
   CHECK(docx_task_res.status == soeasy::service::TaskStatus::kSuccess);
 
   std::string docx_shm_text;
-  const uint8_t* docx_slot_ptr = nullptr;
+  const uint8_t *docx_slot_ptr = nullptr;
   size_t docx_slot_bytes = 0;
-  if (worker_guard->shm_pool()->ReadSlot(docx_task_res.slot_id, &docx_slot_ptr,
-                                         &docx_slot_bytes)) {
-    docx_shm_text.assign(reinterpret_cast<const char*>(docx_slot_ptr),
-                         docx_slot_bytes);
+  if (worker_guard->shm_pool()->ReadSlot(docx_task_res.slot_id, &docx_slot_ptr, &docx_slot_bytes)) {
+    docx_shm_text.assign(reinterpret_cast<const char *>(docx_slot_ptr), docx_slot_bytes);
     worker_guard->shm_pool()->ReleaseSlot(docx_task_res.slot_id);
   }
   CHECK(docx_shm_text.find("人工智能战略规划") != std::string::npos);
-  std::cout << "  [+] 沙箱跨进程 DOCX 解析与 SHM 槽位传输成功! 耗时: "
-            << docx_task_res.elapsed_ms << " ms\n";
+  std::cout << "  [+] 沙箱跨进程 DOCX 解析与 SHM 槽位传输成功! 耗时: " << docx_task_res.elapsed_ms << " ms\n";
 
   soeasy::service::ParseTask xlsx_task;
   xlsx_task.doc_id = 1002;
@@ -300,17 +293,14 @@ int main(int argc, char* argv[]) {
   CHECK(xlsx_task_res.status == soeasy::service::TaskStatus::kSuccess);
 
   std::string xlsx_shm_text;
-  const uint8_t* xlsx_slot_ptr = nullptr;
+  const uint8_t *xlsx_slot_ptr = nullptr;
   size_t xlsx_slot_bytes = 0;
-  if (worker_guard->shm_pool()->ReadSlot(xlsx_task_res.slot_id, &xlsx_slot_ptr,
-                                         &xlsx_slot_bytes)) {
-    xlsx_shm_text.assign(reinterpret_cast<const char*>(xlsx_slot_ptr),
-                         xlsx_slot_bytes);
+  if (worker_guard->shm_pool()->ReadSlot(xlsx_task_res.slot_id, &xlsx_slot_ptr, &xlsx_slot_bytes)) {
+    xlsx_shm_text.assign(reinterpret_cast<const char *>(xlsx_slot_ptr), xlsx_slot_bytes);
     worker_guard->shm_pool()->ReleaseSlot(xlsx_task_res.slot_id);
   }
   CHECK(xlsx_shm_text.find("2026年度第一季度财务报表") != std::string::npos);
-  std::cout << "  [+] 沙箱跨进程 XLSX 解析与 SHM 槽位传输成功! 耗时: "
-            << xlsx_task_res.elapsed_ms << " ms\n";
+  std::cout << "  [+] 沙箱跨进程 XLSX 解析与 SHM 槽位传输成功! 耗时: " << xlsx_task_res.elapsed_ms << " ms\n";
 
   // -------------------------------------------------------------
   // Test 7: End-to-End Indexing & FTS5 Chinese Keyword Retrieval
@@ -320,15 +310,12 @@ int main(int argc, char* argv[]) {
   CHECK(storage->Open(test_db, passphrase, dict_dir));
 
   // Index DOCX, XLSX, PPTX
-  CHECK(storage->IndexDocument(1001, docx_path, "sample.docx", "docx",
-                               GetFileSize(docx_path), 1700000000, 1,
+  CHECK(storage->IndexDocument(1001, docx_path, "sample.docx", "docx", GetFileSize(docx_path), 1700000000, 1,
                                docx_shm_text));
-  CHECK(storage->IndexDocument(1002, xlsx_path, "sample.xlsx", "xlsx",
-                               GetFileSize(xlsx_path), 1700000000, 1,
+  CHECK(storage->IndexDocument(1002, xlsx_path, "sample.xlsx", "xlsx", GetFileSize(xlsx_path), 1700000000, 1,
                                xlsx_shm_text));
-  CHECK(storage->IndexDocument(1003, pptx_path, "sample.pptx", "pptx",
-                               GetFileSize(pptx_path), 1700000000, 1,
-                               pptx_text));
+  CHECK(
+      storage->IndexDocument(1003, pptx_path, "sample.pptx", "pptx", GetFileSize(pptx_path), 1700000000, 1, pptx_text));
 
   // Search keyword in DOCX
   auto hits_ai = storage->Search("人工智能", 10, 0);
@@ -372,12 +359,11 @@ int main(int argc, char* argv[]) {
   CHECK(std::filesystem::file_size(dt_log_file) > 0);
 
   std::ifstream log_ifs(dt_log_file);
-  std::string log_content((std::istreambuf_iterator<char>(log_ifs)),
-                          std::istreambuf_iterator<char>());
+  std::string log_content((std::istreambuf_iterator<char>(log_ifs)), std::istreambuf_iterator<char>());
   CHECK(log_content.find("[DocToText Session Started]") != std::string::npos);
   CHECK(log_content.find("sample.pdf") != std::string::npos);
-  std::cout << "  [+] 开启落盘模式验证通过: 成功捕获 DocToText 底层解析日志至文件! 大小: "
-            << log_content.size() << " 字节\n";
+  std::cout << "  [+] 开启落盘模式验证通过: 成功捕获 DocToText 底层解析日志至文件! 大小: " << log_content.size()
+            << " 字节\n";
 
   // Turn off logging after test
   soeasy::worker::L2OfficeParser::SetLogging(false);

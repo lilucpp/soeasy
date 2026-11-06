@@ -17,10 +17,8 @@ AsyncWriteQueue::~AsyncWriteQueue() {
   Stop();
 }
 
-void AsyncWriteQueue::Start(std::shared_ptr<storage::StorageEngine> storage_engine,
-                           size_t batch_size,
-                           std::chrono::milliseconds batch_timeout,
-                           size_t max_queue_size) {
+void AsyncWriteQueue::Start(std::shared_ptr<storage::StorageEngine> storage_engine, size_t batch_size,
+                            std::chrono::milliseconds batch_timeout, size_t max_queue_size) {
   Stop();
 
   storage_engine_ = std::move(storage_engine);
@@ -55,9 +53,7 @@ void AsyncWriteQueue::Stop() {
 
 void AsyncWriteQueue::Enqueue(WriteOp op) {
   std::unique_lock<std::mutex> lock(mutex_);
-  cv_not_full_.wait(lock, [this]() {
-    return stop_requested_ || queue_.size() < max_queue_size_;
-  });
+  cv_not_full_.wait(lock, [this]() { return stop_requested_ || queue_.size() < max_queue_size_; });
 
   if (stop_requested_) {
     return;
@@ -72,9 +68,7 @@ void AsyncWriteQueue::Flush() {
   flush_requested_ = true;
   cv_not_empty_.notify_one();
 
-  cv_drained_.wait(lock, [this]() {
-    return queue_.empty() && !is_writing_batch_;
-  });
+  cv_drained_.wait(lock, [this]() { return queue_.empty() && !is_writing_batch_; });
   flush_requested_ = false;
 }
 
@@ -91,15 +85,14 @@ void AsyncWriteQueue::WorkerLoop() {
   while (true) {
     {
       std::unique_lock<std::mutex> lock(mutex_);
-      cv_not_empty_.wait_for(
-          lock, std::chrono::milliseconds(50), [this, &last_commit_time]() {
-            if (stop_requested_) return true;
-            if (flush_requested_ && !queue_.empty()) return true;
-            if (queue_.empty()) return false;
-            if (queue_.size() >= batch_size_) return true;
-            auto now = std::chrono::steady_clock::now();
-            return (now - last_commit_time) >= batch_timeout_;
-          });
+      cv_not_empty_.wait_for(lock, std::chrono::milliseconds(50), [this, &last_commit_time]() {
+        if (stop_requested_) return true;
+        if (flush_requested_ && !queue_.empty()) return true;
+        if (queue_.empty()) return false;
+        if (queue_.size() >= batch_size_) return true;
+        auto now = std::chrono::steady_clock::now();
+        return (now - last_commit_time) >= batch_timeout_;
+      });
 
       if (queue_.empty()) {
         if (stop_requested_) {
@@ -120,10 +113,9 @@ void AsyncWriteQueue::WorkerLoop() {
     // Execute writes in StorageEngine within an outer transaction
     if (!batch.empty() && storage_engine_) {
       storage_engine_->BeginTransaction();
-      for (const auto& op : batch) {
+      for (const auto &op : batch) {
         if (op.type == WriteOpType::kIndex) {
-          storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name,
-                                         op.ext, op.file_size, op.mtime,
+          storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
                                          op.parse_level, op.content);
         } else if (op.type == WriteOpType::kDelete) {
           storage_engine_->DeleteDocument(op.doc_id);
@@ -156,10 +148,9 @@ void AsyncWriteQueue::WorkerLoop() {
 
   if (!remaining.empty() && storage_engine_) {
     storage_engine_->BeginTransaction();
-    for (const auto& op : remaining) {
+    for (const auto &op : remaining) {
       if (op.type == WriteOpType::kIndex) {
-        storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name,
-                                       op.ext, op.file_size, op.mtime,
+        storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
                                        op.parse_level, op.content);
       } else if (op.type == WriteOpType::kDelete) {
         storage_engine_->DeleteDocument(op.doc_id);

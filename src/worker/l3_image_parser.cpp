@@ -5,10 +5,9 @@
 
 #include <algorithm>
 #include <fstream>
+#include <opencv2/imgcodecs.hpp>
 #include <regex>
 #include <vector>
-
-#include <opencv2/imgcodecs.hpp>
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
@@ -17,11 +16,8 @@
 namespace soeasy {
 namespace worker {
 
-L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string& models_dir) {
-  supported_exts_ = {
-      "png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif",
-      "svg", "pnm", "ppm", "pgm", "tga"
-  };
+L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string &models_dir) {
+  supported_exts_ = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg", "pnm", "ppm", "pgm", "tga"};
 
   ocr_engine_ = ocr::OcrEngineFactory::CreateDefaultEngine(models_dir, mode);
   if (!ocr_engine_) {
@@ -29,7 +25,7 @@ L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string& models_dir) {
   }
 }
 
-bool L3ImageParser::IsSupported(const std::string& ext) const {
+bool L3ImageParser::IsSupported(const std::string &ext) const {
   std::string lower_ext = ext;
   std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
   return supported_exts_.find(lower_ext) != supported_exts_.end();
@@ -41,14 +37,13 @@ void L3ImageParser::SetMode(ocr::OcrMode mode) {
   }
 }
 
-bool L3ImageParser::ParseSvgText(const std::string& file_path, std::string* out_utf8) {
+bool L3ImageParser::ParseSvgText(const std::string &file_path, std::string *out_utf8) {
   if (!out_utf8) return false;
   out_utf8->clear();
 
   auto ifs = common::EncodingUtils::OpenIfstream(file_path);
   if (!ifs.is_open()) return false;
-  std::string content((std::istreambuf_iterator<char>(ifs)),
-                      std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
   // Extract content between <text...>...</text> and <tspan...>...</tspan>
   static const std::regex text_tag_regex("<(?:text|tspan)[^>]*>([^<]+)<\\/(?:text|tspan)>",
@@ -76,8 +71,7 @@ bool L3ImageParser::ParseSvgText(const std::string& file_path, std::string* out_
   return true;
 }
 
-bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
-                          std::string* out_utf8_text) {
+bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, std::string *out_utf8_text) {
   if (!out_utf8_text) return false;
   out_utf8_text->clear();
 
@@ -97,8 +91,7 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
   // 2. Scientific Tier 1 filtering (Header & Dimension check)
   auto decision = filter_.PrecheckFile(file_path);
   if (decision != ocr::FilterDecision::kPass) {
-    LOG_INFO("[L3ImageParser] Filtered image '{}' before decoding (reason: {})",
-             file_path, static_cast<int>(decision));
+    LOG_INFO("[L3ImageParser] Filtered image '{}' before decoding (reason: {})", file_path, static_cast<int>(decision));
     return true;  // Clean skip
   }
 
@@ -124,8 +117,7 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
           full_text += ocr_res.full_text;
         }
       }
-      if (min_effective_chars_ > 0 &&
-          ocr::ImageFilter::CountEffectiveChars(full_text) < min_effective_chars_) {
+      if (min_effective_chars_ > 0 && ocr::ImageFilter::CountEffectiveChars(full_text) < min_effective_chars_) {
         full_text.clear();
       }
       *out_utf8_text = full_text;
@@ -144,8 +136,7 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
   // 5. Scientific Tier 2 filtering (Solid Color / Variance check)
   decision = filter_.CheckDecodedImage(img);
   if (decision != ocr::FilterDecision::kPass) {
-    LOG_INFO("[L3ImageParser] Filtered image '{}' after decoding (reason: {})",
-             file_path, static_cast<int>(decision));
+    LOG_INFO("[L3ImageParser] Filtered image '{}' after decoding (reason: {})", file_path, static_cast<int>(decision));
     return true;  // Clean skip
   }
 
@@ -159,8 +150,10 @@ bool L3ImageParser::Parse(const std::string& file_path, const std::string& ext,
   // 7. Text box count & effective characters filter
   size_t eff_chars = ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text);
   if (eff_chars < min_effective_chars_) {
-    LOG_INFO("[L3ImageParser] Filtered image '{}': insufficient text ({} effective chars < {}, {} boxes), skipping body index",
-             file_path, eff_chars, min_effective_chars_, ocr_res.lines.size());
+    LOG_INFO(
+        "[L3ImageParser] Filtered image '{}': insufficient text ({} effective chars < {}, {} boxes), skipping body "
+        "index",
+        file_path, eff_chars, min_effective_chars_, ocr_res.lines.size());
     out_utf8_text->clear();
     return true;
   }

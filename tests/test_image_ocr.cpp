@@ -6,10 +6,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <opencv2/imgcodecs.hpp>
 #include <string>
 #include <vector>
-
-#include <opencv2/imgcodecs.hpp>
 
 #include "common/logger.h"
 #include "storage/storage_engine.h"
@@ -33,8 +32,9 @@ void TestImageFilter() {
   std::string icon_path = img_dataset + "/icon_small_121.png";
   if (std::filesystem::exists(icon_path)) {
     auto dec = filter.PrecheckFile(icon_path);
-    std::cout << "  Icon filter check (" << icon_path << "): "
-              << (dec == FilterDecision::kTooSmallIconOrThumbnail ? "PASS (Filtered as Icon)" : "FAIL") << "\n";
+    std::cout << "  Icon filter check (" << icon_path
+              << "): " << (dec == FilterDecision::kTooSmallIconOrThumbnail ? "PASS (Filtered as Icon)" : "FAIL")
+              << "\n";
     assert(dec == FilterDecision::kTooSmallIconOrThumbnail);
   }
 
@@ -42,8 +42,9 @@ void TestImageFilter() {
   std::string stripe_path = img_dataset + "/divider_stripe_161.png";
   if (std::filesystem::exists(stripe_path)) {
     auto dec = filter.PrecheckFile(stripe_path);
-    std::cout << "  Stripe filter check (" << stripe_path << "): "
-              << (dec == FilterDecision::kExtremeAspectRatioStrip ? "PASS (Filtered as Stripe)" : "FAIL") << "\n";
+    std::cout << "  Stripe filter check (" << stripe_path
+              << "): " << (dec == FilterDecision::kExtremeAspectRatioStrip ? "PASS (Filtered as Stripe)" : "FAIL")
+              << "\n";
     assert(dec == FilterDecision::kExtremeAspectRatioStrip);
   }
 
@@ -52,8 +53,9 @@ void TestImageFilter() {
   if (std::filesystem::exists(solid_path)) {
     cv::Mat img = cv::imread(solid_path);
     auto dec = filter.CheckDecodedImage(img);
-    std::cout << "  Solid color check (" << solid_path << "): "
-              << (dec == FilterDecision::kSolidColorOrBlank ? "PASS (Filtered as Solid Color)" : "FAIL") << "\n";
+    std::cout << "  Solid color check (" << solid_path
+              << "): " << (dec == FilterDecision::kSolidColorOrBlank ? "PASS (Filtered as Solid Color)" : "FAIL")
+              << "\n";
     assert(dec == FilterDecision::kSolidColorOrBlank);
   }
 
@@ -61,8 +63,8 @@ void TestImageFilter() {
   std::string real_screenshot = img_dataset + "/doc_standard_013.png";
   if (std::filesystem::exists(real_screenshot)) {
     auto dec = filter.PrecheckFile(real_screenshot);
-    std::cout << "  Real screenshot check (" << real_screenshot << "): "
-              << (dec == FilterDecision::kPass ? "PASS (Preserved for OCR)" : "FAIL") << "\n";
+    std::cout << "  Real screenshot check (" << real_screenshot
+              << "): " << (dec == FilterDecision::kPass ? "PASS (Preserved for OCR)" : "FAIL") << "\n";
     assert(dec == FilterDecision::kPass);
   }
 
@@ -99,8 +101,8 @@ void TestPPOCRv6Engine() {
     // Normal mode (1 thread)
     engine->SetMode(OcrMode::kNormal);
     auto res_normal = engine->RecognizeFile(test_img);
-    std::cout << "  [Normal Mode (1 core)] Det: " << res_normal.det_ms << "ms | Rec: "
-              << res_normal.rec_ms << "ms | Total: " << res_normal.total_ms << "ms\n";
+    std::cout << "  [Normal Mode (1 core)] Det: " << res_normal.det_ms << "ms | Rec: " << res_normal.rec_ms
+              << "ms | Total: " << res_normal.total_ms << "ms\n";
     std::cout << "  Extracted Text snippet: " << res_normal.full_text.substr(0, 60) << "...\n";
     assert(res_normal.success);
     assert(!res_normal.lines.empty());
@@ -110,8 +112,8 @@ void TestPPOCRv6Engine() {
     // High performance mode (multi-thread)
     engine->SetMode(OcrMode::kHighPerformance);
     auto res_hp = engine->RecognizeFile(test_img);
-    std::cout << "  [HighPerf Mode (multi)] Det: " << res_hp.det_ms << "ms | Rec: "
-              << res_hp.rec_ms << "ms | Total: " << res_hp.total_ms << "ms\n";
+    std::cout << "  [HighPerf Mode (multi)] Det: " << res_hp.det_ms << "ms | Rec: " << res_hp.rec_ms
+              << "ms | Total: " << res_hp.total_ms << "ms\n";
     assert(res_hp.success);
   }
 
@@ -127,7 +129,7 @@ void TestL3ImageParser() {
 
   // Check supported extensions
   std::vector<std::string> exts = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"};
-  for (const auto& e : exts) {
+  for (const auto &e : exts) {
     assert(parser.IsSupported(e));
   }
   std::cout << "  Format support validated: png, jpg, jpeg, bmp, webp, tiff, tif, gif, svg.\n";
@@ -145,13 +147,11 @@ void TestL3ImageParser() {
   }
 
   // Test PNG and JPG parsing
-  std::vector<std::pair<std::string, std::string>> sample_files = {
-      {img_dataset + "/doc_standard_013.png", "png"},
-      {img_dataset + "/receipt_angled_093.png", "png"},
-      {img_dataset + "/dark_code_085.jpg", "jpg"}
-  };
+  std::vector<std::pair<std::string, std::string>> sample_files = {{img_dataset + "/doc_standard_013.png", "png"},
+                                                                   {img_dataset + "/receipt_angled_093.png", "png"},
+                                                                   {img_dataset + "/dark_code_085.jpg", "jpg"}};
 
-  for (const auto& [path, ext] : sample_files) {
+  for (const auto &[path, ext] : sample_files) {
     if (!std::filesystem::exists(path)) continue;
     std::string text;
     bool ok = parser.Parse(path, ext, &text);
@@ -166,16 +166,15 @@ void TestL3ImageParser() {
     std::string noise_text;
     parser.set_min_effective_chars(4);
     bool ok = parser.Parse(noise_bmp, "bmp", &noise_text);
-    std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=4: text length="
-              << noise_text.size() << " (Expected 0/skipped)\n";
+    std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=4: text length=" << noise_text.size()
+              << " (Expected 0/skipped)\n";
     assert(ok);
     assert(noise_text.empty());
 
     // When threshold is 0, text is preserved
     parser.set_min_effective_chars(0);
     parser.Parse(noise_bmp, "bmp", &noise_text);
-    std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=0: text='"
-              << noise_text << "'\n";
+    std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=0: text='" << noise_text << "'\n";
     assert(!noise_text.empty());
   }
 
@@ -202,15 +201,13 @@ void TestStorageFts5ImageSearch() {
   L3ImageParser parser(OcrMode::kNormal, soeasy::test::FindModelsDir());
 
   std::string img_dataset = soeasy::test::FindTestDatasetDir() + "/img";
-  std::vector<std::pair<std::string, std::string>> test_docs = {
-      {img_dataset + "/doc_standard_013.png", "png"},
-      {img_dataset + "/receipt_angled_093.png", "png"},
-      {img_dataset + "/vector_badge_181.svg", "svg"}
-  };
+  std::vector<std::pair<std::string, std::string>> test_docs = {{img_dataset + "/doc_standard_013.png", "png"},
+                                                                {img_dataset + "/receipt_angled_093.png", "png"},
+                                                                {img_dataset + "/vector_badge_181.svg", "svg"}};
 
   // If local dataset does not exist, synthesize test SVG so the test is self-contained
   bool has_any_dataset = false;
-  for (const auto& [p, _] : test_docs) {
+  for (const auto &[p, _] : test_docs) {
     if (std::filesystem::exists(p)) {
       has_any_dataset = true;
       break;
@@ -225,7 +222,7 @@ void TestStorageFts5ImageSearch() {
   }
 
   int64_t doc_id = 1000;
-  for (const auto& [path, ext] : test_docs) {
+  for (const auto &[path, ext] : test_docs) {
     if (!std::filesystem::exists(path)) continue;
     std::string extracted;
     bool ok = parser.Parse(path, ext, &extracted);

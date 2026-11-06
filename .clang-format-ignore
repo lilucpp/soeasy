@@ -1,0 +1,13 @@
+# 自动生成的代码与构建产物
+build/**
+cmake-build-*/**
+bin/**
+dist/**
+*.pb.cc
+*.pb.h
+
+# 外部三方库目录（杜绝格式化第三方源码）
+third_party/**
+vendor/**
+external/**
+submodules/**

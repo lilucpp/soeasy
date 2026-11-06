@@ -20,8 +20,7 @@ std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateEngine(OcrEngineType type) {
   return nullptr;
 }
 
-std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(
-    const std::string& models_base_dir, OcrMode mode) {
+std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(const std::string &models_base_dir, OcrMode mode) {
   std::vector<std::string> candidate_dirs;
   if (!models_base_dir.empty()) {
     candidate_dirs.push_back(models_base_dir);
@@ -45,7 +44,7 @@ std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(
   candidate_dirs.push_back("/usr/share/soeasy/models/ppocr_v6");
 
   std::string found_dir;
-  for (const auto& dir : candidate_dirs) {
+  for (const auto &dir : candidate_dirs) {
     if (std::filesystem::exists(dir + "/PP-OCRv6_tiny_det_onnx/inference.onnx")) {
       found_dir = dir;
       break;

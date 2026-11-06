@@ -10,7 +10,7 @@
 #include "worker/l2_office_parser.h"
 #include "worker/worker_loop.h"
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   int socket_fd = -1;
 #ifdef _WIN32
   std::string pipe_name;
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
       pipe_name = arg.substr(12);
     } else
 #endif
-    if (arg.rfind("--socket-fd=", 0) == 0) {
+        if (arg.rfind("--socket-fd=", 0) == 0) {
       socket_fd = std::stoi(arg.substr(12));
     } else if (arg.rfind("--shm-name=", 0) == 0) {
       shm_name = arg.substr(11);
@@ -82,14 +82,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  HANDLE h_pipe = CreateFileA(
-      pipe_name.c_str(),
-      GENERIC_READ | GENERIC_WRITE,
-      0,
-      NULL,
-      OPEN_EXISTING,
-      0,
-      NULL);
+  HANDLE h_pipe = CreateFileA(pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
 
   if (h_pipe == INVALID_HANDLE_VALUE) {
     LOG_ERROR("Failed to open pipe '{}', error: {}", pipe_name, GetLastError());
@@ -106,7 +99,6 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  return soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count,
-                                       slot_capacity);
+  return soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count, slot_capacity);
 #endif
 }

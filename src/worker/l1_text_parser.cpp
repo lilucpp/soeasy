@@ -1,9 +1,10 @@
 #include "worker/l1_text_parser.h"
 
 #include <iconv.h>
+
+#include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <algorithm>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -25,28 +26,25 @@ template <typename T>
 struct IconvCaller;
 
 template <typename CdType>
-struct IconvCaller<size_t (*)(CdType, char**, size_t*, char**, size_t*)> {
-  static size_t Call(size_t (*func)(CdType, char**, size_t*, char**, size_t*),
-                     CdType cd, const char* in_bytes, size_t* in_left,
-                     char** out_ptr, size_t* out_left) {
-    char* in_ptr = const_cast<char*>(in_bytes);
+struct IconvCaller<size_t (*)(CdType, char **, size_t *, char **, size_t *)> {
+  static size_t Call(size_t (*func)(CdType, char **, size_t *, char **, size_t *), CdType cd, const char *in_bytes,
+                     size_t *in_left, char **out_ptr, size_t *out_left) {
+    char *in_ptr = const_cast<char *>(in_bytes);
     return func(cd, &in_ptr, in_left, out_ptr, out_left);
   }
 };
 
 template <typename CdType>
-struct IconvCaller<size_t (*)(CdType, const char**, size_t*, char**, size_t*)> {
-  static size_t Call(size_t (*func)(CdType, const char**, size_t*, char**, size_t*),
-                     CdType cd, const char* in_bytes, size_t* in_left,
-                     char** out_ptr, size_t* out_left) {
-    const char* in_ptr = in_bytes;
+struct IconvCaller<size_t (*)(CdType, const char **, size_t *, char **, size_t *)> {
+  static size_t Call(size_t (*func)(CdType, const char **, size_t *, char **, size_t *), CdType cd,
+                     const char *in_bytes, size_t *in_left, char **out_ptr, size_t *out_left) {
+    const char *in_ptr = in_bytes;
     return func(cd, &in_ptr, in_left, out_ptr, out_left);
   }
 };
 
 template <typename Fn, typename CdType>
-inline size_t SafeIconv(Fn func, CdType cd, const char* in_bytes, size_t* in_left,
-                        char** out_ptr, size_t* out_left) {
+inline size_t SafeIconv(Fn func, CdType cd, const char *in_bytes, size_t *in_left, char **out_ptr, size_t *out_left) {
   return IconvCaller<Fn>::Call(func, cd, in_bytes, in_left, out_ptr, out_left);
 }
 
@@ -55,26 +53,20 @@ inline size_t SafeIconv(Fn func, CdType cd, const char* in_bytes, size_t* in_lef
 L1TextParser::L1TextParser() = default;
 L1TextParser::~L1TextParser() = default;
 
-std::string L1TextParser::DetectEncoding(const char* raw_bytes, size_t raw_size) {
+std::string L1TextParser::DetectEncoding(const char *raw_bytes, size_t raw_size) {
   if (!raw_bytes || raw_size == 0) {
     return "UTF-8";
   }
 
   // Fast check: BOM detection
-  if (raw_size >= 3 &&
-      static_cast<uint8_t>(raw_bytes[0]) == 0xEF &&
-      static_cast<uint8_t>(raw_bytes[1]) == 0xBB &&
+  if (raw_size >= 3 && static_cast<uint8_t>(raw_bytes[0]) == 0xEF && static_cast<uint8_t>(raw_bytes[1]) == 0xBB &&
       static_cast<uint8_t>(raw_bytes[2]) == 0xBF) {
     return "UTF-8";
   }
-  if (raw_size >= 2 &&
-      static_cast<uint8_t>(raw_bytes[0]) == 0xFF &&
-      static_cast<uint8_t>(raw_bytes[1]) == 0xFE) {
+  if (raw_size >= 2 && static_cast<uint8_t>(raw_bytes[0]) == 0xFF && static_cast<uint8_t>(raw_bytes[1]) == 0xFE) {
     return "UTF-16LE";
   }
-  if (raw_size >= 2 &&
-      static_cast<uint8_t>(raw_bytes[0]) == 0xFE &&
-      static_cast<uint8_t>(raw_bytes[1]) == 0xFF) {
+  if (raw_size >= 2 && static_cast<uint8_t>(raw_bytes[0]) == 0xFE && static_cast<uint8_t>(raw_bytes[1]) == 0xFF) {
     return "UTF-16BE";
   }
 
@@ -88,7 +80,7 @@ std::string L1TextParser::DetectEncoding(const char* raw_bytes, size_t raw_size)
   uchardet_handle_data(handle, raw_bytes, probe_len);
   uchardet_data_end(handle);
 
-  const char* enc = uchardet_get_charset(handle);
+  const char *enc = uchardet_get_charset(handle);
   std::string result = (enc && enc[0] != '\0') ? enc : "UTF-8";
   uchardet_delete(handle);
 
@@ -97,9 +89,8 @@ std::string L1TextParser::DetectEncoding(const char* raw_bytes, size_t raw_size)
   return result;
 }
 
-bool L1TextParser::ConvertToUtf8(const char* in_bytes, size_t in_size,
-                                 const std::string& from_encoding,
-                                 std::string* out_utf8) {
+bool L1TextParser::ConvertToUtf8(const char *in_bytes, size_t in_size, const std::string &from_encoding,
+                                 std::string *out_utf8) {
   if (!out_utf8) {
     return false;
   }
@@ -120,7 +111,7 @@ bool L1TextParser::ConvertToUtf8(const char* in_bytes, size_t in_size,
   size_t in_left = in_size;
   size_t out_capacity = in_size * 4 + 64;
   std::vector<char> out_buf(out_capacity);
-  char* out_ptr = out_buf.data();
+  char *out_ptr = out_buf.data();
   size_t out_left = out_capacity;
 
   size_t res = SafeIconv(&iconv, cd, in_bytes, &in_left, &out_ptr, &out_left);
@@ -135,7 +126,7 @@ bool L1TextParser::ConvertToUtf8(const char* in_bytes, size_t in_size,
   return true;
 }
 
-void L1TextParser::CleanControlChars(std::string* text) {
+void L1TextParser::CleanControlChars(std::string *text) {
   if (!text || text->empty()) {
     return;
   }
@@ -159,7 +150,7 @@ void L1TextParser::CleanControlChars(std::string* text) {
   *text = std::move(clean);
 }
 
-void L1TextParser::StripHtmlTags(std::string* text) {
+void L1TextParser::StripHtmlTags(std::string *text) {
   if (!text || text->empty()) {
     return;
   }
@@ -183,7 +174,7 @@ void L1TextParser::StripHtmlTags(std::string* text) {
   *text = std::move(plain);
 }
 
-void L1TextParser::StripRtfTags(std::string* text) {
+void L1TextParser::StripRtfTags(std::string *text) {
   if (!text || text->empty()) {
     return;
   }
@@ -213,8 +204,7 @@ void L1TextParser::StripRtfTags(std::string* text) {
   *text = std::move(plain);
 }
 
-bool L1TextParser::Parse(const char* raw_bytes, size_t raw_size,
-                         const std::string& ext, std::string* out_utf8_text) {
+bool L1TextParser::Parse(const char *raw_bytes, size_t raw_size, const std::string &ext, std::string *out_utf8_text) {
   if (!out_utf8_text) {
     return false;
   }
@@ -227,11 +217,9 @@ bool L1TextParser::Parse(const char* raw_bytes, size_t raw_size,
   std::string encoding = DetectEncoding(raw_bytes, raw_size);
 
   // Skip UTF-8 BOM if present
-  const char* content_start = raw_bytes;
+  const char *content_start = raw_bytes;
   size_t content_size = raw_size;
-  if (raw_size >= 3 &&
-      static_cast<uint8_t>(raw_bytes[0]) == 0xEF &&
-      static_cast<uint8_t>(raw_bytes[1]) == 0xBB &&
+  if (raw_size >= 3 && static_cast<uint8_t>(raw_bytes[0]) == 0xEF && static_cast<uint8_t>(raw_bytes[1]) == 0xBB &&
       static_cast<uint8_t>(raw_bytes[2]) == 0xBF) {
     content_start += 3;
     content_size -= 3;
@@ -252,8 +240,7 @@ bool L1TextParser::Parse(const char* raw_bytes, size_t raw_size,
   // 3. Ensure valid UTF-8 sequence
   if (!utf8::is_valid(utf8_content.begin(), utf8_content.end())) {
     std::string sanitized;
-    utf8::replace_invalid(utf8_content.begin(), utf8_content.end(),
-                          std::back_inserter(sanitized));
+    utf8::replace_invalid(utf8_content.begin(), utf8_content.end(), std::back_inserter(sanitized));
     utf8_content = std::move(sanitized);
   }
 
@@ -271,8 +258,7 @@ bool L1TextParser::Parse(const char* raw_bytes, size_t raw_size,
   return true;
 }
 
-bool L1TextParser::ParseFile(const std::string& file_path, const std::string& ext,
-                             std::string* out_utf8_text) {
+bool L1TextParser::ParseFile(const std::string &file_path, const std::string &ext, std::string *out_utf8_text) {
   if (!out_utf8_text) {
     return false;
   }
@@ -282,8 +268,7 @@ bool L1TextParser::ParseFile(const std::string& file_path, const std::string& ex
     return false;
   }
 
-  std::string buffer((std::istreambuf_iterator<char>(ifs)),
-                     std::istreambuf_iterator<char>());
+  std::string buffer((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
   return Parse(buffer.data(), buffer.size(), ext, out_utf8_text);
 }
 

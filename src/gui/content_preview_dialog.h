@@ -7,7 +7,6 @@
 #include <QPushButton>
 #include <QString>
 #include <QTextBrowser>
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,11 +20,9 @@ class ContentPreviewDialog : public QDialog {
   Q_OBJECT
 
  public:
-  ContentPreviewDialog(int64_t doc_id, const QString& file_name,
-                       const QString& file_path,
-                       const std::vector<std::string>& keywords,
-                       std::shared_ptr<storage::StorageEngine> storage,
-                       QWidget* parent = nullptr);
+  ContentPreviewDialog(int64_t doc_id, const QString &file_name, const QString &file_path,
+                       const std::vector<std::string> &keywords, std::shared_ptr<storage::StorageEngine> storage,
+                       QWidget *parent = nullptr);
   ~ContentPreviewDialog() override = default;
 
  private slots:
@@ -46,10 +43,10 @@ class ContentPreviewDialog : public QDialog {
   std::vector<std::string> keywords_;
   std::shared_ptr<storage::StorageEngine> storage_;
 
-  QTextBrowser* text_viewer_ = nullptr;
-  QLabel* path_label_ = nullptr;
-  QLabel* match_count_label_ = nullptr;
-  QLineEdit* in_doc_search_edit_ = nullptr;
+  QTextBrowser *text_viewer_ = nullptr;
+  QLabel *path_label_ = nullptr;
+  QLabel *match_count_label_ = nullptr;
+  QLineEdit *in_doc_search_edit_ = nullptr;
 
   std::vector<int> match_positions_;
   int current_match_idx_ = -1;

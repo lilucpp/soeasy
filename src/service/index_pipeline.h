@@ -27,14 +27,13 @@ struct PipelineStats {
 
 class IndexPipeline {
  public:
-  IndexPipeline(std::shared_ptr<IndexConfig> config,
-                std::shared_ptr<WorkerGuard> worker_guard,
+  IndexPipeline(std::shared_ptr<IndexConfig> config, std::shared_ptr<WorkerGuard> worker_guard,
                 std::shared_ptr<storage::StorageEngine> storage_engine);
   ~IndexPipeline();
 
   // Disallow copy and assign
-  IndexPipeline(const IndexPipeline&) = delete;
-  IndexPipeline& operator=(const IndexPipeline&) = delete;
+  IndexPipeline(const IndexPipeline &) = delete;
+  IndexPipeline &operator=(const IndexPipeline &) = delete;
 
   /**
    * @brief Initialize debouncer, name index, and watcher components.
@@ -54,7 +53,7 @@ class IndexPipeline {
   /**
    * @brief Add a directory to monitor and perform initial crawl/indexing.
    */
-  bool AddAndScanDirectory(const std::string& dir_path, bool recursive = true);
+  bool AddAndScanDirectory(const std::string &dir_path, bool recursive = true);
 
   /**
    * @brief Perform initial background scan and indexing of configured directories.
@@ -63,7 +62,8 @@ class IndexPipeline {
    * @param progress_cb Optional callback receiving (indexed_count, total_count, current_path)
    * @return Number of files indexed
    */
-  size_t PerformInitialScan(std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb = nullptr);
+  size_t PerformInitialScan(
+      std::function<void(size_t indexed, size_t total, const std::string &path)> progress_cb = nullptr);
 
   /**
    * @brief Rebuild full-text and filename indexes from scratch.
@@ -72,29 +72,26 @@ class IndexPipeline {
    * @param progress_cb Optional callback receiving (indexed_count, total_count, current_path)
    * @return true on success
    */
-  bool RebuildIndex(std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb = nullptr);
+  bool RebuildIndex(std::function<void(size_t indexed, size_t total, const std::string &path)> progress_cb = nullptr);
 
   /**
    * @brief Process a single settled file change event from debouncer.
    */
-  bool HandleFileChange(const DebouncedEvent& event);
+  bool HandleFileChange(const DebouncedEvent &event);
 
   /**
    * @brief Perform fast filename search via in-memory NameIndex.
    */
-  std::vector<NameMatchResult> SearchFilename(
-      const std::string& query, int limit = 50, int offset = 0,
-      const std::string& path_prefix = "",
-      int* out_total_count = nullptr) const;
+  std::vector<NameMatchResult> SearchFilename(const std::string &query, int limit = 50, int offset = 0,
+                                              const std::string &path_prefix = "",
+                                              int *out_total_count = nullptr) const;
 
   /**
    * @brief Perform encrypted full-text search via StorageEngine with optional path filter.
    */
-  std::vector<storage::SearchResultItem> SearchFulltext(
-      const std::string& query, int limit = 50, int offset = 0,
-      const std::string& path_prefix = "",
-      bool sync_flush = true,
-      int* out_total_count = nullptr);
+  std::vector<storage::SearchResultItem> SearchFulltext(const std::string &query, int limit = 50, int offset = 0,
+                                                        const std::string &path_prefix = "", bool sync_flush = true,
+                                                        int *out_total_count = nullptr);
 
   /**
    * @brief Block until all background write operations in the async queue are committed.
@@ -122,11 +119,11 @@ class IndexPipeline {
   /**
    * @brief Compute canonical 64-bit document ID from filesystem path.
    */
-  static int64_t GenerateDocId(const std::string& path);
+  static int64_t GenerateDocId(const std::string &path);
 
  private:
-  void ScanDirectoryRecursive(const std::string& dir_path);
-  bool IndexSingleFile(const std::string& file_path);
+  void ScanDirectoryRecursive(const std::string &dir_path);
+  bool IndexSingleFile(const std::string &file_path);
 
   std::shared_ptr<IndexConfig> config_;
   std::shared_ptr<WorkerGuard> worker_guard_;

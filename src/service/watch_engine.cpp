@@ -14,8 +14,7 @@
 namespace soeasy {
 namespace service {
 
-WatchEngine::WatchEngine(std::shared_ptr<IndexConfig> config,
-                         std::shared_ptr<EventDebouncer> debouncer)
+WatchEngine::WatchEngine(std::shared_ptr<IndexConfig> config, std::shared_ptr<EventDebouncer> debouncer)
     : config_(std::move(config)), debouncer_(std::move(debouncer)) {
   file_watcher_ = std::make_unique<efsw::FileWatcher>();
 }
@@ -24,8 +23,7 @@ WatchEngine::~WatchEngine() {
   Stop();
 }
 
-std::string WatchEngine::CombinePath(const std::string& dir,
-                                     const std::string& filename) {
+std::string WatchEngine::CombinePath(const std::string &dir, const std::string &filename) {
   if (dir.empty()) {
     return filename;
   }
@@ -63,14 +61,14 @@ void WatchEngine::Stop() {
     debouncer_->Stop(false);
   }
 
-  for (const auto& pair : watch_ids_) {
+  for (const auto &pair : watch_ids_) {
     file_watcher_->removeWatch(pair.second);
   }
   watch_ids_.clear();
   is_watching_ = false;
 }
 
-bool WatchEngine::AddWatch(const std::string& raw_dir_path) {
+bool WatchEngine::AddWatch(const std::string &raw_dir_path) {
   std::string dir_path = common::EncodingUtils::ToUtf8(raw_dir_path);
   std::lock_guard<std::mutex> lock(watch_mutex_);
 
@@ -93,7 +91,7 @@ bool WatchEngine::AddWatch(const std::string& raw_dir_path) {
   return true;
 }
 
-void WatchEngine::RemoveWatch(const std::string& dir_path) {
+void WatchEngine::RemoveWatch(const std::string &dir_path) {
   std::lock_guard<std::mutex> lock(watch_mutex_);
 
   auto it = watch_ids_.find(dir_path);
@@ -111,17 +109,14 @@ std::vector<std::string> WatchEngine::GetWatchedDirectories() const {
   std::lock_guard<std::mutex> lock(watch_mutex_);
   std::vector<std::string> dirs;
   dirs.reserve(watch_ids_.size());
-  for (const auto& pair : watch_ids_) {
+  for (const auto &pair : watch_ids_) {
     dirs.push_back(pair.first);
   }
   return dirs;
 }
 
-void WatchEngine::handleFileAction(efsw::WatchID watchid,
-                                   const std::string& raw_dir,
-                                   const std::string& raw_filename,
-                                   efsw::Action action,
-                                   const std::string& raw_old_filename) {
+void WatchEngine::handleFileAction(efsw::WatchID watchid, const std::string &raw_dir, const std::string &raw_filename,
+                                   efsw::Action action, const std::string &raw_old_filename) {
   std::string dir = common::EncodingUtils::ToUtf8(raw_dir);
   std::string filename = common::EncodingUtils::ToUtf8(raw_filename);
   std::string old_filename = common::EncodingUtils::ToUtf8(raw_old_filename);
@@ -152,7 +147,7 @@ void WatchEngine::handleFileAction(efsw::WatchID watchid,
   }
 
   FileChangeAction mapped_action = FileChangeAction::kModified;
-  const char* action_str = "MODIFIED";
+  const char *action_str = "MODIFIED";
   switch (action) {
     case efsw::Actions::Add:
       mapped_action = FileChangeAction::kAdd;
@@ -176,8 +171,7 @@ void WatchEngine::handleFileAction(efsw::WatchID watchid,
       break;
   }
 
-  LOG_INFO("[WatchEngine] File system change detected: [{}] path: '{}'{}",
-           action_str, full_path,
+  LOG_INFO("[WatchEngine] File system change detected: [{}] path: '{}'{}", action_str, full_path,
            old_full_path.empty() ? "" : (" (from: " + old_full_path + ")"));
 
   if (debouncer_) {

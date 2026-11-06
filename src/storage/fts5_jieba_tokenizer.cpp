@@ -22,39 +22,37 @@ struct JiebaTokenizerInstance {
   std::shared_ptr<cppjieba::Jieba> jieba;
 };
 
-int xCreate(void* user_data, const char** argv, int argc,
-            Fts5Tokenizer** out_tokenizer) {
-  auto* ctx = static_cast<JiebaContext*>(user_data);
+int xCreate(void *user_data, const char **argv, int argc, Fts5Tokenizer **out_tokenizer) {
+  auto *ctx = static_cast<JiebaContext *>(user_data);
   if (!ctx || !ctx->jieba) {
     return SQLITE_ERROR;
   }
 
-  auto* instance = new (std::nothrow) JiebaTokenizerInstance();
+  auto *instance = new (std::nothrow) JiebaTokenizerInstance();
   if (!instance) {
     return SQLITE_NOMEM;
   }
   instance->jieba = ctx->jieba;
 
-  *out_tokenizer = reinterpret_cast<Fts5Tokenizer*>(instance);
+  *out_tokenizer = reinterpret_cast<Fts5Tokenizer *>(instance);
   return SQLITE_OK;
 }
 
-void xDelete(Fts5Tokenizer* tokenizer) {
+void xDelete(Fts5Tokenizer *tokenizer) {
   if (tokenizer) {
-    auto* instance = reinterpret_cast<JiebaTokenizerInstance*>(tokenizer);
+    auto *instance = reinterpret_cast<JiebaTokenizerInstance *>(tokenizer);
     delete instance;
   }
 }
 
-int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
-              const char* text, int text_len,
-              int (*token_cb)(void* ctx, int tflags, const char* token,
-                              int token_len, int start_offset, int end_offset)) {
+int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, int text_len,
+              int (*token_cb)(void *ctx, int tflags, const char *token, int token_len, int start_offset,
+                              int end_offset)) {
   if (!tokenizer || !text || text_len <= 0) {
     return SQLITE_OK;
   }
 
-  auto* instance = reinterpret_cast<JiebaTokenizerInstance*>(tokenizer);
+  auto *instance = reinterpret_cast<JiebaTokenizerInstance *>(tokenizer);
   if (!instance->jieba) {
     return SQLITE_ERROR;
   }
@@ -64,8 +62,7 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
   // Ensure valid UTF-8 sequence
   if (!utf8::is_valid(sentence.begin(), sentence.end())) {
     std::string cleaned;
-    utf8::replace_invalid(sentence.begin(), sentence.end(),
-                          std::back_inserter(cleaned));
+    utf8::replace_invalid(sentence.begin(), sentence.end(), std::back_inserter(cleaned));
     sentence = std::move(cleaned);
   }
 
@@ -74,7 +71,7 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
   // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
   instance->jieba->Cut(sentence, words, true);
 
-  for (const auto& w : words) {
+  for (const auto &w : words) {
     if (w.word.empty()) {
       continue;
     }
@@ -93,7 +90,7 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
 
     // Fold ASCII uppercase to lowercase for case-insensitive matching
     std::string lower_token = w.word;
-    for (char& c : lower_token) {
+    for (char &c : lower_token) {
       if (c >= 'A' && c <= 'Z') {
         c = static_cast<char>(c + 32);
       }
@@ -103,8 +100,7 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
     int end_pos = static_cast<int>(w.offset + w.word.size());
 
     // 1. Emit primary word token
-    int rc = token_cb(ctx, 0, lower_token.data(),
-                      static_cast<int>(lower_token.size()), start_pos, end_pos);
+    int rc = token_cb(ctx, 0, lower_token.data(), static_cast<int>(lower_token.size()), start_pos, end_pos);
     if (rc != SQLITE_OK) {
       return rc;
     }
@@ -145,10 +141,8 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
           size_t char_len = next - it;
           std::string single_char(it, next);
 
-          rc = token_cb(ctx, FTS5_TOKEN_COLOCATED, single_char.data(),
-                        static_cast<int>(single_char.size()),
-                        static_cast<int>(byte_offset),
-                        static_cast<int>(byte_offset + char_len));
+          rc = token_cb(ctx, FTS5_TOKEN_COLOCATED, single_char.data(), static_cast<int>(single_char.size()),
+                        static_cast<int>(byte_offset), static_cast<int>(byte_offset + char_len));
           if (rc != SQLITE_OK) {
             return rc;
           }
@@ -163,22 +157,22 @@ int xTokenize(Fts5Tokenizer* tokenizer, void* ctx, int flags,
   return SQLITE_OK;
 }
 
-void xDestroyContext(void* user_data) {
+void xDestroyContext(void *user_data) {
   if (user_data) {
-    auto* ctx = static_cast<JiebaContext*>(user_data);
+    auto *ctx = static_cast<JiebaContext *>(user_data);
     delete ctx;
   }
 }
 
 }  // namespace
 
-int RegisterFts5JiebaTokenizer(sqlite3* db, const std::string& dict_dir) {
+int RegisterFts5JiebaTokenizer(sqlite3 *db, const std::string &dict_dir) {
   if (!db) {
     return SQLITE_MISUSE;
   }
 
-  fts5_api* api_ptr = nullptr;
-  sqlite3_stmt* stmt = nullptr;
+  fts5_api *api_ptr = nullptr;
+  sqlite3_stmt *stmt = nullptr;
   int rc = sqlite3_prepare_v2(db, "SELECT fts5(?1)", -1, &stmt, nullptr);
   if (rc != SQLITE_OK) {
     return rc;
@@ -203,18 +197,16 @@ int RegisterFts5JiebaTokenizer(sqlite3* db, const std::string& dict_dir) {
   std::string idf_path = dict_dir + "/idf.utf8";
   std::string stop_words_path = dict_dir + "/stop_words.utf8";
 
-  auto jieba_ptr = std::make_shared<cppjieba::Jieba>(
-      dict_path, model_path, user_dict_path, idf_path, stop_words_path);
+  auto jieba_ptr = std::make_shared<cppjieba::Jieba>(dict_path, model_path, user_dict_path, idf_path, stop_words_path);
 
-  auto* ctx = new JiebaContext{jieba_ptr};
+  auto *ctx = new JiebaContext{jieba_ptr};
 
   fts5_tokenizer tokenizer;
   tokenizer.xCreate = xCreate;
   tokenizer.xDelete = xDelete;
   tokenizer.xTokenize = xTokenize;
 
-  rc = api_ptr->xCreateTokenizer(api_ptr, "jieba", ctx, &tokenizer,
-                                 xDestroyContext);
+  rc = api_ptr->xCreateTokenizer(api_ptr, "jieba", ctx, &tokenizer, xDestroyContext);
   return rc;
 }
 

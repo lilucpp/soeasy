@@ -5,7 +5,6 @@
 #include <QMouseEvent>
 #include <QTableWidget>
 #include <QTimer>
-
 #include <memory>
 #include <vector>
 
@@ -32,28 +31,26 @@ class ResultView : public QTableWidget {
   Q_OBJECT
 
  public:
-  explicit ResultView(QWidget* parent = nullptr);
+  explicit ResultView(QWidget *parent = nullptr);
   ~ResultView() override = default;
 
   void SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage);
-  void SetCurrentQuery(const QString& query);
-  void SetResults(const std::vector<DisplayResultItem>& items);
-  void AppendResults(const std::vector<DisplayResultItem>& items);
+  void SetCurrentQuery(const QString &query);
+  void SetResults(const std::vector<DisplayResultItem> &items);
+  void AppendResults(const std::vector<DisplayResultItem> &items);
   void ClearResults();
   void RetranslateUi();
 
   void EnsureSnippetForRows(int start_row, int end_row);
 
  signals:
-  void FileSelected(int64_t doc_id, const QString& file_name,
-                    const QString& file_path);
-  void FileOpenRequested(int64_t doc_id, const QString& file_name,
-                         const QString& file_path);
+  void FileSelected(int64_t doc_id, const QString &file_name, const QString &file_path);
+  void FileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path);
   void LoadMoreRequested();
 
  protected:
-  void mouseMoveEvent(QMouseEvent* event) override;
-  void leaveEvent(QEvent* event) override;
+  void mouseMoveEvent(QMouseEvent *event) override;
+  void leaveEvent(QEvent *event) override;
 
  private slots:
   void OnItemDoubleClicked(int row, int column);
@@ -62,12 +59,12 @@ class ResultView : public QTableWidget {
 
  private:
   void SetupTable();
-  void PopulateRow(int row, const DisplayResultItem& item);
+  void PopulateRow(int row, const DisplayResultItem &item);
 
   std::vector<DisplayResultItem> current_items_;
-  HoverPreviewPopup* hover_popup_ = nullptr;
-  QTimer* hover_timer_ = nullptr;
-  QTimer* scroll_timer_ = nullptr;
+  HoverPreviewPopup *hover_popup_ = nullptr;
+  QTimer *hover_timer_ = nullptr;
+  QTimer *scroll_timer_ = nullptr;
 
   std::shared_ptr<storage::StorageEngine> storage_;
   QString current_query_;

@@ -25,7 +25,7 @@ namespace service {
 
 namespace {
 
-std::string ExtractFileName(const std::string& path) {
+std::string ExtractFileName(const std::string &path) {
   size_t pos = path.find_last_of("/\\");
   if (pos == std::string::npos) {
     return path;
@@ -33,7 +33,7 @@ std::string ExtractFileName(const std::string& path) {
   return path.substr(pos + 1);
 }
 
-std::string ExtractExtension(const std::string& filename) {
+std::string ExtractExtension(const std::string &filename) {
   size_t dot_pos = filename.find_last_of('.');
   if (dot_pos == std::string::npos || dot_pos == 0) {
     return "";
@@ -45,7 +45,7 @@ std::string ExtractExtension(const std::string& filename) {
 
 }  // namespace
 
-int64_t IndexPipeline::GenerateDocId(const std::string& path) {
+int64_t IndexPipeline::GenerateDocId(const std::string &path) {
   constexpr uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
   constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
   uint64_t hash = kFnvOffsetBasis;
@@ -57,13 +57,9 @@ int64_t IndexPipeline::GenerateDocId(const std::string& path) {
   return static_cast<int64_t>(hash & 0x7FFFFFFFFFFFFFFFLL);
 }
 
-IndexPipeline::IndexPipeline(
-    std::shared_ptr<IndexConfig> config,
-    std::shared_ptr<WorkerGuard> worker_guard,
-    std::shared_ptr<storage::StorageEngine> storage_engine)
-    : config_(std::move(config)),
-      worker_guard_(std::move(worker_guard)),
-      storage_engine_(std::move(storage_engine)) {}
+IndexPipeline::IndexPipeline(std::shared_ptr<IndexConfig> config, std::shared_ptr<WorkerGuard> worker_guard,
+                             std::shared_ptr<storage::StorageEngine> storage_engine)
+    : config_(std::move(config)), worker_guard_(std::move(worker_guard)), storage_engine_(std::move(storage_engine)) {}
 
 IndexPipeline::~IndexPipeline() {
   StopLiveWatch();
@@ -75,15 +71,13 @@ bool IndexPipeline::Init() {
   }
 
   debouncer_ = std::make_shared<EventDebouncer>(config_->debounce_ms());
-  debouncer_->SetCallback([this](const DebouncedEvent& ev) {
-    HandleFileChange(ev);
-  });
+  debouncer_->SetCallback([this](const DebouncedEvent &ev) { HandleFileChange(ev); });
 
   name_index_ = std::make_shared<NameIndex>();
 
   // Cold-start recovery: load existing files metadata directly from database into NameIndex
   auto existing_files = storage_engine_->GetAllFilesMetadata();
-  for (const auto& f : existing_files) {
+  for (const auto &f : existing_files) {
     NameRecord rec;
     rec.doc_id = f.doc_id;
     rec.file_name = f.file_name;
@@ -93,8 +87,7 @@ bool IndexPipeline::Init() {
     rec.mtime = f.mtime;
     name_index_->Upsert(rec);
   }
-  LOG_INFO("[IndexPipeline] Cold-started NameIndex with {} files from database.",
-           existing_files.size());
+  LOG_INFO("[IndexPipeline] Cold-started NameIndex with {} files from database.", existing_files.size());
 
   watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
   write_queue_ = std::make_shared<AsyncWriteQueue>();
@@ -127,8 +120,7 @@ void IndexPipeline::FlushWriteQueue() {
   }
 }
 
-bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
-                                        bool recursive) {
+bool IndexPipeline::AddAndScanDirectory(const std::string &dir_path, bool recursive) {
   if (!watch_engine_) {
     return false;
   }
@@ -144,7 +136,7 @@ bool IndexPipeline::AddAndScanDirectory(const std::string& dir_path,
   return true;
 }
 
-void IndexPipeline::ScanDirectoryRecursive(const std::string& dir_path) {
+void IndexPipeline::ScanDirectoryRecursive(const std::string &dir_path) {
   try {
     auto target_p = common::EncodingUtils::PathFromUtf8(dir_path);
     for (auto it = std::filesystem::recursive_directory_iterator(
@@ -177,13 +169,13 @@ void IndexPipeline::ScanDirectoryRecursive(const std::string& dir_path) {
         }
       }
     }
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     LOG_WARN("[IndexPipeline] Directory scan error on '{}': {}", dir_path, e.what());
   }
 }
 
 size_t IndexPipeline::PerformInitialScan(
-    std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb) {
+    std::function<void(size_t indexed, size_t total, const std::string &path)> progress_cb) {
   auto watched_dirs = config_->GetIndexedDirectories();
   if (watched_dirs.empty() && watch_engine_) {
     watched_dirs = watch_engine_->GetWatchedDirectories();
@@ -191,14 +183,14 @@ size_t IndexPipeline::PerformInitialScan(
 
   // 1. Register watches for live filesystem events
   if (watch_engine_) {
-    for (const auto& dir : watched_dirs) {
+    for (const auto &dir : watched_dirs) {
       watch_engine_->AddWatch(dir);
     }
   }
 
   // 2. Discover all candidate files
   std::vector<std::string> files_to_index;
-  for (const auto& dir : watched_dirs) {
+  for (const auto &dir : watched_dirs) {
     try {
       auto target_p = common::EncodingUtils::PathFromUtf8(dir);
       for (auto it = std::filesystem::recursive_directory_iterator(
@@ -220,21 +212,22 @@ size_t IndexPipeline::PerformInitialScan(
           if (!common::EncodingUtils::GetFileStat(fpath, &fsize, &fmtime)) {
             try {
               fsize = it->file_size();
-            } catch (...) {}
+            } catch (...) {
+            }
           }
           if (config_->ShouldIndex(fpath, ext, fsize)) {
             files_to_index.push_back(fpath);
           }
         }
       }
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       LOG_WARN("[IndexPipeline] Initial scan error on '{}': {}", dir, e.what());
     }
   }
 
   size_t total_files = files_to_index.size();
-  LOG_INFO("[IndexPipeline] Initial scan discovered {} files to index across {} directories.",
-           total_files, watched_dirs.size());
+  LOG_INFO("[IndexPipeline] Initial scan discovered {} files to index across {} directories.", total_files,
+           watched_dirs.size());
 
   size_t indexed_count = 0;
   size_t processed_count = 0;
@@ -244,7 +237,7 @@ size_t IndexPipeline::PerformInitialScan(
   }
 
   cancel_scan_.store(false);
-  for (const auto& fpath : files_to_index) {
+  for (const auto &fpath : files_to_index) {
     if (cancel_scan_.load()) {
       LOG_INFO("[IndexPipeline] Initial scan cancelled.");
       break;
@@ -273,7 +266,7 @@ size_t IndexPipeline::PerformInitialScan(
 }
 
 bool IndexPipeline::RebuildIndex(
-    std::function<void(size_t indexed, size_t total, const std::string& path)> progress_cb) {
+    std::function<void(size_t indexed, size_t total, const std::string &path)> progress_cb) {
   LOG_INFO("[IndexPipeline] Starting full index rebuild from scratch...");
   auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -294,8 +287,7 @@ bool IndexPipeline::RebuildIndex(
   FlushWriteQueue();
   if (storage_engine_) {
     if (!storage_engine_->ClearAll()) {
-      LOG_ERROR("[IndexPipeline] Failed to reset storage engine tables: {}",
-                storage_engine_->GetLastError());
+      LOG_ERROR("[IndexPipeline] Failed to reset storage engine tables: {}", storage_engine_->GetLastError());
       return false;
     }
     LOG_INFO("[IndexPipeline] Cleared persistent storage and FTS5 index.");
@@ -319,7 +311,7 @@ bool IndexPipeline::RebuildIndex(
 
   // Collect candidate files first for progress calculation
   std::vector<std::string> files_to_index;
-  for (const auto& dir : watched_dirs) {
+  for (const auto &dir : watched_dirs) {
     try {
       auto target_p = common::EncodingUtils::PathFromUtf8(dir);
       for (auto it = std::filesystem::recursive_directory_iterator(
@@ -341,7 +333,8 @@ bool IndexPipeline::RebuildIndex(
           if (!common::EncodingUtils::GetFileStat(fpath, &fsize, &fmtime)) {
             try {
               fsize = it->file_size();
-            } catch (...) {}
+            } catch (...) {
+            }
           }
 
           if (config_->ShouldIndex(fpath, ext, fsize)) {
@@ -349,14 +342,14 @@ bool IndexPipeline::RebuildIndex(
           }
         }
       }
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       LOG_WARN("[IndexPipeline] Error enumerating directory '{}': {}", dir, e.what());
     }
   }
 
   size_t total_files = files_to_index.size();
-  LOG_INFO("[IndexPipeline] Rebuild discovered {} files to index across {} directories.",
-           total_files, watched_dirs.size());
+  LOG_INFO("[IndexPipeline] Rebuild discovered {} files to index across {} directories.", total_files,
+           watched_dirs.size());
 
   size_t indexed_count = 0;
   size_t processed_count = 0;
@@ -366,7 +359,7 @@ bool IndexPipeline::RebuildIndex(
   }
 
   cancel_scan_.store(false);
-  for (const auto& fpath : files_to_index) {
+  for (const auto &fpath : files_to_index) {
     if (cancel_scan_.load()) {
       LOG_INFO("[IndexPipeline] Rebuild cancelled.");
       break;
@@ -392,14 +385,13 @@ bool IndexPipeline::RebuildIndex(
   // 6. Restore watcher if it was running
   if (was_watching && watch_engine_) {
     watch_engine_->Start();
-    for (const auto& dir : watched_dirs) {
+    for (const auto &dir : watched_dirs) {
       watch_engine_->AddWatch(dir);
     }
   }
 
   auto end_time = std::chrono::high_resolution_clock::now();
-  double elapsed_ms =
-      std::chrono::duration<double, std::milli>(end_time - start_time).count();
+  double elapsed_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
   LOG_INFO(
       "[IndexPipeline] Index rebuild finished in {:.2f} ms | Indexed: {} / {} files | "
@@ -409,7 +401,7 @@ bool IndexPipeline::RebuildIndex(
   return true;
 }
 
-bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
+bool IndexPipeline::IndexSingleFile(const std::string &file_path) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   uint64_t file_size = 0;
@@ -430,8 +422,7 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   {
     std::lock_guard<std::mutex> lock(failed_files_mutex_);
     auto it = failed_files_.find(file_path);
-    if (it != failed_files_.end() && it->second.file_size == file_size &&
-        it->second.mtime == file_mtime) {
+    if (it != failed_files_.end() && it->second.file_size == file_size && it->second.mtime == file_mtime) {
       return false;
     }
   }
@@ -463,8 +454,8 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   // 1. Fast sanity check (magic, EOCD, encryption precheck, dynamic timeout)
   auto precheck = DocPrechecker::Check(file_path, ext, file_size);
   if (precheck.status != PrecheckStatus::kValid) {
-    LOG_WARN("[IndexPipeline] Precheck skipped body for '{}' (ext: '{}') | reason: {}",
-             file_path, ext, precheck.reason);
+    LOG_WARN("[IndexPipeline] Precheck skipped body for '{}' (ext: '{}') | reason: {}", file_path, ext,
+             precheck.reason);
     // Index filename into NameIndex and StorageEngine with empty body
     NameRecord rec;
     rec.doc_id = doc_id;
@@ -476,12 +467,10 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     name_index_->Upsert(rec);
 
     if (write_queue_ && write_queue_->is_running()) {
-      WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
-                 file_size, file_mtime, 1, ""};
+      WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext, file_size, file_mtime, 1, ""};
       write_queue_->Enqueue(std::move(op));
     } else if (storage_engine_) {
-      storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
-                                     file_mtime, 1, "");
+      storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size, file_mtime, 1, "");
     }
 
     std::lock_guard<std::mutex> lock(failed_files_mutex_);
@@ -496,8 +485,7 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   auto parse_start = std::chrono::high_resolution_clock::now();
   bool ok = worker_guard_->ExecuteTask(task, &res);
   auto parse_end = std::chrono::high_resolution_clock::now();
-  double parse_cost_ms =
-      std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
+  double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
   if (!ok || res.status != TaskStatus::kSuccess) {
     if (res.slot_id > 0) {
@@ -508,8 +496,7 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     LOG_ERROR(
         "[Parser] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | "
         "status: {} | err: {}",
-        file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status),
-        res.error_message);
+        file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status), res.error_message);
 
     // Index filename into NameIndex and StorageEngine so it remains searchable
     NameRecord rec;
@@ -522,12 +509,10 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
     name_index_->Upsert(rec);
 
     if (write_queue_ && write_queue_->is_running()) {
-      WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
-                 file_size, file_mtime, 1, ""};
+      WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext, file_size, file_mtime, 1, ""};
       write_queue_->Enqueue(std::move(op));
     } else if (storage_engine_) {
-      storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size,
-                                     file_mtime, 1, "");
+      storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size, file_mtime, 1, "");
     }
 
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
@@ -536,15 +521,13 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   }
 
   // 2. Read extracted plain text from shared memory slot
-  const uint8_t* extracted_data = nullptr;
+  const uint8_t *extracted_data = nullptr;
   size_t extracted_bytes = 0;
-  bool read_ok = worker_guard_->shm_pool()->ReadSlot(
-      res.slot_id, &extracted_data, &extracted_bytes);
+  bool read_ok = worker_guard_->shm_pool()->ReadSlot(res.slot_id, &extracted_data, &extracted_bytes);
 
   std::string text_content;
   if (read_ok && extracted_data && extracted_bytes > 0) {
-    text_content.assign(reinterpret_cast<const char*>(extracted_data),
-                        extracted_bytes);
+    text_content.assign(reinterpret_cast<const char *>(extracted_data), extracted_bytes);
   }
   worker_guard_->shm_pool()->ReleaseSlot(res.slot_id);
 
@@ -560,17 +543,15 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
 
   // 4. Update encrypted persistent database via async write queue
   if (write_queue_ && write_queue_->is_running()) {
-    WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext,
-               file_size, file_mtime, 1, std::move(text_content)};
+    WriteOp op{WriteOpType::kIndex,    doc_id, file_path, filename, ext, file_size, file_mtime, 1,
+               std::move(text_content)};
     write_queue_->Enqueue(std::move(op));
   } else if (storage_engine_) {
-    storage_engine_->IndexDocument(
-        doc_id, file_path, filename, ext, file_size, file_mtime, 1, text_content);
+    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size, file_mtime, 1, text_content);
   }
 
   auto total_end = std::chrono::high_resolution_clock::now();
-  double total_cost_ms =
-      std::chrono::duration<double, std::milli>(total_end - start_time).count();
+  double total_cost_ms = std::chrono::duration<double, std::milli>(total_end - start_time).count();
 
   {
     std::lock_guard<std::mutex> lock(stats_mutex_);
@@ -586,7 +567,7 @@ bool IndexPipeline::IndexSingleFile(const std::string& file_path) {
   return true;
 }
 
-bool IndexPipeline::HandleFileChange(const DebouncedEvent& event) {
+bool IndexPipeline::HandleFileChange(const DebouncedEvent &event) {
   int64_t doc_id = GenerateDocId(event.file_path);
 
   if (event.action == FileChangeAction::kDelete) {
@@ -619,10 +600,8 @@ bool IndexPipeline::HandleFileChange(const DebouncedEvent& event) {
   return true;
 }
 
-std::vector<NameMatchResult> IndexPipeline::SearchFilename(
-    const std::string& query, int limit, int offset,
-    const std::string& path_prefix,
-    int* out_total_count) const {
+std::vector<NameMatchResult> IndexPipeline::SearchFilename(const std::string &query, int limit, int offset,
+                                                           const std::string &path_prefix, int *out_total_count) const {
   if (!name_index_) {
     if (out_total_count) {
       *out_total_count = 0;
@@ -632,11 +611,9 @@ std::vector<NameMatchResult> IndexPipeline::SearchFilename(
   return name_index_->Search(query, limit, offset, path_prefix, out_total_count);
 }
 
-std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(
-    const std::string& query, int limit, int offset,
-    const std::string& path_prefix,
-    bool sync_flush,
-    int* out_total_count) {
+std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(const std::string &query, int limit, int offset,
+                                                                     const std::string &path_prefix, bool sync_flush,
+                                                                     int *out_total_count) {
   if (sync_flush) {
     FlushWriteQueue();
   }

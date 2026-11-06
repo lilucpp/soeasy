@@ -26,25 +26,24 @@
 #include "storage/storage_engine.h"
 #include "tests/test_helper.h"
 
-#define CHECK(expr)                                                          \
-  do {                                                                       \
-    if (!(expr)) {                                                           \
-      std::cerr << "[-] CHECK FAILED: " #expr " at " << __FILE__ << ":"     \
-                << __LINE__ << std::endl;                                    \
-      std::abort();                                                          \
-    }                                                                        \
+#define CHECK(expr)                                                                               \
+  do {                                                                                            \
+    if (!(expr)) {                                                                                \
+      std::cerr << "[-] CHECK FAILED: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+      std::abort();                                                                               \
+    }                                                                                             \
   } while (0)
 
 namespace {
 
-void WriteFile(const std::string& path, const std::string& content) {
+void WriteFile(const std::string &path, const std::string &content) {
   std::ofstream ofs(path, std::ios::binary);
   ofs.write(content.data(), content.size());
 }
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   // Run Qt in headless offscreen mode
   setenv("QT_QPA_PLATFORM", "offscreen", 1);
 
@@ -78,14 +77,12 @@ int main(int argc, char* argv[]) {
     QString captured_scope;
     bool settings_clicked = false;
 
-    QObject::connect(&bar, &soeasy::gui::SearchBar::SearchTriggered,
-                     [&](const QString& q, int m, const QString& s) {
-                       captured_query = q;
-                       captured_mode = m;
-                       captured_scope = s;
-                     });
-    QObject::connect(&bar, &soeasy::gui::SearchBar::SettingsRequested,
-                     [&]() { settings_clicked = true; });
+    QObject::connect(&bar, &soeasy::gui::SearchBar::SearchTriggered, [&](const QString &q, int m, const QString &s) {
+      captured_query = q;
+      captured_mode = m;
+      captured_scope = s;
+    });
+    QObject::connect(&bar, &soeasy::gui::SearchBar::SettingsRequested, [&]() { settings_clicked = true; });
 
     // Simulate user typing query
     bar.SetQuery("人工智能");
@@ -165,15 +162,15 @@ int main(int argc, char* argv[]) {
       soeasy::gui::SettingsDialog dlg_en(config);
       dlg_en.resize(800, 600);
       dlg_en.show();
-      auto* tab_widget = dlg_en.findChild<QTabWidget*>();
+      auto *tab_widget = dlg_en.findChild<QTabWidget *>();
       if (tab_widget) {
         tab_widget->setCurrentIndex(3);
       }
       app.processEvents();
       QPixmap pix = dlg_en.grab();
       bool ok = pix.save("/tmp/soeasy_settings_dlg_en.png");
-      std::cout << "  -> dlg_en save ok: " << ok << ", isNull: " << pix.isNull()
-                << ", size: " << pix.width() << "x" << pix.height() << "\n";
+      std::cout << "  -> dlg_en save ok: " << ok << ", isNull: " << pix.isNull() << ", size: " << pix.width() << "x"
+                << pix.height() << "\n";
     }
 
     std::string test_cfg_file = "/tmp/soeasy_i18n_test_config.json";
@@ -196,7 +193,7 @@ int main(int argc, char* argv[]) {
       soeasy::gui::SettingsDialog dlg_zh(config);
       dlg_zh.resize(800, 600);
       dlg_zh.show();
-      auto* tab_widget = dlg_zh.findChild<QTabWidget*>();
+      auto *tab_widget = dlg_zh.findChild<QTabWidget *>();
       if (tab_widget) {
         tab_widget->setCurrentIndex(3);
       }
@@ -214,12 +211,8 @@ int main(int argc, char* argv[]) {
   std::cout << "\n[Step 3] 测试 HoverPreviewPopup 悬浮摘要卡片渲染...\n";
   {
     soeasy::gui::HoverPreviewPopup popup;
-    popup.ShowSnippet(
-        QPoint(100, 100),
-        "深度学习笔记.md",
-        "/tmp/soeasy_gui_test/深度学习笔记.md",
-        "这里是正文摘要: <mark>深度学习</mark> 是机器学习的核心分支...",
-        1024, 1700000000, 0.95);
+    popup.ShowSnippet(QPoint(100, 100), "深度学习笔记.md", "/tmp/soeasy_gui_test/深度学习笔记.md",
+                      "这里是正文摘要: <mark>深度学习</mark> 是机器学习的核心分支...", 1024, 1700000000, 0.95);
 
     CHECK(popup.isVisible());
     popup.HidePopup();
@@ -247,8 +240,7 @@ int main(int argc, char* argv[]) {
   config->AddSupportedExtension("md");
   config->AddSupportedExtension("doc");
 
-  auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(
-      config, worker_guard, storage);
+  auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(config, worker_guard, storage);
   bool pipe_ok = pipeline->Init();
   CHECK(pipe_ok);
 
@@ -278,8 +270,7 @@ int main(int argc, char* argv[]) {
   }
   CHECK(pipeline->name_index());
   CHECK(pipeline->name_index()->size() >= 2);
-  std::cout << "  -> 数据集已完成实时解析与倒排索引构建, 索引文件数: "
-            << pipeline->name_index()->size() << "\n";
+  std::cout << "  -> 数据集已完成实时解析与倒排索引构建, 索引文件数: " << pipeline->name_index()->size() << "\n";
 
   // -------------------------------------------------------------
   // Test 5: ContentPreviewDialog with decompressed text & keywords
@@ -289,8 +280,7 @@ int main(int argc, char* argv[]) {
     int64_t doc_id = soeasy::service::IndexPipeline::GenerateDocId(doc1);
     std::vector<std::string> kws = {"人工智能", "SoEasy"};
 
-    soeasy::gui::ContentPreviewDialog preview_dlg(
-        doc_id, "chinese_ai.txt", QString::fromStdString(doc1), kws, storage);
+    soeasy::gui::ContentPreviewDialog preview_dlg(doc_id, "chinese_ai.txt", QString::fromStdString(doc1), kws, storage);
 
     // Verify document loaded and displayed
     CHECK(preview_dlg.windowTitle().contains("chinese_ai.txt"));
@@ -309,8 +299,7 @@ int main(int argc, char* argv[]) {
     auto results_ai = pipeline->SearchFulltext("人工智能", 10, 0);
     CHECK(!results_ai.empty());
     CHECK(results_ai[0].file_name == "chinese_ai.txt");
-    std::cout << "  -> 全文检索命中: " << results_ai[0].file_name
-              << ", 摘要: " << results_ai[0].snippet << "\n";
+    std::cout << "  -> 全文检索命中: " << results_ai[0].file_name << ", 摘要: " << results_ai[0].snippet << "\n";
 
     // Trigger filename search: "rust"
     auto results_rust = pipeline->SearchFilename("rust", 10);
@@ -319,8 +308,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  -> 文件名秒搜命中: " << results_rust[0].file_name << "\n";
 
     // Path scoped search test
-    auto results_scoped =
-        pipeline->SearchFulltext("深度学习", 10, 0, test_dir);
+    auto results_scoped = pipeline->SearchFulltext("深度学习", 10, 0, test_dir);
     CHECK(!results_scoped.empty());
     std::cout << "  -> 路径范围限定检索有效, 命中条数: " << results_scoped.size() << "\n";
 
@@ -328,25 +316,21 @@ int main(int argc, char* argv[]) {
     app.processEvents();
 
     QPixmap pix_unselected = main_win.grab();
-    const QString unselected_path =
-        QDir::tempPath() + "/soeasy_unselected_preview_ui.png";
+    const QString unselected_path = QDir::tempPath() + "/soeasy_unselected_preview_ui.png";
     pix_unselected.save(unselected_path);
-    std::cout << "  -> 未选中/初始预览界面截屏已成功保存: "
-              << unselected_path.toStdString() << "\n";
+    std::cout << "  -> 未选中/初始预览界面截屏已成功保存: " << unselected_path.toStdString() << "\n";
 
     // Test Master-Detail live preview panel integration
-    auto* sbar = main_win.findChild<soeasy::gui::SearchBar*>();
+    auto *sbar = main_win.findChild<soeasy::gui::SearchBar *>();
     if (sbar) {
       sbar->SetQuery("规格说明");
     }
     app.processEvents();
 
     QPixmap pix = main_win.grab();
-    const QString snapshot_path =
-        QDir::tempPath() + "/soeasy_master_detail_ui.png";
+    const QString snapshot_path = QDir::tempPath() + "/soeasy_master_detail_ui.png";
     pix.save(snapshot_path);
-    std::cout << "  -> Master-Detail 双栏即时预览界面截屏已成功保存: "
-              << snapshot_path.toStdString() << "\n";
+    std::cout << "  -> Master-Detail 双栏即时预览界面截屏已成功保存: " << snapshot_path.toStdString() << "\n";
   }
 
   // -------------------------------------------------------------

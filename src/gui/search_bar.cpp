@@ -1,6 +1,4 @@
 #include "gui/search_bar.h"
-#include "gui/icon_provider.h"
-#include "gui/i18n.h"
 
 #include <QAction>
 #include <QDir>
@@ -9,25 +7,27 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
+#include "gui/i18n.h"
+#include "gui/icon_provider.h"
+
 namespace soeasy {
 namespace gui {
 
-SearchBar::SearchBar(QWidget* parent) : QWidget(parent) {
+SearchBar::SearchBar(QWidget *parent) : QWidget(parent) {
   SetupUi();
 }
 
 void SearchBar::SetupUi() {
-  auto* main_layout = new QVBoxLayout(this);
+  auto *main_layout = new QVBoxLayout(this);
   main_layout->setContentsMargins(0, 0, 0, 0);
   main_layout->setSpacing(8);
 
   // Row 1: Query Input + Mode Selector + Settings Button
-  auto* query_layout = new QHBoxLayout();
+  auto *query_layout = new QHBoxLayout();
   query_layout->setSpacing(8);
 
   query_edit_ = new QLineEdit(this);
-  query_edit_->setPlaceholderText(
-      "输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, \"精确词组\", 前缀*）...");
+  query_edit_->setPlaceholderText("输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, \"精确词组\", 前缀*）...");
   query_edit_->addAction(IconProvider::GetSearchIcon(), QLineEdit::LeadingPosition);
   query_edit_->setClearButtonEnabled(true);
   query_edit_->setStyleSheet(
@@ -47,42 +47,42 @@ void SearchBar::SetupUi() {
   mode_combo_->addItem("全文倒排 (FTS5)", kModeFulltext);
   mode_combo_->addItem("文件名秒搜", kModeFilename);
   QString arrow_path = IconProvider::GetDownArrowImagePath();
-  mode_combo_->setStyleSheet(QString(
-      "QComboBox {"
-      "  font-size: 13px;"
-      "  padding: 5px 28px 5px 12px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #FFFFFF;"
-      "  color: #1E293B;"
-      "}"
-      "QComboBox:hover {"
-      "  border-color: #94A3B8;"
-      "}"
-      "QComboBox:focus {"
-      "  border: 1.5px solid #0284C7;"
-      "}"
-      "QComboBox::drop-down {"
-      "  subcontrol-origin: padding;"
-      "  subcontrol-position: top right;"
-      "  width: 24px;"
-      "  border-left: none;"
-      "}"
-      "QComboBox::down-arrow {"
-      "  image: url(%1);"
-      "  width: 12px;"
-      "  height: 8px;"
-      "  margin-right: 8px;"
-      "}"
-      "QComboBox QAbstractItemView {"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #FFFFFF;"
-      "  selection-background-color: #BDDDF8;"
-      "  selection-color: #0F172A;"
-      "  outline: none;"
-      "  padding: 4px;"
-      "}").arg(arrow_path));
+  mode_combo_->setStyleSheet(QString("QComboBox {"
+                                     "  font-size: 13px;"
+                                     "  padding: 5px 28px 5px 12px;"
+                                     "  border: 1px solid #CBD5E1;"
+                                     "  border-radius: 6px;"
+                                     "  background-color: #FFFFFF;"
+                                     "  color: #1E293B;"
+                                     "}"
+                                     "QComboBox:hover {"
+                                     "  border-color: #94A3B8;"
+                                     "}"
+                                     "QComboBox:focus {"
+                                     "  border: 1.5px solid #0284C7;"
+                                     "}"
+                                     "QComboBox::drop-down {"
+                                     "  subcontrol-origin: padding;"
+                                     "  subcontrol-position: top right;"
+                                     "  width: 24px;"
+                                     "  border-left: none;"
+                                     "}"
+                                     "QComboBox::down-arrow {"
+                                     "  image: url(%1);"
+                                     "  width: 12px;"
+                                     "  height: 8px;"
+                                     "  margin-right: 8px;"
+                                     "}"
+                                     "QComboBox QAbstractItemView {"
+                                     "  border: 1px solid #CBD5E1;"
+                                     "  border-radius: 6px;"
+                                     "  background-color: #FFFFFF;"
+                                     "  selection-background-color: #BDDDF8;"
+                                     "  selection-color: #0F172A;"
+                                     "  outline: none;"
+                                     "  padding: 4px;"
+                                     "}")
+                                 .arg(arrow_path));
 
   btn_toggle_preview_ = new QPushButton("◨ 预览", this);
   btn_toggle_preview_->setToolTip("切换右侧即时正文预览面板 (Ctrl+P)");
@@ -130,7 +130,7 @@ void SearchBar::SetupUi() {
   main_layout->addLayout(query_layout);
 
   // Row 2: Search Path Scope constraint
-  auto* scope_layout = new QHBoxLayout();
+  auto *scope_layout = new QHBoxLayout();
   scope_layout->setSpacing(6);
 
   label_scope_ = new QLabel("限定搜索路径:", this);
@@ -201,8 +201,7 @@ void SearchBar::SetupUi() {
 
   connect(query_edit_, &QLineEdit::textChanged, this, &SearchBar::OnQueryTextChanged);
   connect(query_edit_, &QLineEdit::returnPressed, this, &SearchBar::OnQueryImmediate);
-  connect(mode_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          &SearchBar::OnQueryImmediate);
+  connect(mode_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &SearchBar::OnQueryImmediate);
   connect(scope_edit_, &QLineEdit::textChanged, this, &SearchBar::OnQueryTextChanged);
   connect(scope_edit_, &QLineEdit::returnPressed, this, &SearchBar::OnQueryImmediate);
 
@@ -262,7 +261,7 @@ QString SearchBar::path_scope() const {
   return scope_edit_->text().trimmed();
 }
 
-void SearchBar::SetQuery(const QString& query) {
+void SearchBar::SetQuery(const QString &query) {
   query_edit_->setText(query);
   OnQueryImmediate();
 }
@@ -274,7 +273,7 @@ void SearchBar::SetMode(SearchMode mode) {
   }
 }
 
-void SearchBar::SetPathScope(const QString& path) {
+void SearchBar::SetPathScope(const QString &path) {
   scope_edit_->setText(path);
 }
 

@@ -1,5 +1,4 @@
 #include "gui/settings_dialog.h"
-#include "gui/i18n.h"
 
 #include <QFileDialog>
 #include <QFont>
@@ -14,19 +13,18 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
-
 #include <algorithm>
 #include <string>
 #include <vector>
 
 #include "common/format_categories.h"
 #include "common/logger.h"
+#include "gui/i18n.h"
 
 namespace soeasy {
 namespace gui {
 
-SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config,
-                               QWidget* parent)
+SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent)
     : QDialog(parent), config_(std::move(config)) {
   setWindowTitle("SoEasy - 索引配置与设置中心");
   resize(800, 620);
@@ -39,7 +37,8 @@ void SettingsDialog::SetupUi() {
       "QDialog {"
       "  background-color: #FFFAFA;"
       "  color: #1E293B;"
-      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;"
+      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
+      "'WenQuanYi Micro Hei', sans-serif;"
       "}"
       "QTabWidget::pane {"
       "  border: 1px solid #E2E8F0;"
@@ -115,7 +114,7 @@ void SettingsDialog::SetupUi() {
       "  background-color: #0369A1;"
       "}");
 
-  auto* main_layout = new QVBoxLayout(this);
+  auto *main_layout = new QVBoxLayout(this);
   tab_widget_ = new QTabWidget(this);
   tab_widget_->setElideMode(Qt::ElideNone);
   if (tab_widget_->tabBar()) {
@@ -126,8 +125,8 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   // Tab 0: 常规与语言 (General & Language)
   // -------------------------------------------------------------
-  auto* tab_gen = new QWidget();
-  auto* form_gen = new QFormLayout(tab_gen);
+  auto *tab_gen = new QWidget();
+  auto *form_gen = new QFormLayout(tab_gen);
   form_gen->setContentsMargins(16, 16, 16, 16);
   form_gen->setSpacing(12);
 
@@ -152,13 +151,13 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   // Tab 1: 索引监控目录 (Indexed Directories)
   // -------------------------------------------------------------
-  auto* tab_dirs = new QWidget();
-  auto* layout_dirs = new QVBoxLayout(tab_dirs);
+  auto *tab_dirs = new QWidget();
+  auto *layout_dirs = new QVBoxLayout(tab_dirs);
 
   label_dirs_ = new QLabel("系统将实时监控并自动为以下目录及其子文件夹建立索引：", tab_dirs);
   dirs_list_ = new QListWidget(tab_dirs);
 
-  auto* btn_layout_dirs = new QHBoxLayout();
+  auto *btn_layout_dirs = new QHBoxLayout();
   btn_add_dir_ = new QPushButton("添加目录...", tab_dirs);
   btn_rm_dir_ = new QPushButton("移除所选", tab_dirs);
   btn_layout_dirs->addWidget(btn_add_dir_);
@@ -176,13 +175,13 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   // Tab 2: 排除目录与规则 (Excluded Patterns)
   // -------------------------------------------------------------
-  auto* tab_patterns = new QWidget();
-  auto* layout_patterns = new QVBoxLayout(tab_patterns);
+  auto *tab_patterns = new QWidget();
+  auto *layout_patterns = new QVBoxLayout(tab_patterns);
 
   label_patterns_ = new QLabel("匹配以下路径规则的目录将被自动忽略（不建立倒排索引）：", tab_patterns);
   patterns_list_ = new QListWidget(tab_patterns);
 
-  auto* add_pattern_layout = new QHBoxLayout();
+  auto *add_pattern_layout = new QHBoxLayout();
   new_pattern_edit_ = new QLineEdit(tab_patterns);
   new_pattern_edit_->setPlaceholderText("例如: /.git/ 或 /node_modules/");
   btn_add_pattern_ = new QPushButton("添加规则", tab_patterns);
@@ -202,17 +201,17 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   // Tab 3: 支持与自定义文件格式 (File Extensions & Categories)
   // -------------------------------------------------------------
-  auto* tab_exts = new QWidget();
-  auto* layout_exts = new QVBoxLayout(tab_exts);
+  auto *tab_exts = new QWidget();
+  auto *layout_exts = new QVBoxLayout(tab_exts);
 
   // Group 1: 嵌入图片解析选项
   group_ocr_ = new QGroupBox("高级解析能力", tab_exts);
-  auto* layout_ocr = new QVBoxLayout(group_ocr_);
-  embedded_image_ocr_check_ = new QCheckBox(
-      "提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)", group_ocr_);
+  auto *layout_ocr = new QVBoxLayout(group_ocr_);
+  embedded_image_ocr_check_ = new QCheckBox("提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)", group_ocr_);
   label_ocr_tip_ = new QLabel(
       "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n"
-      "    不勾选可获得极致解析性能（纯文本毫秒级完成索引）。", group_ocr_);
+      "    不勾选可获得极致解析性能（纯文本毫秒级完成索引）。",
+      group_ocr_);
   label_ocr_tip_->setStyleSheet("color: #666; font-size: 12px; margin-left: 20px;");
   layout_ocr->addWidget(embedded_image_ocr_check_);
   layout_ocr->addWidget(label_ocr_tip_);
@@ -232,8 +231,8 @@ void SettingsDialog::SetupUi() {
 
   // Populate preset categories into tree
   size_t cat_idx = 0;
-  for (const auto& cat : common::GetPresetCategories()) {
-    auto* cat_item = new QTreeWidgetItem(exts_tree_);
+  for (const auto &cat : common::GetPresetCategories()) {
+    auto *cat_item = new QTreeWidgetItem(exts_tree_);
     cat_item->setData(0, Qt::UserRole + 1, static_cast<qulonglong>(cat_idx));
     cat_item->setText(0, I18n::Instance().GetCategoryName(cat_idx, QString::fromUtf8(cat.name)));
     cat_item->setText(1, I18n::Instance().GetCategoryDesc(cat_idx, QString::fromUtf8(cat.desc)));
@@ -242,8 +241,8 @@ void SettingsDialog::SetupUi() {
     cat_font.setBold(true);
     cat_item->setFont(0, cat_font);
 
-    for (const auto& fmt : cat.formats) {
-      auto* fmt_item = new QTreeWidgetItem(cat_item);
+    for (const auto &fmt : cat.formats) {
+      auto *fmt_item = new QTreeWidgetItem(cat_item);
       fmt_item->setText(0, QString::fromLatin1(fmt.ext));
       fmt_item->setData(0, Qt::UserRole, QString::fromLatin1(fmt.ext));
       fmt_item->setData(1, Qt::UserRole, QString::fromUtf8(fmt.desc));
@@ -285,7 +284,7 @@ void SettingsDialog::SetupUi() {
   exts_tree_->expandAll();
 
   // Custom extension management bar
-  auto* add_custom_layout = new QHBoxLayout();
+  auto *add_custom_layout = new QHBoxLayout();
   label_custom_ = new QLabel("添加自定义扩展名:", tab_exts);
   new_custom_ext_edit_ = new QLineEdit(tab_exts);
   new_custom_ext_edit_->setPlaceholderText("例如: vue 或 proto (无需加点)");
@@ -299,7 +298,7 @@ void SettingsDialog::SetupUi() {
   layout_exts->addLayout(add_custom_layout);
 
   // Bottom action bar
-  auto* bottom_exts_layout = new QHBoxLayout();
+  auto *bottom_exts_layout = new QHBoxLayout();
   btn_select_all_ = new QPushButton("全选", tab_exts);
   btn_deselect_all_ = new QPushButton("全不选", tab_exts);
   btn_reset_exts_ = new QPushButton("恢复推荐默认", tab_exts);
@@ -325,8 +324,8 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   // Tab 4: 性能与调度参数 (Performance)
   // -------------------------------------------------------------
-  auto* tab_perf = new QWidget();
-  auto* form_perf = new QFormLayout(tab_perf);
+  auto *tab_perf = new QWidget();
+  auto *form_perf = new QFormLayout(tab_perf);
 
   debounce_spin_ = new QSpinBox(tab_perf);
   debounce_spin_->setRange(50, 5000);
@@ -373,10 +372,11 @@ void SettingsDialog::SetupUi() {
   log_sync_check_ = new QCheckBox("同步即时落盘模式 (Sync Flush，每条日志即刻刷盘，排查异常卡死)", tab_perf);
   form_perf->addRow("落盘同步模式:", log_sync_check_);
 
-  doctotext_log_check_ = new QCheckBox("启用 DocToText 详细文档解析日志 (默认关闭，用于排查 Office/PDF 解析问题)", tab_perf);
+  doctotext_log_check_ =
+      new QCheckBox("启用 DocToText 详细文档解析日志 (默认关闭，用于排查 Office/PDF 解析问题)", tab_perf);
   form_perf->addRow("DocToText 日志:", doctotext_log_check_);
 
-  auto* dt_path_layout = new QHBoxLayout();
+  auto *dt_path_layout = new QHBoxLayout();
   doctotext_log_path_edit_ = new QLineEdit(tab_perf);
   doctotext_log_path_edit_->setPlaceholderText("留空则默认输出至 logs/doctotext.log");
   dt_browse_btn_ = new QPushButton("浏览...", tab_perf);
@@ -395,7 +395,7 @@ void SettingsDialog::SetupUi() {
   // -------------------------------------------------------------
   // Bottom Buttons: 重建索引 / 保存 / 取消
   // -------------------------------------------------------------
-  auto* bottom_layout = new QHBoxLayout();
+  auto *bottom_layout = new QHBoxLayout();
   btn_rebuild_ = new QPushButton("清空并重建索引...", this);
   btn_rebuild_->setStyleSheet("QPushButton { color: #D32F2F; }");
   bottom_layout->addWidget(btn_rebuild_);
@@ -460,12 +460,12 @@ void SettingsDialog::RetranslateUi() {
   if (exts_tree_) {
     exts_tree_->setHeaderLabels({Tr("tree_header_col0"), Tr("tree_header_col1")});
     for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-      auto* cat_item = exts_tree_->topLevelItem(i);
+      auto *cat_item = exts_tree_->topLevelItem(i);
       if (cat_item == custom_category_item_) {
         cat_item->setText(0, Tr("custom_category_name"));
         cat_item->setText(1, Tr("custom_category_desc"));
         for (int c = 0; c < cat_item->childCount(); ++c) {
-          auto* child = cat_item->child(c);
+          auto *child = cat_item->child(c);
           child->setText(1, Tr("custom_ext_desc"));
         }
       } else {
@@ -476,7 +476,7 @@ void SettingsDialog::RetranslateUi() {
           cat_item->setText(1, I18n::Instance().GetCategoryDesc(c_idx, cat_item->text(1)));
         }
         for (int c = 0; c < cat_item->childCount(); ++c) {
-          auto* fmt_item = cat_item->child(c);
+          auto *fmt_item = cat_item->child(c);
           QString ext = fmt_item->data(0, Qt::UserRole).toString();
           QString default_desc = fmt_item->data(1, Qt::UserRole).toString();
           bool is_planned = fmt_item->data(1, Qt::UserRole + 1).toBool();
@@ -534,10 +534,8 @@ void SettingsDialog::RetranslateUi() {
 }
 
 void SettingsDialog::OnRebuildIndex() {
-  auto reply = QMessageBox::warning(
-      this, Tr("rebuild_confirm_title"),
-      Tr("rebuild_confirm_text"),
-      QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+  auto reply = QMessageBox::warning(this, Tr("rebuild_confirm_title"), Tr("rebuild_confirm_text"),
+                                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
   if (reply == QMessageBox::Yes) {
     emit RebuildIndexRequested();
     accept();
@@ -557,12 +555,12 @@ void SettingsDialog::PopulateFromConfig() {
   }
 
   dirs_list_->clear();
-  for (const auto& dir : config_->GetIndexedDirectories()) {
+  for (const auto &dir : config_->GetIndexedDirectories()) {
     dirs_list_->addItem(QString::fromStdString(dir));
   }
 
   patterns_list_->clear();
-  for (const auto& pat : config_->GetExcludedPatterns()) {
+  for (const auto &pat : config_->GetExcludedPatterns()) {
     patterns_list_->addItem(QString::fromStdString(pat));
   }
 
@@ -579,8 +577,8 @@ void SettingsDialog::PopulateFromConfig() {
   }
 
   // Populate custom extensions
-  for (const auto& c_ext : custom_exts) {
-    auto* item = new QTreeWidgetItem(custom_category_item_);
+  for (const auto &c_ext : custom_exts) {
+    auto *item = new QTreeWidgetItem(custom_category_item_);
     QString q_ext = QString::fromStdString(c_ext);
     item->setText(0, q_ext);
     item->setText(1, Tr("custom_ext_desc"));
@@ -592,10 +590,10 @@ void SettingsDialog::PopulateFromConfig() {
 
   // Match check states across all categories in tree
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     if (cat_item == custom_category_item_) continue;
     for (int j = 0; j < cat_item->childCount(); ++j) {
-      auto* fmt_item = cat_item->child(j);
+      auto *fmt_item = cat_item->child(j);
       if (fmt_item->isDisabled()) {
         fmt_item->setCheckState(0, Qt::Unchecked);
         continue;
@@ -628,9 +626,8 @@ void SettingsDialog::PopulateFromConfig() {
 }
 
 void SettingsDialog::OnAddDirectory() {
-  QString dir = QFileDialog::getExistingDirectory(
-      this, Tr("dlg_select_dir"), QDir::homePath(),
-      QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+  QString dir = QFileDialog::getExistingDirectory(this, Tr("dlg_select_dir"), QDir::homePath(),
+                                                  QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
   if (!dir.isEmpty()) {
     // Check duplicate
     for (int i = 0; i < dirs_list_->count(); ++i) {
@@ -669,7 +666,7 @@ void SettingsDialog::UpdateExtensionsCount() {
   int enabled_formats = 0;
 
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     for (int j = 0; j < cat_item->childCount(); ++j) {
       total_formats++;
       if (cat_item->child(j)->checkState(0) == Qt::Checked) {
@@ -679,13 +676,11 @@ void SettingsDialog::UpdateExtensionsCount() {
   }
 
   if (exts_count_label_) {
-    exts_count_label_->setText(Tr("exts_count_status")
-                                   .arg(enabled_formats)
-                                   .arg(total_formats));
+    exts_count_label_->setText(Tr("exts_count_status").arg(enabled_formats).arg(total_formats));
   }
 }
 
-void SettingsDialog::OnTreeItemChanged(QTreeWidgetItem* item, int column) {
+void SettingsDialog::OnTreeItemChanged(QTreeWidgetItem *item, int column) {
   if (column != 0 || is_updating_tree_) return;
   is_updating_tree_ = true;
 
@@ -708,12 +703,12 @@ void SettingsDialog::OnTreeItemChanged(QTreeWidgetItem* item, int column) {
 void SettingsDialog::OnSelectAllExtensions() {
   is_updating_tree_ = true;
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     if (!cat_item->isDisabled()) {
       cat_item->setCheckState(0, Qt::Checked);
     }
     for (int j = 0; j < cat_item->childCount(); ++j) {
-      auto* child = cat_item->child(j);
+      auto *child = cat_item->child(j);
       if (!child->isDisabled()) {
         child->setCheckState(0, Qt::Checked);
       }
@@ -726,7 +721,7 @@ void SettingsDialog::OnSelectAllExtensions() {
 void SettingsDialog::OnDeselectAllExtensions() {
   is_updating_tree_ = true;
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     cat_item->setCheckState(0, Qt::Unchecked);
     for (int j = 0; j < cat_item->childCount(); ++j) {
       cat_item->child(j)->setCheckState(0, Qt::Unchecked);
@@ -742,9 +737,9 @@ void SettingsDialog::OnResetExtensionsToDefault() {
   auto default_exts = service::IndexConfig::GetDefaultSupportedExtensions();
 
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     for (int j = 0; j < cat_item->childCount(); ++j) {
-      auto* fmt_item = cat_item->child(j);
+      auto *fmt_item = cat_item->child(j);
       if (fmt_item->isDisabled()) {
         fmt_item->setCheckState(0, Qt::Unchecked);
         continue;
@@ -767,7 +762,7 @@ void SettingsDialog::OnAddCustomExtension() {
 
   // Check if extension already exists in tree
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     for (int j = 0; j < cat_item->childCount(); ++j) {
       if (cat_item->child(j)->data(0, Qt::UserRole).toString().toLower() == ext) {
         cat_item->child(j)->setCheckState(0, Qt::Checked);
@@ -781,7 +776,7 @@ void SettingsDialog::OnAddCustomExtension() {
   }
 
   is_updating_tree_ = true;
-  auto* item = new QTreeWidgetItem(custom_category_item_);
+  auto *item = new QTreeWidgetItem(custom_category_item_);
   item->setText(0, ext);
   item->setText(1, Tr("custom_ext_desc"));
   item->setData(0, Qt::UserRole, ext);
@@ -795,7 +790,7 @@ void SettingsDialog::OnAddCustomExtension() {
 }
 
 void SettingsDialog::OnRemoveCustomExtension() {
-  auto* current = exts_tree_->currentItem();
+  auto *current = exts_tree_->currentItem();
   if (!current) {
     QMessageBox::information(this, Tr("msg_tip"), Tr("msg_select_custom_first"));
     return;
@@ -814,9 +809,8 @@ void SettingsDialog::OnBrowseDocToTextLogPath() {
   if (cur_path.isEmpty()) {
     cur_path = QDir::homePath() + "/doctotext.log";
   }
-  QString file = QFileDialog::getSaveFileName(
-      this, Tr("dlg_select_log"), cur_path,
-      "Log Files (*.log);;Text Files (*.txt);;All Files (*)");
+  QString file = QFileDialog::getSaveFileName(this, Tr("dlg_select_log"), cur_path,
+                                              "Log Files (*.log);;Text Files (*.txt);;All Files (*)");
   if (!file.isEmpty()) {
     doctotext_log_path_edit_->setText(file);
   }
@@ -854,10 +848,10 @@ void SettingsDialog::OnSaveAndApply() {
   std::vector<std::string> custom_exts;
 
   for (int i = 0; i < exts_tree_->topLevelItemCount(); ++i) {
-    auto* cat_item = exts_tree_->topLevelItem(i);
+    auto *cat_item = exts_tree_->topLevelItem(i);
     bool is_custom = (cat_item == custom_category_item_);
     for (int j = 0; j < cat_item->childCount(); ++j) {
-      auto* fmt_item = cat_item->child(j);
+      auto *fmt_item = cat_item->child(j);
       if (fmt_item->isDisabled()) {
         continue;
       }

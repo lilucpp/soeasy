@@ -24,9 +24,8 @@ class OcrEngineFactory {
    * @brief Create and automatically initialize the default PP-OCRv6 engine.
    * Resolves models from standard installation paths or models/ directory.
    */
-  static std::unique_ptr<IOcrEngine> CreateDefaultEngine(
-      const std::string& models_base_dir = "",
-      OcrMode mode = OcrMode::kNormal);
+  static std::unique_ptr<IOcrEngine> CreateDefaultEngine(const std::string &models_base_dir = "",
+                                                         OcrMode mode = OcrMode::kNormal);
 };
 
 }  // namespace ocr

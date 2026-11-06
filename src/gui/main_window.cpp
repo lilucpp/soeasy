@@ -1,6 +1,4 @@
 #include "gui/main_window.h"
-#include "gui/icon_provider.h"
-#include "gui/i18n.h"
 
 #include <QApplication>
 #include <QDateTime>
@@ -12,7 +10,6 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
-
 #include <atomic>
 #include <chrono>
 #include <sstream>
@@ -21,13 +18,15 @@
 #include <vector>
 
 #include "common/logger.h"
+#include "gui/i18n.h"
+#include "gui/icon_provider.h"
 
 namespace soeasy {
 namespace gui {
 
 namespace {
 
-std::vector<std::string> SplitQueryKeywords(const std::string& query) {
+std::vector<std::string> SplitQueryKeywords(const std::string &query) {
   std::vector<std::string> kws;
   std::istringstream iss(query);
   std::string word;
@@ -51,8 +50,7 @@ std::vector<std::string> SplitQueryKeywords(const std::string& query) {
 
 }  // namespace
 
-MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
-                       QWidget* parent)
+MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget *parent)
     : QMainWindow(parent), pipeline_(std::move(pipeline)) {
   if (pipeline_ && pipeline_->config()) {
     I18n::Instance().SetLanguage(pipeline_->config()->ui_language());
@@ -63,10 +61,8 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline,
   resize(1280, 750);
   SetupUi();
 
-  connect(this, &MainWindow::IndexProgressUpdated, this,
-          &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
-  connect(this, &MainWindow::IndexFinished, this,
-          &MainWindow::OnIndexFinished, Qt::QueuedConnection);
+  connect(this, &MainWindow::IndexProgressUpdated, this, &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
+  connect(this, &MainWindow::IndexFinished, this, &MainWindow::OnIndexFinished, Qt::QueuedConnection);
 
   // Initial stats
   UpdateStatusBar(0, 0.0);
@@ -81,7 +77,7 @@ MainWindow::~MainWindow() {
   }
 }
 
-void MainWindow::changeEvent(QEvent* event) {
+void MainWindow::changeEvent(QEvent *event) {
   QMainWindow::changeEvent(event);
   if (event->type() == QEvent::WindowStateChange) {
     if (title_bar_) {
@@ -90,7 +86,7 @@ void MainWindow::changeEvent(QEvent* event) {
   }
 }
 
-void MainWindow::showEvent(QShowEvent* event) {
+void MainWindow::showEvent(QShowEvent *event) {
   QMainWindow::showEvent(event);
   if (!splitter_initialized_ && splitter_) {
     int total_width = splitter_->width();
@@ -106,7 +102,8 @@ void MainWindow::SetupUi() {
       "QMainWindow {"
       "  background-color: #FFFAFA;"
       "  border: 1px solid #CBD5E1;"
-      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;"
+      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
+      "'WenQuanYi Micro Hei', sans-serif;"
       "}"
       "#centralWidget {"
       "  background-color: #FFFAFA;"
@@ -122,10 +119,10 @@ void MainWindow::SetupUi() {
       "  border: none;"
       "}");
 
-  auto* central_widget = new QWidget(this);
+  auto *central_widget = new QWidget(this);
   central_widget->setObjectName("centralWidget");
 
-  auto* root_layout = new QVBoxLayout(central_widget);
+  auto *root_layout = new QVBoxLayout(central_widget);
   root_layout->setContentsMargins(0, 0, 0, 0);
   root_layout->setSpacing(0);
 
@@ -134,8 +131,8 @@ void MainWindow::SetupUi() {
   root_layout->addWidget(title_bar_);
 
   // 2. Main Content Container
-  auto* content_widget = new QWidget(central_widget);
-  auto* content_layout = new QVBoxLayout(content_widget);
+  auto *content_widget = new QWidget(central_widget);
+  auto *content_layout = new QVBoxLayout(content_widget);
   content_layout->setContentsMargins(12, 6, 12, 6);
   content_layout->setSpacing(8);
 
@@ -249,18 +246,12 @@ void MainWindow::SetupUi() {
   statusBar()->addPermanentWidget(status_latency_label_);
 
   // Signal Connections
-  connect(search_bar_, &SearchBar::SearchTriggered, this,
-          &MainWindow::OnSearchTriggered);
-  connect(search_bar_, &SearchBar::SettingsRequested, this,
-          &MainWindow::OnOpenSettings);
-  connect(search_bar_, &SearchBar::PreviewToggleRequested, this,
-          &MainWindow::OnTogglePreview);
-  connect(result_view_, &ResultView::FileSelected, this,
-          &MainWindow::OnFileSelected);
-  connect(result_view_, &ResultView::FileOpenRequested, this,
-          &MainWindow::OnFileOpenRequested);
-  connect(result_view_, &ResultView::LoadMoreRequested, this,
-          &MainWindow::OnLoadMoreRequested);
+  connect(search_bar_, &SearchBar::SearchTriggered, this, &MainWindow::OnSearchTriggered);
+  connect(search_bar_, &SearchBar::SettingsRequested, this, &MainWindow::OnOpenSettings);
+  connect(search_bar_, &SearchBar::PreviewToggleRequested, this, &MainWindow::OnTogglePreview);
+  connect(result_view_, &ResultView::FileSelected, this, &MainWindow::OnFileSelected);
+  connect(result_view_, &ResultView::FileOpenRequested, this, &MainWindow::OnFileOpenRequested);
+  connect(result_view_, &ResultView::LoadMoreRequested, this, &MainWindow::OnLoadMoreRequested);
 
   RetranslateUi();
 }
@@ -301,8 +292,7 @@ void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
   }
 }
 
-void MainWindow::OnSearchTriggered(const QString& query, int mode,
-                                   const QString& path_scope) {
+void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString &path_scope) {
   current_query_ = query;
   current_search_mode_ = mode;
   current_search_path_scope_ = path_scope;
@@ -341,7 +331,7 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
     }
     auto keywords = SplitQueryKeywords(query_std);
 
-    for (const auto& hit : hits) {
+    for (const auto &hit : hits) {
       DisplayResultItem item;
       item.doc_id = hit.doc_id;
       item.file_name = QString::fromStdString(hit.file_name);
@@ -355,8 +345,7 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
       std::string snippet_raw = hit.snippet;
       item.has_body_snippet = hit.has_body_snippet;
       if (snippet_raw.empty()) {
-        snippet_raw = storage::StorageEngine::GenerateSnippet(
-            hit.file_name, keywords, 100);
+        snippet_raw = storage::StorageEngine::GenerateSnippet(hit.file_name, keywords, 100);
       }
       if (snippet_raw.empty()) {
         snippet_raw = hit.file_name;
@@ -372,7 +361,7 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
     }
     auto keywords = SplitQueryKeywords(query_std);
 
-    for (const auto& nh : name_hits) {
+    for (const auto &nh : name_hits) {
       DisplayResultItem item;
       item.doc_id = nh.doc_id;
       item.file_name = QString::fromStdString(nh.file_name);
@@ -381,8 +370,7 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
       item.file_size = nh.file_size;
       item.mtime = nh.mtime;
       item.score = nh.score;
-      std::string name_snippet = storage::StorageEngine::GenerateSnippet(
-          nh.file_name, keywords, 100);
+      std::string name_snippet = storage::StorageEngine::GenerateSnippet(nh.file_name, keywords, 100);
       if (name_snippet.empty()) {
         name_snippet = nh.file_name;
       }
@@ -392,8 +380,7 @@ void MainWindow::OnSearchTriggered(const QString& query, int mode,
   }
 
   auto t1 = std::chrono::high_resolution_clock::now();
-  double cost_ms =
-      std::chrono::duration<double, std::milli>(t1 - t0).count();
+  double cost_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
   total_matched_count_ = total_count;
   last_search_cost_ms_ = cost_ms;
@@ -420,13 +407,15 @@ void MainWindow::OnLoadMoreRequested() {
   auto t0 = std::chrono::high_resolution_clock::now();
 
   if (current_search_mode_ == kModeFulltext) {
-    auto hits = pipeline_->SearchFulltext(query_std, kPageSize, current_search_offset_, scope_std, /*sync_flush=*/false);
-    if (static_cast<int>(hits.size()) < kPageSize || current_search_offset_ + static_cast<int>(hits.size()) >= total_matched_count_) {
+    auto hits =
+        pipeline_->SearchFulltext(query_std, kPageSize, current_search_offset_, scope_std, /*sync_flush=*/false);
+    if (static_cast<int>(hits.size()) < kPageSize ||
+        current_search_offset_ + static_cast<int>(hits.size()) >= total_matched_count_) {
       has_more_results_ = false;
     }
     auto keywords = SplitQueryKeywords(query_std);
 
-    for (const auto& hit : hits) {
+    for (const auto &hit : hits) {
       DisplayResultItem item;
       item.doc_id = hit.doc_id;
       item.file_name = QString::fromStdString(hit.file_name);
@@ -439,8 +428,7 @@ void MainWindow::OnLoadMoreRequested() {
       std::string snippet_raw = hit.snippet;
       item.has_body_snippet = hit.has_body_snippet;
       if (snippet_raw.empty()) {
-        snippet_raw = storage::StorageEngine::GenerateSnippet(
-            hit.file_name, keywords, 100);
+        snippet_raw = storage::StorageEngine::GenerateSnippet(hit.file_name, keywords, 100);
       }
       if (snippet_raw.empty()) {
         snippet_raw = hit.file_name;
@@ -450,12 +438,13 @@ void MainWindow::OnLoadMoreRequested() {
     }
   } else {
     auto name_hits = pipeline_->SearchFilename(query_std, kPageSize, current_search_offset_, scope_std);
-    if (static_cast<int>(name_hits.size()) < kPageSize || current_search_offset_ + static_cast<int>(name_hits.size()) >= total_matched_count_) {
+    if (static_cast<int>(name_hits.size()) < kPageSize ||
+        current_search_offset_ + static_cast<int>(name_hits.size()) >= total_matched_count_) {
       has_more_results_ = false;
     }
     auto keywords = SplitQueryKeywords(query_std);
 
-    for (const auto& nh : name_hits) {
+    for (const auto &nh : name_hits) {
       DisplayResultItem item;
       item.doc_id = nh.doc_id;
       item.file_name = QString::fromStdString(nh.file_name);
@@ -464,8 +453,7 @@ void MainWindow::OnLoadMoreRequested() {
       item.file_size = nh.file_size;
       item.mtime = nh.mtime;
       item.score = nh.score;
-      std::string name_snippet = storage::StorageEngine::GenerateSnippet(
-          nh.file_name, keywords, 100);
+      std::string name_snippet = storage::StorageEngine::GenerateSnippet(nh.file_name, keywords, 100);
       if (name_snippet.empty()) {
         name_snippet = nh.file_name;
       }
@@ -475,8 +463,7 @@ void MainWindow::OnLoadMoreRequested() {
   }
 
   auto t1 = std::chrono::high_resolution_clock::now();
-  double cost_ms =
-      std::chrono::duration<double, std::milli>(t1 - t0).count();
+  double cost_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
   if (!new_display_items.empty()) {
     current_search_offset_ += static_cast<int>(new_display_items.size());
@@ -490,8 +477,7 @@ void MainWindow::OnLoadMoreRequested() {
   is_loading_more_ = false;
 }
 
-void MainWindow::OnFileSelected(int64_t doc_id, const QString& file_name,
-                                const QString& file_path) {
+void MainWindow::OnFileSelected(int64_t doc_id, const QString &file_name, const QString &file_path) {
   if (preview_panel_ && preview_panel_->isVisible()) {
     auto keywords = SplitQueryKeywords(current_query_.toStdString());
     preview_panel_->LoadDocument(doc_id, file_name, file_path, keywords);
@@ -504,8 +490,7 @@ void MainWindow::OnTogglePreview() {
   }
 }
 
-void MainWindow::OnFileOpenRequested(int64_t doc_id, const QString& file_name,
-                                     const QString& file_path) {
+void MainWindow::OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path) {
   OnFileSelected(doc_id, file_name, file_path);
 
   // Modern desktop search standard: double click directly opens with OS default program
@@ -523,10 +508,8 @@ void MainWindow::OnOpenSettings() {
     return;
   }
   SettingsDialog dlg(pipeline_->config(), this);
-  connect(&dlg, &SettingsDialog::SettingsApplied, this,
-          &MainWindow::OnSettingsApplied);
-  connect(&dlg, &SettingsDialog::RebuildIndexRequested, this,
-          &MainWindow::OnRebuildIndexRequested);
+  connect(&dlg, &SettingsDialog::SettingsApplied, this, &MainWindow::OnSettingsApplied);
+  connect(&dlg, &SettingsDialog::RebuildIndexRequested, this, &MainWindow::OnRebuildIndexRequested);
   dlg.exec();
 }
 
@@ -539,11 +522,8 @@ void MainWindow::OnSettingsApplied() {
     common::Logger::SetSyncMode(pipeline_->config()->log_sync());
     if (pipeline_->worker_guard()) {
       pipeline_->worker_guard()->SetLoggingOptions(
-          pipeline_->config()->log_level(),
-          pipeline_->config()->log_console(),
-          pipeline_->config()->log_sync(),
-          pipeline_->config()->doctotext_logging(),
-          pipeline_->config()->doctotext_log_path(),
+          pipeline_->config()->log_level(), pipeline_->config()->log_console(), pipeline_->config()->log_sync(),
+          pipeline_->config()->doctotext_logging(), pipeline_->config()->doctotext_log_path(),
           pipeline_->config()->enable_embedded_image_ocr());
     }
   }
@@ -555,10 +535,8 @@ void MainWindow::OnSettingsApplied() {
   StartBackgroundInitialIndex(true);
 
   // Re-trigger current search only if there is an active search query
-  if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() ||
-                      !search_bar_->path_scope().trimmed().isEmpty())) {
-    OnSearchTriggered(search_bar_->query(), search_bar_->mode(),
-                      search_bar_->path_scope());
+  if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {
+    OnSearchTriggered(search_bar_->query(), search_bar_->mode(), search_bar_->path_scope());
   }
 }
 
@@ -581,7 +559,8 @@ void MainWindow::OnRebuildIndexRequested() {
 
   statusBar()->clearMessage();
   status_stats_label_->setText(
-      "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; border-radius:3px;\">重建索引</span> 正在清空旧缓存并扫描目录...");
+      "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; "
+      "border-radius:3px;\">重建索引</span> 正在清空旧缓存并扫描目录...");
   status_progress_bar_->setValue(0);
   status_progress_bar_->setVisible(true);
   status_cancel_btn_->setVisible(true);
@@ -592,11 +571,10 @@ void MainWindow::OnRebuildIndexRequested() {
 
   background_index_thread_ = std::thread([this]() {
     auto t0 = std::chrono::steady_clock::now();
-    bool ok = pipeline_->RebuildIndex(
-        [this](size_t indexed, size_t total, const std::string& path) {
-          emit IndexProgressUpdated(kTaskRebuild, static_cast<int>(indexed),
-                                    static_cast<int>(total), QString::fromStdString(path));
-        });
+    bool ok = pipeline_->RebuildIndex([this](size_t indexed, size_t total, const std::string &path) {
+      emit IndexProgressUpdated(kTaskRebuild, static_cast<int>(indexed), static_cast<int>(total),
+                                QString::fromStdString(path));
+    });
     auto t1 = std::chrono::steady_clock::now();
     double elapsed_sec = std::chrono::duration<double>(t1 - t0).count();
     bool cancelled = pipeline_->is_scan_cancelled();
@@ -621,9 +599,10 @@ void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
   current_task_type_ = task_type;
   index_start_time_ = std::chrono::steady_clock::now();
 
-  QString badge = is_cold
-      ? "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; border-radius:3px;\">首次索引</span> "
-      : "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; border-radius:3px;\">增量索引</span> ";
+  QString badge = is_cold ? "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; "
+                            "border-radius:3px;\">首次索引</span> "
+                          : "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; "
+                            "border-radius:3px;\">增量索引</span> ";
 
   status_stats_label_->setText(badge + "正在扫描待索引目录...");
   status_progress_bar_->setValue(0);
@@ -632,9 +611,8 @@ void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
   status_cancel_btn_->setEnabled(true);
   status_file_label_->setText("正在初始化文件清单...");
   status_file_label_->setVisible(true);
-  status_latency_label_->setText(is_cold
-      ? "<span style=\"color:#0284C7;\">●</span> 初始化中"
-      : "<span style=\"color:#0D9488;\">●</span> 同步中");
+  status_latency_label_->setText(is_cold ? "<span style=\"color:#0284C7;\">●</span> 初始化中"
+                                         : "<span style=\"color:#0D9488;\">●</span> 同步中");
 
   if (background_index_thread_.joinable()) {
     background_index_thread_.join();
@@ -655,13 +633,13 @@ void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
       auto watched_dirs = pipeline_->watch_engine()->GetWatchedDirectories();
       std::unordered_set<std::string> active_set(configured_dirs.begin(), configured_dirs.end());
 
-      for (const auto& watched : watched_dirs) {
+      for (const auto &watched : watched_dirs) {
         if (pipeline_->is_scan_cancelled()) break;
         if (active_set.find(watched) == active_set.end()) {
           pipeline_->watch_engine()->RemoveWatch(watched);
         }
       }
-      for (const auto& dir : configured_dirs) {
+      for (const auto &dir : configured_dirs) {
         if (pipeline_->is_scan_cancelled()) break;
         pipeline_->watch_engine()->AddWatch(dir);
       }
@@ -670,11 +648,10 @@ void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
     // 2. Perform directory scan in background worker thread
     size_t count = 0;
     if (!pipeline_->is_scan_cancelled()) {
-      count = pipeline_->PerformInitialScan(
-          [this, task_type](size_t indexed, size_t total, const std::string& path) {
-            emit IndexProgressUpdated(task_type, static_cast<int>(indexed), static_cast<int>(total),
-                                      QString::fromStdString(path));
-          });
+      count = pipeline_->PerformInitialScan([this, task_type](size_t indexed, size_t total, const std::string &path) {
+        emit IndexProgressUpdated(task_type, static_cast<int>(indexed), static_cast<int>(total),
+                                  QString::fromStdString(path));
+      });
     }
 
     auto t1 = std::chrono::steady_clock::now();
@@ -685,23 +662,27 @@ void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
   });
 }
 
-void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total,
-                                        const QString& current_file) {
+void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file) {
   QString badge;
   if (task_type == kTaskRebuild) {
-    badge = "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; border-radius:3px;\">重建索引</span> ";
+    badge =
+        "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; "
+        "border-radius:3px;\">重建索引</span> ";
   } else if (task_type == kTaskInitial) {
-    badge = "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; border-radius:3px;\">首次索引</span> ";
+    badge =
+        "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; "
+        "border-radius:3px;\">首次索引</span> ";
   } else {
-    badge = "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; border-radius:3px;\">增量索引</span> ";
+    badge =
+        "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; "
+        "border-radius:3px;\">增量索引</span> ";
   }
 
   if (total > 0) {
     int pct = (indexed * 100) / total;
     status_progress_bar_->setValue(pct);
     status_progress_bar_->setVisible(true);
-    status_stats_label_->setText(
-        badge + QString("正在构建: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
+    status_stats_label_->setText(badge + QString("正在构建: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
   } else {
     status_stats_label_->setText(badge + "正在扫描待索引目录...");
   }
@@ -715,8 +696,7 @@ void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total,
   }
 }
 
-void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelled,
-                                 double elapsed_sec) {
+void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec) {
   status_progress_bar_->setVisible(false);
   status_file_label_->setVisible(false);
   status_cancel_btn_->setVisible(false);
@@ -734,18 +714,21 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
   } else {
     QString finish_desc;
     if (task_type == kTaskRebuild) {
-      finish_desc = QString("<span style=\"color:#16A34A; font-weight:bold;\">✓ 索引重建完成</span> "
-                            "共重构 %1 个文件索引 (耗时 %2s)")
+      finish_desc = QString(
+                        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 索引重建完成</span> "
+                        "共重构 %1 个文件索引 (耗时 %2s)")
                         .arg(total_indexed)
                         .arg(QString::number(elapsed_sec, 'f', 1));
     } else if (task_type == kTaskInitial) {
-      finish_desc = QString("<span style=\"color:#16A34A; font-weight:bold;\">✓ 首次索引完成</span> "
-                            "共索引 %1 个文件 (耗时 %2s)")
+      finish_desc = QString(
+                        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 首次索引完成</span> "
+                        "共索引 %1 个文件 (耗时 %2s)")
                         .arg(total_indexed)
                         .arg(QString::number(elapsed_sec, 'f', 1));
     } else {
-      finish_desc = QString("<span style=\"color:#16A34A; font-weight:bold;\">✓ 增量同步完成</span> "
-                            "索引已是最新 (耗时 %1s)")
+      finish_desc = QString(
+                        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 增量同步完成</span> "
+                        "索引已是最新 (耗时 %1s)")
                         .arg(QString::number(elapsed_sec, 'f', 1));
     }
     status_stats_label_->setText(finish_desc);
