@@ -90,11 +90,17 @@ flowchart TD
   1. 在内存哈希树（NameIndex）中执行微秒级文件名匹配；
   2. 在 FTS5 倒排索引表中执行基于 BM25 算法的全文相关度检索。
 - **FR-STR-005**: 针对检索召回的文档记录，**系统应**在 5 毫秒内完成 Zstd 正文解压缩，提取匹配关键词周围的 120 字符上下文摘要，并将关键词添加样式高亮标签。
+- **FR-STR-006**: 当用户在设置面板中请求修改加密主口令时，**系统应**首先校验旧口令一致性；校验通过后，**系统应**在单个数据库事务内调用底层 SQLite3MultipleCiphers 重加密接口完成全库物理重加密；若重加密过程中断，**系统应**保障原数据库文件回滚至初始状态，无破坏损坏。
 
 ### 3.4 系统环境自适应与降级自愈模块 (FR-SYS)
 
 - **FR-SYS-001**: 在进程初始化生命周期阶段，**系统应**查询操作系统文件描述符限制，并自动将软限制调优提升至内核配置的最大硬限制（引用规则 `BR-SYS-001`）。
 - **FR-SYS-002**: 在 Linux 操作系统环境下启动文件变动监控前，**系统应**探测当前进程针对系统监控配额的读写权限；若处于普通受限用户环境且配额耗尽，**系统应**保持系统稳定运行并输出标准的系统配置指引卡片（引用规则 `BR-SYS-002`）。
+
+### 3.5 界面视觉交互与主题渲染模块 (FR-GUI)
+
+- **FR-GUI-001**: 客户端界面各交互控件**系统应**统一对齐 32px 物理高度标尺与 14px 主字号，基于三层表面拓扑构建清晰视觉层级，并使用符合 WCAG AA 级色彩对比度的高亮配色渲染匹配上下文。
+- **FR-GUI-002**: 当用户在设置界面切换明暗主题风格时，主窗口与子面板**系统应**在单帧时延内完成所有视觉控件的 QSS 样式表与调色板重载刷新，无残存样式伪影。
 
 ---
 
@@ -117,8 +123,11 @@ flowchart TD
 | **FR-STR-003** | BR-01 纯本地极轻量 | - | MET-MEM-01 | `dat_jieba.cpp` | `test_dat_jieba.cpp` |
 | **FR-STR-004** | BR-03 秒级密态检索 | - | MET-LAT-01 | `storage_engine.cpp` | `test_storage_engine.cpp` |
 | **FR-STR-005** | BR-03 秒级密态检索 | - | MET-LAT-02 | `storage_engine.cpp` | `test_storage_engine.cpp` |
+| **FR-STR-006** | BR-03 秒级密态检索 | `BR-STR-001` | - | `storage_engine.cpp` | `test_storage_engine.cpp` |
 | **FR-SYS-001** | BR-02 进程崩溃自愈 | `BR-SYS-001` | MET-RES-01 | `system_env.cpp` | `test_system_env.cpp` |
 | **FR-SYS-002** | BR-02 进程崩溃自愈 | `BR-SYS-002` | MET-RES-01 | `system_env.cpp` | `test_system_env.cpp` |
+| **FR-GUI-001** | BR-01 纯本地极轻量 | - | - | `main_window.cpp` | `test_gui_smoke.cpp` |
+| **FR-GUI-002** | BR-01 纯本地极轻量 | - | - | `main_window.cpp` | `test_gui_smoke.cpp` |
 
 ---
 
