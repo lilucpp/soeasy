@@ -38,7 +38,7 @@
 
 #### **[BR-PRE-003] 图像 OCR 文本有效性过滤规则**
 * **分类**：推导规则 (Inference)
-* **业务逻辑**：当图像经过 L3 OCR 处理后，若识别提取出的有效中英文字符数 $< 5$ 个，或置信度几何平均得分 $< 0.4$ 时，系统判定该图像为噪点图、壁纸或图标，不将文本写入 FTS5 全文索引。
+* **业务逻辑**：当图像完成 L3 OCR 识别提取后，若识别提取出的有效中英文字符数 $< 5$ 个，或置信度几何平均得分 $< 0.4$ 时，系统判定该图像为噪点图、壁纸或图标，不将文本写入 FTS5 全文索引。
 * **设计意图**：防止无意义的乱码拼音、界面截图图标碎片污染全局倒排索引词典。
 * **对应实现**：`src/worker/l2_office_parser.cpp`
 
@@ -69,7 +69,7 @@
 
 #### **[BR-WCH-001] 非关心后缀前置拦截规则**
 * **分类**：动作触发规则 (Action Enabler)
-* **业务逻辑**：在跨平台文件变动监控（`WatchEngine::handleFileAction`）收到底层 OS 通知的第一时间，立即提取文件扩展名进行白名单比对。若后缀不属于配置中支持的文本、Office 或图片类型，直接 return 丢弃，**严禁向 EventDebouncer 队列推入该事件**。
+* **业务逻辑**：在跨平台文件变动监控（`WatchEngine::handleFileAction`）收到底层 OS 通知的第一时间，立即提取文件扩展名进行白名单比对。若后缀不属于配置白名单中声明的文本、Office 或图片类型，直接 return 丢弃，**严禁向 EventDebouncer 队列推入该事件**。
 * **设计意图**：开发者在工程中频繁触发编译构建时，会瞬间产生数以万计的 `.o`, `.tmp`, `.swp`, `.class` 临时文件。首行过滤拦截可杜绝去抖动队列剧烈膨胀与不必要的 I/O 锁竞争。
 * **对应实现**：`src/service/watch_engine.cpp` (`WatchEngine::handleFileAction`)
 * **验证用例**：`tests/test_watch_and_index.cpp` [Step 9.1]
@@ -110,6 +110,6 @@
 
 #### **[BR-STR-001] 页级物理透明加密规则**
 * **分类**：事实与约束规则 (Fact & Constraint)
-* **业务逻辑**：底层存储引擎必须全局启用 SQLite3MultipleCiphers，采用 AES-128-CBC 算法进行页级物理加密，KDF 迭代次数在首次安全校验通过后设置高效落盘模式。任何裸写或明文旁路存储均属于安全违规。实测裸数据库文件明文匹配率为 0。
+* **业务逻辑**：底层存储引擎必须全局启用 SQLite3MultipleCiphers，采用 AES-128-CBC 算法进行页级物理加密，KDF 迭代次数在首次安全校验通过后配置标准落盘参数（PRAGMA synchronous = NORMAL 且兼顾 WAL 崩溃一致性）。任何裸写或明文旁路存储均属于安全违规。实测裸数据库文件明文匹配率为 0。
 * **对应实现**：`src/storage/storage_engine.cpp`
 * **验证用例**：`tests/test_storage_engine.cpp` [Step 5]

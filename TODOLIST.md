@@ -23,7 +23,7 @@
 ### [FEAT-001] 移除索引目录时联动删除对应的底层索引数据
 * **需求层级**：功能需求 (Functional Requirement)
 * **业务背景 (实测驱动)**：
-  * 当前已支持在配置中移除目录，但底层 SQLite3MC 数据库中历史已索引的文件记录未级联剔除；
+  * 当前在配置中已提供移除目录功能，但底层 SQLite3MC 数据库中历史已索引的文件记录未级联剔除；
   * 实测验证 SQLite3MC 在开启批量事务后执行前缀删除效率极高（$<5\text{ms}$），应在目录移除时自动触发前缀清理与内存 `NameIndex` 同步剔除，确保数据一致性与用户隐私物理销毁。
 * **关联模块**：`src/service/index_config.cpp`, `src/service/index_pipeline.cpp`, `src/storage/storage_engine.cpp`
 * **关联测试**：`tests/test_storage_engine.cpp`, `tests/test_watch_and_index.cpp`
@@ -44,7 +44,7 @@
 * **需求层级**：用户交互与可定制性需求 (Usability)
 * **业务背景 (实测驱动)**：
   * `test_dat_jieba` 单元测试实测表明：底层已成功演进为 **Darts-clone DAT 紧凑树 + Overlay 动态内存字典** 双层分词架构；
-  * 底层接口已具备微秒级的动态词条插入（`InsertWord`）与即时保存能力，仅需在 Qt 设置面板中补充可视化的用户词库编辑表格。
+  * 底层接口已具备微秒级的动态词条插入（`InsertWord`）与即时保存能力，直接在 Qt 设置面板中补充可视化的用户词库编辑表格。
 * **关联模块**：`src/storage/dat_jieba.cpp`, `src/gui/settings_dialog.cpp`
 * **关联测试**：`tests/test_dat_jieba.cpp`
 * **验收准则 (Acceptance Criteria - Gherkin)**：
