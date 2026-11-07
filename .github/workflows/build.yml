@@ -97,7 +97,7 @@ jobs:
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=OFF
-          cmake --build build --target soeasy-gui soeasy-worker -j4
+          cmake --build build --target soeasy-gui soeasy-worker build_dat_dict -j4
 
       - name: Package Windows Artifacts
         run: |
@@ -116,6 +116,11 @@ jobs:
           # Deploy Qt dependencies using windeployqt
           windeployqt --release --no-translations "${STAGE_DIR}/bin/soeasy-gui.exe" || true
           
+          # Ensure jieba_dat.bin exists
+          if [ ! -f "third_party/cppjieba/dict/jieba_dat.bin" ]; then
+            ./build/build_dat_dict.exe "third_party/cppjieba/dict/jieba.dict.utf8" "third_party/cppjieba/dict/jieba_dat.bin"
+          fi
+
           # Copy dictionaries and models
           cp -rp third_party/cppjieba/dict/* "${STAGE_DIR}/dict/" 2>/dev/null || true
           cp -rp models/ppocr_v6 "${STAGE_DIR}/models/" 2>/dev/null || true

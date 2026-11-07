@@ -29,7 +29,7 @@ fi
 # 1. 编译 Release 版本二进制 (不编译或运行测试用例)
 echo "[1/6] 编译最新 Release 版本二进制..."
 cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
-cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker -j8
+cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker build_dat_dict -j$(nproc 2>/dev/null || echo 8)
 
 # 2. 准备打包目录结构
 echo "[2/6] 清理并构建分发目录结构..."
@@ -74,7 +74,12 @@ fi
 # 5. 收集词典与 OCR 模型文件
 echo "[5/6] 收集结巴词典、PP-OCRv6 模型与启动引导脚本..."
 if [ ! -f "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" ]; then
-  "${PROJECT_ROOT}/build/build_dat_dict" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba.dict.utf8" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin"
+  if [ ! -f "${BUILD_DIR}/build_dat_dict" ]; then
+    echo "[Dict] 正在编译 build_dat_dict 词典构建工具..."
+    cmake --build "${BUILD_DIR}" --target build_dat_dict -j$(nproc 2>/dev/null || echo 4)
+  fi
+  echo "[Dict] 正在将结巴词典预编译为双数组字典树 (DAT)..."
+  "${BUILD_DIR}/build_dat_dict" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba.dict.utf8" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin"
 fi
 # 仅打包运行时必需的 jieba_dat.bin (7.2MB)、hmm_model.utf8 (47KB) 与 user.dict.utf8
 # 剔除无用的 jieba.dict.utf8 (5.2MB) 与 idf.utf8 (3.4MB)，包体积直接瘦身 8.6MB!

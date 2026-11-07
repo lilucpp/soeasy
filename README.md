@@ -18,8 +18,14 @@ No Electron runtime. No telemetry. Sub-millisecond queries powered by an isolate
 - **Sub-Millisecond Full-Text Retrieval**  
   Powered by SQLite FTS5 with CppJieba Chinese tokenization and BM25 relevance scoring. Real-time keyword highlighting and context snippets across large document collections.
 
-- **Crash-Resilient Sandbox Architecture**  
-  File parsing executes inside isolated worker processes managed by an out-of-process supervisor (`WorkerGuard`). Faulty, hung, or corrupted files trigger watchdog termination and transparent recovery with zero impact on UI responsiveness.
+- **Crash-Resilient Sandbox & Modern Process Lifecycle Governance**  
+  File parsing executes inside isolated worker processes managed by an out-of-process supervisor (`WorkerGuard`) via shared memory (SHM) and Cap'n Proto IPC. Integrates modern `reproc++` with standard `stop_actions` to strictly govern child process lifecycles and eliminate zombie processes (`<defunct>`). On Linux, utilizes Abstract UNIX Domain Sockets for kernel-managed IPC with zero leftover filesystem artifacts. Corrupted, hanging, or crashing files trigger watchdog termination and transparent recovery with zero UI stutter.
+
+- **Double-Array Trie (DAT) + mmap Zero-Heap Tokenization**  
+  The 350,000-word Jieba dictionary is precompiled into a compact Double-Array Trie (DAT) binary using Darts-clone and mapped directly into memory via `mmap`. Eliminates runtime node allocation, reducing heap memory overhead from **120 MB down to 7 MB** while delivering instantaneous cold-boot startup and an overlay dictionary for custom vocabularies.
+
+- **Low-Latency Scientific OCR Optimization Engine**  
+  Features an embedded PP-OCRv6 engine with in-memory zero-allocation Header Probe (< 1 µs) to filter out icons, decorative lines, and blank backgrounds before decoding. Dual-limit resolution scaling (736px for standalone documents, 640px for document-embedded images) cuts memory usage by 34% and accelerates inference by > 40% with zero accuracy loss. Constrains glibc multi-arena memory fragmentation via `mallopt(M_ARENA_MAX, 2)`.
 
 - **Zero Cloud / Purely Local Security**  
   Fully offline operation. Inverted indices and content caches are secured locally with transparent page-level AES-128 encryption (SQLite3MultipleCiphers) and Zstandard (Zstd) compression.
@@ -167,6 +173,8 @@ SoEasy is built on top of high-performance open-source foundations:
 - **[DocToText (lilucpp fork)](https://github.com/lilucpp/doctotext)**: Powers multi-format extraction for Office and PDF. Upgrades over upstream include in-place embedded image OCR streaming, natural top-to-bottom reading order recovery for PDFs, automatic scanned PDF fallback, and a robust C ABI for cross-compiler stability.
 - **[SQLite3MultipleCiphers](https://github.com/utelle/SQLite3MultipleCiphers)**: Transparent page-level AES-128 index database encryption.
 - **[CppJieba](https://github.com/yanyiwu/cppjieba)**: High-speed Chinese tokenization for SQLite FTS5.
+- **[Darts-clone](https://github.com/s-yata/darts-clone)**: Double-Array Trie library powering the zero-heap mmap DAT dictionary.
+- **[reproc / reproc++](https://github.com/DaanDeMeyer/reproc)**: Cross-platform process and IPC library eliminating zombie and orphan processes.
 - **[Zstandard](https://github.com/facebook/zstd)**: High-ratio realtime document content compression.
 - **[efsw](https://github.com/SpartanJ/efsw)**: Cross-platform asynchronous filesystem event watcher.
 

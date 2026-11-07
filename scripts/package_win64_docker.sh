@@ -44,6 +44,16 @@ else
     echo "[1/4] 检测到已存在镜像: ${IMAGE_NAME}"
 fi
 
+# 确保 jieba_dat.bin 双数组字典预编译完成
+if [ ! -f "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" ]; then
+    echo "[Dict] 宿主机正在预生成 jieba_dat.bin 双数组字典树..."
+    if [ ! -f "${PROJECT_ROOT}/build/build_dat_dict" ]; then
+        cmake -B "${PROJECT_ROOT}/build" -S "${PROJECT_ROOT}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
+        cmake --build "${PROJECT_ROOT}/build" --target build_dat_dict -j$(nproc 2>/dev/null || echo 4)
+    fi
+    "${PROJECT_ROOT}/build/build_dat_dict" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba.dict.utf8" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin"
+fi
+
 # 2. 准备分发目录并预先收集静态资源
 echo "[2/4] 准备分发目录与静态资源 (词典、模型、图标、文档)..."
 rm -rf "${STAGE_DIR}" "${ZIP_FILE}"

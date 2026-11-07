@@ -18,8 +18,14 @@ SoEasy 是一款追求极速、安全与稳定的原生跨平台桌面全文检�
 - **毫秒级即时全文检索**  
   底层集成 SQLite FTS5 倒排索引引擎与 CppJieba 中文分词，引入 BM25 算法优化相关度排序。支持海量文档中键入即搜，提供富文本上下文高亮摘要与位置定位。
 
-- **崩溃自愈的沙箱隔离架构**  
-  所有文件解析均置于独立的子进程 (`soeasy-worker`) 沙箱内运行，由主进程守卫 (`WorkerGuard`) 通过共享内存（SHM）与 Cap'n Proto 统一调度。若遇格式损坏、内存溢出或死循环解析，看门狗毫秒级强杀并透明自愈，彻底杜绝主程序与界面的卡死风险。
+- **崩溃自愈的沙箱隔离与现代进程治理**  
+  所有文件解析均置于独立的子进程 (`soeasy-worker`) 沙箱内运行，由主进程守卫 (`WorkerGuard`) 通过共享内存（SHM）与 Cap'n Proto 统一调度。底层引入现代进程库 `reproc++` 与标准 `stop_actions` 严格回收生命周期，彻底根除僵尸进程（`<defunct>`）；Linux 下采用抽象命名空间套接字（Abstract Domain Sockets）实现零磁盘残留的内核级安全 IPC。若遇格式损坏、内存溢出或死循环解析，看门狗毫秒级强杀并透明自愈，彻底杜绝主程序与界面的卡死风险。
+
+- **双数组 Trie (DAT) + mmap 零内存开销分词**  
+  采用 Darts-clone 将结巴 35 万词主词典预编译为双数组字典树（Double-Array Trie, DAT）二进制文件，运行时直接通过内核 `mmap` 进行零拷贝只读映射，无需动态构建百万节点内存 Trie 树。堆内存占用从 **120 MB 直降至 7 MB**，实现瞬间冷启动，并提供叠加层（Overlay）支持用户平滑扩展自定义专有名词。
+
+- **低延迟轻量级 OCR 优化引擎**  
+  内置 PP-OCRv6 深度学习引擎，采用 Header Probe 内存零拷贝尺寸嗅探（$< 1\,\mu\text{s}$），在解码前即时剔除图标、装饰线条与单色底图；结合双档位自适应检测分辨率策略（独立文档 736px / 文档内嵌图 640px），内存开销骤降 34%，推理速度提升超 40% 且准确率无损；Worker 进程启动配置 `mallopt(M_ARENA_MAX, 2)` 遏制多线程内存碎片，闲置时自动回收。
 
 - **纯本地透明密态存储**  
   零网络依赖，杜绝任何数据上云。索引数据库与正文缓存均采用 SQLite3MultipleCiphers 进行透明页级 AES-128 加密，结合 Zstandard (Zstd) 高效压缩落盘，保障个人与企业数据隐私安全。
@@ -167,6 +173,8 @@ SoEasy 的极速与稳健构建于优秀的底层开源基石之上：
 - **[DocToText (lilucpp 增强版)](https://github.com/lilucpp/doctotext)**：承担 Office 与 PDF 深度文本抽取。相比原版，新增了文档内嵌图片流式 OCR、PDF 图文按自然排版顺序提取、纯图片扫描件自动识别补全与防重复识别机制，并提供跨编译器的稳定纯 C ABI。
 - **[SQLite3MultipleCiphers](https://github.com/utelle/SQLite3MultipleCiphers)**：透明页级 AES-128 索引数据库加密。
 - **[CppJieba](https://github.com/yanyiwu/cppjieba)**：SQLite FTS5 毫秒级中文分词引擎。
+- **[Darts-clone](https://github.com/s-yata/darts-clone)**：极简双数组字典树（Double-Array Trie）实现，驱动 mmap 零内存占用词典。
+- **[reproc / reproc++](https://github.com/DaanDeMeyer/reproc)**：现代跨平台进程生命周期管理与 IPC 管道库，杜绝孤儿与僵尸进程。
 - **[Zstandard](https://github.com/facebook/zstd)**：高压缩比文档全文实时压缩缓存。
 - **[efsw](https://github.com/SpartanJ/efsw)**：跨平台多后端目录事件异步监控器。
 

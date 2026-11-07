@@ -124,6 +124,11 @@ target_compile_definitions(sqlite3mc PUBLIC
     SQLITE_THREADSAFE=1
     SQLITE_ENABLE_DBSTAT_VTAB=1
 )
+if(MSVC)
+    target_compile_options(sqlite3mc PRIVATE /w)
+else()
+    target_compile_options(sqlite3mc PRIVATE -w)
+endif()
 if(WIN32)
     target_link_libraries(sqlite3mc PRIVATE pthread)
 else()

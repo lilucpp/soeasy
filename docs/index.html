@@ -1015,20 +1015,20 @@
             <span class="pillar-code">01 / WorkerGuard</span>
             <span class="pillar-tag">RESILIENCE</span>
           </div>
-          <h3 class="pillar-title" data-i18n="p1-title">物理多进程沙箱隔离与自愈</h3>
+          <h3 class="pillar-title" data-i18n="p1-title">物理多进程沙箱隔离与现代进程治理</h3>
           <p class="pillar-desc" data-i18n="p1-desc">
-            解析子进程 (<code>soeasy-worker</code>) 与主服务物理隔离，通过共享内存槽位池 (SHM Slot Pool) 跨进程通信。遇到损坏 docx、死循环 pdf 或恶意格式，主进程看门狗在超时（5秒）内精准强杀并自动重启 Worker，主界面绝对零卡顿。
+            解析子进程 (<code>soeasy-worker</code>) 与主服务物理隔离，引入现代进程库 <code>reproc++</code> 严格治理生命周期，杜绝僵死进程 (&lt;defunct&gt;)。Linux 下采用抽象命名空间套接字零磁盘残留。遇死循环或格式损坏，看门狗毫秒级强杀自愈，界面零卡死。
           </p>
         </div>
 
         <div class="pillar-card">
           <div class="pillar-header">
-            <span class="pillar-code">02 / Dual Search Modes</span>
-            <span class="pillar-tag">FTS5 + FAST NAME</span>
+            <span class="pillar-code">02 / DAT Trie + mmap</span>
+            <span class="pillar-tag">ZERO HEAP</span>
           </div>
-          <h3 class="pillar-title" data-i18n="p2-title">全文倒排与文件名双秒搜 + 路径限定</h3>
+          <h3 class="pillar-title" data-i18n="p2-title">双数组 Trie (DAT) + mmap 极速分词</h3>
           <p class="pillar-desc" data-i18n="p2-desc">
-            同时提供 SQLite FTS5 + CppJieba 中文分词的全文正文检索，以及毫秒级文件名快速筛选模式。支持“限定搜索路径”，既可全盘无拘检索，也能快速收敛至特定项目或工程子树。
+            35 万词词典预编译为双数组字典树 (DAT) 二进制文件，运行时通过 <code>mmap</code> 零拷贝映射入内核只读页，堆内存占用从 120MB 直降至 7MB，实现瞬间冷启动，并提供 Overlay 叠加层无缝支持用户动态添加自定义专有名词。
           </p>
         </div>
 
@@ -1045,12 +1045,12 @@
 
         <div class="pillar-card">
           <div class="pillar-header">
-            <span class="pillar-code">04 / DocToText v5.1.2</span>
-            <span class="pillar-tag">IN-PLACE OCR</span>
+            <span class="pillar-code">04 / Low-Latency OCR</span>
+            <span class="pillar-tag">IN-PLACE & OPTIMIZED</span>
           </div>
-          <h3 class="pillar-title" data-i18n="p4-title">深度优化的 DocToText 与 PP-OCRv6</h3>
+          <h3 class="pillar-title" data-i18n="p4-title">深度优化的 DocToText 与轻量 OCR</h3>
           <p class="pillar-desc" data-i18n="p4-desc">
-            集成定制版 DocToText。支持 Word/PPT/PDF 中内嵌图片流式回传 PP-OCRv6 识别并原位缝合；PDF 还原自然排版阅读顺序；纯图片扫描件自动补搜；已有文字层的 PDF 自动去重不重复识别。
+            文档内嵌图片流式回传 PP-OCRv6 原位提取；独创 Header Probe 零拷贝尺寸嗅探 (&lt;1µs) 拦截微型装饰图；双档位分辨率限边 (736/640) 内存立减 34%、提速超 40% 且精度无损；配合 <code>mallopt(M_ARENA_MAX, 2)</code> 彻底遏制内存碎片。
           </p>
         </div>
       </div>
@@ -1126,24 +1126,34 @@
           </thead>
           <tbody>
             <tr>
-              <td><strong data-i18n="bm-r1">后台静默常驻内存开销</strong></td>
-              <td class="metric-win" data-i18n="bm-v1">~ 35 MB (极低常驻)</td>
-              <td data-i18n="bm-d1">原生 Qt5/C++17 架构，无臃肿运行时，精细内存管理与零泄漏保障</td>
+              <td><strong data-i18n="bm-r1">后台静默待机内存开销</strong></td>
+              <td class="metric-win" data-i18n="bm-v1">~ 82 MB (整机总计)</td>
+              <td data-i18n="bm-d1">GUI 主进程约 76MB，Worker 0 个 / 0MB（按需启动 + 60s 闲置自动销毁退出），OCR 闲置卸载，整机常驻内存直降 81%</td>
             </tr>
             <tr>
-              <td><strong data-i18n="bm-r2">百万字本地倒排检索耗时</strong></td>
-              <td class="metric-win" data-i18n="bm-v2">&lt; 1 ms (瞬间响应)</td>
-              <td data-i18n="bm-d2">SQLite FTS5 引擎 + CppJieba 深度优化分词，毫秒级定位目标文档</td>
+              <td><strong data-i18n="bm-r2">双数组 Trie (DAT) 分词内存</strong></td>
+              <td class="metric-win" data-i18n="bm-v2">7.2 MB (↓ 94% 内存)</td>
+              <td data-i18n="bm-d2">Darts-clone 预编译二进制双数组树 + mmap 零拷贝载入，免动态构建 Trie 树，彻底省下 120MB 堆内存</td>
             </tr>
             <tr>
-              <td><strong data-i18n="bm-r3">复杂损坏/死锁文件容灾</strong></td>
-              <td class="metric-win" data-i18n="bm-v3">5秒超时强杀并自愈</td>
-              <td data-i18n="bm-d3">WorkerGuard 物理多进程沙箱隔离，故障Worker精准重启，主界面绝对零卡顿</td>
+              <td><strong data-i18n="bm-r3">OCR 推理提速与内存优化</strong></td>
+              <td class="metric-win" data-i18n="bm-v3">提速 42% | 内存 ↓ 34%</td>
+              <td data-i18n="bm-d3">Header Probe 免解码纳秒嗅探 + 双档位分辨率限边 (736/640)，小字准确率 99.37% 无损，M_ARENA_MAX 碎片抑制</td>
             </tr>
             <tr>
-              <td><strong data-i18n="bm-r4">数据落盘与隐私安全机制</strong></td>
-              <td class="metric-win" data-i18n="bm-v4">100% 本地透明加密 + 高压缩比</td>
-              <td data-i18n="bm-d4">SQLite3MC 驱动 AES-128 页级加密存储 + Facebook Zstd 实时高压缩</td>
+              <td><strong data-i18n="bm-r4">百万字本地倒排检索耗时</strong></td>
+              <td class="metric-win" data-i18n="bm-v4">&lt; 0.5 ms (瞬间响应)</td>
+              <td data-i18n="bm-d4">SQLite FTS5 引擎 + CppJieba DAT 深度优化分词与 BM25 相关度排序，毫秒级定位目标文档</td>
+            </tr>
+            <tr>
+              <td><strong data-i18n="bm-r5">进程治理与损坏文件容灾</strong></td>
+              <td class="metric-win" data-i18n="bm-v5">reproc++ 根除僵尸进程</td>
+              <td data-i18n="bm-d5">WorkerGuard 沙箱物理隔离 + stop_actions 闭环回收，Linux 抽象套接字 IPC 零磁盘残留，超时强杀透明自愈</td>
+            </tr>
+            <tr>
+              <td><strong data-i18n="bm-r6">数据落盘与隐私安全机制</strong></td>
+              <td class="metric-win" data-i18n="bm-v6">100% 本地透明加密 + 高压缩比</td>
+              <td data-i18n="bm-d6">SQLite3MC 驱动 AES-128 页级加密存储 + Facebook Zstd 实时高压缩 (&gt;5,800 MB/s 吞吐)</td>
             </tr>
           </tbody>
         </table>
@@ -1491,14 +1501,14 @@ struct ParseRequest {
         "tag-pillars": "ARCHITECTURE HIGHLIGHTS",
         "title-pillars": "代码实证：SoEasy 的核心技术底座",
         "desc-pillars": "摒弃网页套壳假大空的宣传，每一项设计均落实于底层 C++17 真实代码之中。",
-        "p1-title": "物理多进程沙箱隔离与自愈",
-        "p1-desc": "解析子进程 (soeasy-worker) 与主服务物理隔离，通过共享内存槽位池 (SHM Slot Pool) 跨进程通信。遇到损坏 docx、死循环 pdf 或恶意格式，主进程看门狗在超时（5秒）内精准强杀并自动重启 Worker，主界面绝对零卡顿。",
-        "p2-title": "全文倒排与文件名双秒搜 + 路径限定",
-        "p2-desc": "同时提供 SQLite FTS5 + CppJieba 中文分词的全文正文检索，以及毫秒级文件名快速筛选模式。支持“限定搜索路径”，既可全盘无拘检索，也能快速收敛至特定项目或工程子树。",
+        "p1-title": "物理多进程沙箱隔离与现代进程治理",
+        "p1-desc": "解析子进程 (soeasy-worker) 与主服务物理隔离，引入现代进程库 reproc++ 严格治理生命周期，杜绝僵死进程 (&lt;defunct&gt;)。Linux 下采用抽象命名空间套接字零磁盘残留。遇死循环或格式损坏，看门狗毫秒级强杀自愈，界面零卡死。",
+        "p2-title": "双数组 Trie (DAT) + mmap 极速分词",
+        "p2-desc": "35 万词词典预编译为双数组字典树 (DAT) 二进制文件，运行时通过 mmap 零拷贝映射入内核只读页，堆内存占用从 120MB 直降至 7MB，实现瞬间冷启动，并提供 Overlay 叠加层无缝支持用户动态添加自定义专有名词。",
         "p3-title": "纯本地透明密态存储与 Zstd 压缩",
         "p3-desc": "绝不联网上云，零遥测，保护商业机密与个人隐私。底层基于 SQLite3MultipleCiphers 对索引数据库实施透明页级 AES-128 强加密，抽取正文全部经过 Facebook Zstandard (Level 3) 实时高压缩比落盘。",
-        "p4-title": "深度优化的 DocToText 与 PP-OCRv6",
-        "p4-desc": "集成定制版 DocToText。支持 Word/PPT/PDF 中内嵌图片流式回传 PP-OCRv6 识别并原位缝合；PDF 还原自然排版阅读顺序；纯图片扫描件自动补搜；已有文字层的 PDF 自动去重不重复识别。",
+        "p4-title": "深度优化的 DocToText 与轻量 OCR",
+        "p4-desc": "文档内嵌图片流式回传 PP-OCRv6 原位提取；独创 Header Probe 零拷贝尺寸嗅探 (&lt;1µs) 拦截微型装饰图；双档位分辨率限边 (736/640) 内存立减 34%、提速超 40% 且精度无损；配合 mallopt(M_ARENA_MAX, 2) 彻底遏制内存碎片。",
         "tag-formats": "SUPPORTED FORMATS",
         "title-formats": "全面的跨品类文档格式支持",
         "desc-formats": "不仅能搜纯文本与代码，更打通了传统二进制 Office、PDF 扫描件及深度学习 OCR。",
@@ -1520,18 +1530,24 @@ struct ParseRequest {
         "bm-h1": "核心性能指标",
         "bm-h2": "实测表现数据",
         "bm-h3": "底层技术实现原理",
-        "bm-r1": "后台静默常驻内存开销",
-        "bm-v1": "~ 35 MB (极低常驻)",
-        "bm-d1": "原生 Qt5/C++17 架构，无臃肿运行时，精细内存管理与零泄漏保障",
-        "bm-r2": "百万字本地倒排检索耗时",
-        "bm-v2": "&lt; 1 ms (瞬间响应)",
-        "bm-d2": "SQLite FTS5 引擎 + CppJieba 深度优化分词，毫秒级定位目标文档",
-        "bm-r3": "复杂损坏/死锁文件容灾",
-        "bm-v3": "5秒超时强杀并自愈",
-        "bm-d3": "WorkerGuard 物理多进程沙箱隔离，故障Worker精准重启，主界面绝对零卡顿",
-        "bm-r4": "数据落盘与隐私安全机制",
-        "bm-v4": "100% 本地透明加密 + 高压缩比",
-        "bm-d4": "SQLite3MC 驱动 AES-128 页级加密存储 + Facebook Zstd 实时高压缩"
+        "bm-r1": "后台静默待机内存开销",
+        "bm-v1": "~ 82 MB (整机总计)",
+        "bm-d1": "GUI 主进程约 76MB，Worker 0 个 / 0MB（按需启动 + 60s 闲置自动销毁退出），OCR 闲置卸载，整机常驻内存直降 81%",
+        "bm-r2": "双数组 Trie (DAT) 分词内存",
+        "bm-v2": "7.2 MB (↓ 94% 内存)",
+        "bm-d2": "Darts-clone 预编译二进制双数组树 + mmap 零拷贝载入，免动态构建 Trie 树，彻底省下 120MB 堆内存",
+        "bm-r3": "OCR 推理提速与内存优化",
+        "bm-v3": "提速 42% | 内存 ↓ 34%",
+        "bm-d3": "Header Probe 免解码纳秒嗅探 + 双档位分辨率限边 (736/640)，小字准确率 99.37% 无损，M_ARENA_MAX 碎片抑制",
+        "bm-r4": "百万字本地倒排检索耗时",
+        "bm-v4": "&lt; 0.5 ms (瞬间响应)",
+        "bm-d4": "SQLite FTS5 引擎 + CppJieba DAT 深度优化分词与 BM25 相关度排序，毫秒级定位目标文档",
+        "bm-r5": "进程治理与损坏文件容灾",
+        "bm-v5": "reproc++ 根除僵尸进程",
+        "bm-d5": "WorkerGuard 沙箱物理隔离 + stop_actions 闭环回收，Linux 抽象套接字 IPC 零磁盘残留，超时强杀透明自愈",
+        "bm-r6": "数据落盘与隐私安全机制",
+        "bm-v6": "100% 本地透明加密 + 高压缩比",
+        "bm-d6": "SQLite3MC 驱动 AES-128 页级加密存储 + Facebook Zstd 实时高压缩 (&gt;5,800 MB/s 吞吐)"
       },
       en: {
         "hero-title": "Make Every File Searchable On Your Desktop",
@@ -1563,14 +1579,14 @@ struct ParseRequest {
         "tag-pillars": "ARCHITECTURE HIGHLIGHTS",
         "title-pillars": "Verified Codebase: Architectural Pillars",
         "desc-pillars": "No marketing fluff. Every architectural highlight is backed by concrete C++17 code.",
-        "p1-title": "Crash-Resilient Worker Sandbox",
-        "p1-desc": "Parsing workers execute in isolated subprocesses communicating via Shared Memory slot pools. Malformed files, infinite loops, or memory faults are terminated within 5s by WorkerGuard with zero UI freezing.",
-        "p2-title": "Dual Search Modes & Path Scoping",
-        "p2-desc": "Simultaneous SQLite FTS5 + CppJieba full-text inverted indexing and sub-millisecond filename search. Constrain searches to specific subtrees or search across whole drives.",
+        "p1-title": "Crash-Resilient Sandbox & Modern Process Governance",
+        "p1-desc": "Parsing workers execute in isolated subprocesses governed by modern reproc++ with standard stop_actions, eliminating zombie (&lt;defunct&gt;) and orphan processes. Linux utilizes Abstract UNIX Domain Sockets for zero disk residue. Malformed or hanging files are killed and auto-healed with zero UI freezing.",
+        "p2-title": "Double-Array Trie (DAT) + mmap Zero-Heap Tokenization",
+        "p2-desc": "The 350,000-word dictionary is precompiled into a Double-Array Trie (DAT) binary and mapped directly via mmap. Reduces heap memory from 120MB down to 7MB with instantaneous cold-boot startup and an overlay dictionary for custom vocabularies.",
         "p3-title": "Local Encrypted Storage & Zstd",
         "p3-desc": "Zero cloud dependency, zero telemetry. Indices are protected locally with transparent page-level AES-128 encryption (SQLite3MultipleCiphers) and compressed via Zstandard Level 3.",
-        "p4-title": "Enhanced DocToText + PP-OCRv6",
-        "p4-desc": "Powered by a modernized DocToText fork. Dispatches embedded graphics directly to PP-OCRv6, restores natural 2D reading order for PDFs, falls back on scanned PDFs, and skips redundant OCR.",
+        "p4-title": "Modernized DocToText & Optimized OCR",
+        "p4-desc": "Dispatches embedded graphics directly to PP-OCRv6 for in-place text recovery. Zero-allocation Header Probe (&lt; 1 µs) filters icons and borders before decoding; dual-limit resolution scaling (736/640) cuts RAM by 34% and speeds inference by &gt;40% without accuracy loss; M_ARENA_MAX=2 stops fragmentation.",
         "tag-formats": "SUPPORTED FORMATS",
         "title-formats": "Broad Format Support Matrix",
         "desc-formats": "From multi-megabyte code repos to legacy Office sheets, scanned PDFs, and deep learning OCR.",
@@ -1593,17 +1609,23 @@ struct ParseRequest {
         "bm-h2": "Verified Measurement",
         "bm-h3": "Underlying Architectural Principle",
         "bm-r1": "Idle Background Memory Footprint",
-        "bm-v1": "~ 35 MB (Minimal Footprint)",
-        "bm-d1": "Native Qt5 & modern C++17 architecture, zero bloated runtime, deterministic memory lifecycle",
-        "bm-r2": "Full-Text Query Latency (1M+ Words)",
-        "bm-v2": "&lt; 1 ms (Instant Response)",
-        "bm-d2": "SQLite FTS5 engine + CppJieba optimized segmentation for sub-millisecond inverted index lookups",
-        "bm-r3": "Fault Isolation & Resilience",
-        "bm-v3": "5s Timeout Kill & Auto-Heal",
-        "bm-d3": "WorkerGuard multiprocess sandbox isolation; cleanly terminates hanging workers with zero UI lag",
-        "bm-r4": "Data Security & Disk Footprint",
-        "bm-v4": "100% Local Encrypted & Compressed",
-        "bm-d4": "SQLite3MultipleCiphers page-level AES-128 encryption paired with real-time Facebook Zstd compression"
+        "bm-v1": "~ 82 MB (Entire System)",
+        "bm-d1": "GUI main process ~76MB, Workers 0 processes / 0MB (lazy spawn & 60s idle eviction), OCR idle unload, down 81% overall",
+        "bm-r2": "Double-Array Trie (DAT) Tokenizer RAM",
+        "bm-v2": "7.2 MB (↓ 94% RAM)",
+        "bm-d2": "Darts-clone precompiled binary DAT + kernel mmap zero-copy mapping, eliminating 120MB heap dynamic Trie allocation",
+        "bm-r3": "OCR Acceleration & Memory Footprint",
+        "bm-v3": "42% Faster | RAM ↓ 34%",
+        "bm-d3": "Header Probe zero-copy nanosecond sniffing + dual-limit resolution (736/640), 99.37% accuracy preserved, M_ARENA_MAX=2",
+        "bm-r4": "Full-Text Query Latency (1M+ Words)",
+        "bm-v4": "&lt; 0.5 ms (Instant Response)",
+        "bm-d4": "SQLite FTS5 engine + CppJieba DAT optimized tokenization and BM25 ranking for sub-millisecond document retrieval",
+        "bm-r5": "Process Lifecycle & Fault Isolation",
+        "bm-v5": "reproc++ Zombie-Free",
+        "bm-d5": "WorkerGuard multiprocess sandbox + stop_actions recovery, Linux Abstract Domain Sockets with zero disk debris",
+        "bm-r6": "Data Security & Disk Footprint",
+        "bm-v6": "100% Local Encrypted & Compressed",
+        "bm-d6": "SQLite3MultipleCiphers page-level AES-128 encryption paired with real-time Facebook Zstd compression (&gt;5,800 MB/s)"
       }
     };
 
