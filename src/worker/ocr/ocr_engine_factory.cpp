@@ -20,7 +20,8 @@ std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateEngine(OcrEngineType type) {
   return nullptr;
 }
 
-std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(const std::string &models_base_dir, OcrMode mode) {
+std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(const std::string &models_base_dir, OcrMode mode,
+                                                                  int limit_side_len) {
   std::vector<std::string> candidate_dirs;
   if (!models_base_dir.empty()) {
     candidate_dirs.push_back(models_base_dir);
@@ -64,6 +65,7 @@ std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(const std::str
   config.rec_model_path = found_dir + "/PP-OCRv6_tiny_rec_onnx/inference.onnx";
   config.dict_path = found_dir + "/PP-OCRv6_tiny_rec_onnx/chars.txt";
   config.mode = mode;
+  config.limit_side_len = limit_side_len;
 
   if (!engine->Initialize(config)) {
     LOG_ERROR("[OcrEngineFactory] Failed to initialize PP-OCRv6 engine from '{}'", found_dir);

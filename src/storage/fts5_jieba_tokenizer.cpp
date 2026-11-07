@@ -2,11 +2,12 @@
 
 #include <cctype>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "cppjieba/Jieba.hpp"
+#include "storage/dat_jieba.h"
 #include "utf8.h"
 
 namespace soeasy {
@@ -15,16 +16,29 @@ namespace storage {
 namespace {
 
 struct JiebaContext {
-  std::shared_ptr<cppjieba::Jieba> jieba;
+  std::string dict_dir;
+  mutable std::mutex mutex;
+  mutable std::shared_ptr<DatJieba> jieba;
+
+  std::shared_ptr<DatJieba> GetJieba() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!jieba) {
+      auto dj = std::make_shared<DatJieba>();
+      if (dj->Init(dict_dir)) {
+        jieba = std::move(dj);
+      }
+    }
+    return jieba;
+  }
 };
 
 struct JiebaTokenizerInstance {
-  std::shared_ptr<cppjieba::Jieba> jieba;
+  JiebaContext *ctx{nullptr};
 };
 
 int xCreate(void *user_data, const char **argv, int argc, Fts5Tokenizer **out_tokenizer) {
   auto *ctx = static_cast<JiebaContext *>(user_data);
-  if (!ctx || !ctx->jieba) {
+  if (!ctx) {
     return SQLITE_ERROR;
   }
 
@@ -32,7 +46,7 @@ int xCreate(void *user_data, const char **argv, int argc, Fts5Tokenizer **out_to
   if (!instance) {
     return SQLITE_NOMEM;
   }
-  instance->jieba = ctx->jieba;
+  instance->ctx = ctx;
 
   *out_tokenizer = reinterpret_cast<Fts5Tokenizer *>(instance);
   return SQLITE_OK;
@@ -53,7 +67,12 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
   }
 
   auto *instance = reinterpret_cast<JiebaTokenizerInstance *>(tokenizer);
-  if (!instance->jieba) {
+  if (!instance || !instance->ctx) {
+    return SQLITE_ERROR;
+  }
+
+  auto jieba = instance->ctx->GetJieba();
+  if (!jieba) {
     return SQLITE_ERROR;
   }
 
@@ -69,7 +88,7 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
   std::vector<cppjieba::Word> words;
 
   // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
-  instance->jieba->Cut(sentence, words, true);
+  jieba->Cut(sentence, words, true);
 
   for (const auto &w : words) {
     if (w.word.empty()) {
@@ -191,15 +210,11 @@ int RegisterFts5JiebaTokenizer(sqlite3 *db, const std::string &dict_dir) {
     return SQLITE_ERROR;
   }
 
-  std::string dict_path = dict_dir + "/jieba.dict.utf8";
-  std::string model_path = dict_dir + "/hmm_model.utf8";
-  std::string user_dict_path = dict_dir + "/user.dict.utf8";
-  std::string idf_path = dict_dir + "/idf.utf8";
-  std::string stop_words_path = dict_dir + "/stop_words.utf8";
-
-  auto jieba_ptr = std::make_shared<cppjieba::Jieba>(dict_path, model_path, user_dict_path, idf_path, stop_words_path);
-
-  auto *ctx = new JiebaContext{jieba_ptr};
+  auto *ctx = new (std::nothrow) JiebaContext();
+  if (!ctx) {
+    return SQLITE_NOMEM;
+  }
+  ctx->dict_dir = dict_dir;
 
   fts5_tokenizer tokenizer;
   tokenizer.xCreate = xCreate;

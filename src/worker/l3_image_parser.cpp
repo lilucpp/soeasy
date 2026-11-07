@@ -4,10 +4,15 @@
 #include "worker/l3_image_parser.h"
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <opencv2/imgcodecs.hpp>
 #include <regex>
 #include <vector>
+
+#if defined(__GLIBC__) || defined(__linux__)
+#include <malloc.h>
+#endif
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
@@ -16,12 +21,35 @@
 namespace soeasy {
 namespace worker {
 
-L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string &models_dir) {
+L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string &models_dir) : mode_(mode), models_dir_(models_dir) {
   supported_exts_ = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg", "pnm", "ppm", "pgm", "tga"};
+  last_ocr_active_time_ = std::chrono::steady_clock::now();
+  // Lazy init: ocr_engine_ remains nullptr until actual image OCR is required.
+}
 
-  ocr_engine_ = ocr::OcrEngineFactory::CreateDefaultEngine(models_dir, mode);
+void L3ImageParser::EnsureOcrEngineLoaded() {
   if (!ocr_engine_) {
-    LOG_WARN("[L3ImageParser] Default OCR engine not loaded yet. Will attempt lazy init on demand.");
+    ocr_engine_ = ocr::OcrEngineFactory::CreateDefaultEngine(models_dir_, mode_);
+    if (!ocr_engine_) {
+      LOG_WARN("[L3ImageParser] Failed to instantiate default OCR engine on demand.");
+    } else {
+      LOG_INFO("[L3ImageParser] PP-OCRv6 Engine lazily initialized on demand.");
+    }
+  }
+}
+
+void L3ImageParser::CheckIdleUnload(double idle_seconds) {
+  if (!ocr_engine_) {
+    return;
+  }
+  auto now = std::chrono::steady_clock::now();
+  double elapsed = std::chrono::duration<double>(now - last_ocr_active_time_).count();
+  if (elapsed >= idle_seconds) {
+    ocr_engine_.reset();
+    LOG_INFO("[L3ImageParser] OCR engine idle for {:.1f}s. Unloaded from memory to reclaim RAM.", elapsed);
+#if defined(__GLIBC__) || defined(__linux__)
+    malloc_trim(0);
+#endif
   }
 }
 
@@ -95,14 +123,13 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
     return true;  // Clean skip
   }
 
-  // Ensure OCR engine is loaded
+  // Ensure OCR engine is loaded on demand
+  EnsureOcrEngineLoaded();
   if (!ocr_engine_) {
-    ocr_engine_ = ocr::OcrEngineFactory::CreateDefaultEngine();
-    if (!ocr_engine_) {
-      LOG_ERROR("[L3ImageParser] OCR Engine unavailable. Cannot parse image '{}'", file_path);
-      return false;
-    }
+    LOG_ERROR("[L3ImageParser] OCR Engine unavailable. Cannot parse image '{}'", file_path);
+    return false;
   }
+  last_ocr_active_time_ = std::chrono::steady_clock::now();
 
   // 3. Multi-page TIFF handling
   if (lower_ext == "tiff" || lower_ext == "tif") {

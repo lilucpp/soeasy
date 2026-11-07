@@ -130,15 +130,9 @@ FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat &bgr_image) const {
   return FilterDecision::kPass;
 }
 
-ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string &file_path) {
+ImageDimension ImageFilter::ProbeBufferDimensions(const uint8_t *buf, size_t bytes) {
   ImageDimension dim;
-  auto f = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
-  if (!f.is_open()) return dim;
-
-  uint8_t buf[256];
-  f.read(reinterpret_cast<char *>(buf), sizeof(buf));
-  size_t bytes = static_cast<size_t>(f.gcount());
-  if (bytes < 10) return dim;
+  if (!buf || bytes < 10) return dim;
 
   // 1. PNG: 89 50 4E 47 0D 0A 1A 0A -> IHDR width at 16..19, height at 20..23 (Big Endian)
   if (bytes >= 24 && buf[0] == 0x89 && buf[1] == 0x50 && buf[2] == 0x4E && buf[3] == 0x47) {
@@ -191,35 +185,52 @@ ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string &file_path) 
     }
   }
 
-  // 5. JPEG: scan markers for SOF0 (0xFF, 0xC0) or SOF2 (0xFF, 0xC2)
+  // 5. JPEG: scan markers for SOF0 (0xFF, 0xC0) ... SOF3 (0xFF, 0xC3)
   if (bytes >= 4 && buf[0] == 0xFF && buf[1] == 0xD8) {
-    f.seekg(2, std::ios::beg);
-    while (f) {
-      uint8_t marker_buf[4];
-      f.read(reinterpret_cast<char *>(marker_buf), 4);
-      if (f.gcount() < 4) break;
-      if (marker_buf[0] != 0xFF) break;
-
-      uint8_t marker = marker_buf[1];
-      uint16_t length = (marker_buf[2] << 8) | marker_buf[3];
-      if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2) {
-        // Read SOF: precision(1), height(2), width(2)
-        uint8_t sof[5];
-        f.read(reinterpret_cast<char *>(sof), 5);
-        if (f.gcount() == 5) {
-          dim.height = (sof[1] << 8) | sof[2];
-          dim.width = (sof[3] << 8) | sof[4];
+    size_t offset = 2;
+    while (offset + 4 <= bytes) {
+      if (buf[offset] != 0xFF) {
+        offset++;
+        continue;
+      }
+      uint8_t marker = buf[offset + 1];
+      if (marker == 0xFF || marker == 0x00) {
+        offset++;
+        continue;
+      }
+      if (marker == 0xD9 || marker == 0xDA) {  // EOI or SOS
+        break;
+      }
+      uint16_t length = (static_cast<uint16_t>(buf[offset + 2]) << 8) | buf[offset + 3];
+      if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) ||
+          (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)) {
+        if (offset + 4 + 5 <= bytes) {
+          dim.height = (buf[offset + 5] << 8) | buf[offset + 6];
+          dim.width = (buf[offset + 7] << 8) | buf[offset + 8];
           dim.valid = (dim.width > 0 && dim.height > 0);
           return dim;
         }
         break;
       }
       if (length < 2) break;
-      f.seekg(length - 2, std::ios::cur);
+      offset += 2 + length;
     }
   }
 
   return dim;
+}
+
+ImageDimension ImageFilter::ProbeHeaderDimensions(const std::string &file_path) {
+  ImageDimension dim;
+  auto f = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
+  if (!f.is_open()) return dim;
+
+  std::vector<uint8_t> buf(65536);
+  f.read(reinterpret_cast<char *>(buf.data()), buf.size());
+  size_t bytes = static_cast<size_t>(f.gcount());
+  if (bytes < 10) return dim;
+
+  return ProbeBufferDimensions(buf.data(), bytes);
 }
 
 }  // namespace ocr

@@ -33,6 +33,7 @@ qrc_*.cpp
 *.dylib
 *.dll
 *.exe
+*.bin
 
 # Preserve vendored sysroot dependencies, onnxruntime, and OCR models
 !third_party/sysroot/**

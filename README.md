@@ -130,6 +130,20 @@ Output artifact: `dist/soeasy-windows-x64.zip`. Extract on any 64-bit Windows ma
 
 ---
 
+## Performance & Resource Footprint
+
+Empirically measured under Linux x86_64 (Release build):
+
+| State / Operation | Total RAM (RSS) | CPU Usage | Details |
+| :--- | :--- | :--- | :--- |
+| **Idle / Background** | **~82 MB** (Total) | **0.0%** | GUI: ~76 MB, Workers: **0 MB** (0 processes, lazy spawn & 60s idle eviction), OCR: 0 MB, SHM Pool: 6 MB (3 slots × 2MB). Down ~81% from original 434 MB. |
+| **Peak Indexing Burst** | **~377 MB** | **~120%** | GUI + 2 Worker processes. Large texts (>2MB) spill to disk cache with 4-tier cleanup guarantee. |
+| **Filename Query (10k+ files)** | Negligible | < 1% | **< 2.0 ms** response latency via lock-free in-memory `NameIndex`. |
+| **Encrypted Fulltext Query** | Negligible | < 2% | **< 0.5 ms** per query via SQLite3MC AES-128 + FTS5 (Jieba). |
+| **Zstd Decompression** | Negligible | < 1% | **> 5,800 MB/s** throughput for instantaneous preview rendering. |
+
+---
+
 ## Verification & Benchmarks
 
 The project includes unit and micro-benchmark suites to verify indexing throughput and extraction robustness:

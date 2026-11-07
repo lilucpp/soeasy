@@ -139,6 +139,15 @@ set(BUILD_TEST_APP OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/efsw ${CMAKE_BINARY_DIR}/efsw_build EXCLUDE_FROM_ALL)
 
 # -------------------------------------------------------------
+# 3.1 Third-party: reproc & reproc++ (Process Management)
+# -------------------------------------------------------------
+set(REPROC++ ON CACHE BOOL "" FORCE)
+set(REPROC_TEST OFF CACHE BOOL "" FORCE)
+set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(REPROC_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/reproc ${CMAKE_BINARY_DIR}/reproc_build EXCLUDE_FROM_ALL)
+
+# -------------------------------------------------------------
 # 4. Common Library (SHM Slot Pool + spdlog Logging)
 # -------------------------------------------------------------
 add_library(soeasy_common STATIC
@@ -179,6 +188,7 @@ target_link_libraries(soeasy_schema PUBLIC
 # 6. Storage Subsystem (SQLite3MC + FTS5 + cppjieba + Zstd)
 # -------------------------------------------------------------
 add_library(soeasy_storage STATIC
+    src/storage/dat_jieba.cpp
     src/storage/fts5_jieba_tokenizer.cpp
     src/storage/storage_engine.cpp
 )
@@ -187,12 +197,21 @@ target_include_directories(soeasy_storage PUBLIC
     third_party/sqlite3mc
     third_party/utfcpp/source
     third_party/cppjieba/include
+    third_party/darts
     third_party/zstd/lib
 )
 target_link_libraries(soeasy_storage PUBLIC
+    soeasy_common
     sqlite3mc
     libzstd_static
     pthread
+)
+
+add_executable(build_dat_dict
+    tools/build_dat_dict.cpp
+)
+target_include_directories(build_dat_dict PRIVATE
+    third_party/darts
 )
 
 # -------------------------------------------------------------
@@ -278,6 +297,7 @@ if(WIN32)
         soeasy_worker_lib
         soeasy_storage
         efsw-static
+        reproc++
         capnp
         kj
         pthread
@@ -292,6 +312,7 @@ else()
         soeasy_worker_lib
         soeasy_storage
         efsw-static
+        reproc++
         capnp
         kj
         pthread
@@ -409,6 +430,26 @@ if(BUILD_TESTS)
   target_link_libraries(test_image_ocr PRIVATE
       soeasy_worker_lib
       soeasy_service
+      soeasy_storage
+      soeasy_common
+  )
+
+  # Comprehensive Matrix Verification: Idle cycle, scaling, large/small files, crash recovery
+  add_executable(test_comprehensive_matrix
+      tests/test_comprehensive_matrix.cpp
+  )
+  target_link_libraries(test_comprehensive_matrix PRIVATE
+      soeasy_worker_lib
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+  )
+
+  # Test: DAT Jieba & Overlay User Dict Test Suite
+  add_executable(test_dat_jieba
+      tests/test_dat_jieba.cpp
+  )
+  target_link_libraries(test_dat_jieba PRIVATE
       soeasy_storage
       soeasy_common
   )

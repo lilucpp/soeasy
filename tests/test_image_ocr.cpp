@@ -83,6 +83,23 @@ void TestImageFilter() {
   assert(ImageFilter::CountEffectiveChars("统一社会信用代码") == 8);
   std::cout << "  Effective character count validation: PASS\n";
 
+  // 7. Test ProbeBufferDimensions (in-memory zero-allocation dimension probe)
+  std::ifstream f_png(img_dataset + "/doc_standard_013.png", std::ios::binary);
+  if (f_png.is_open()) {
+    std::vector<uint8_t> png_buf((std::istreambuf_iterator<char>(f_png)), std::istreambuf_iterator<char>());
+    auto dim = ImageFilter::ProbeBufferDimensions(png_buf.data(), png_buf.size());
+    assert(dim.valid && dim.width > 0 && dim.height > 0);
+    std::cout << "  ProbeBufferDimensions (PNG: " << dim.width << "x" << dim.height << "): PASS\n";
+  }
+
+  std::ifstream f_jpg(img_dataset + "/doc_standard_003.jpg", std::ios::binary);
+  if (f_jpg.is_open()) {
+    std::vector<uint8_t> jpg_buf((std::istreambuf_iterator<char>(f_jpg)), std::istreambuf_iterator<char>());
+    auto dim = ImageFilter::ProbeBufferDimensions(jpg_buf.data(), jpg_buf.size());
+    assert(dim.valid && dim.width > 0 && dim.height > 0);
+    std::cout << "  ProbeBufferDimensions (JPEG: " << dim.width << "x" << dim.height << "): PASS\n";
+  }
+
   std::cout << ">>> Test 1 (Scientific Image Filter): SUCCESS!\n";
 }
 
@@ -176,6 +193,32 @@ void TestL3ImageParser() {
     parser.Parse(noise_bmp, "bmp", &noise_text);
     std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=0: text='" << noise_text << "'\n";
     assert(!noise_text.empty());
+  }
+
+  // Test OCR Engine Lazy Loading and Idle Unload / Reload
+  {
+    std::cout << "  Testing OCR Lazy Loading & Idle Eviction...\n";
+    L3ImageParser lazy_parser(OcrMode::kNormal, soeasy::test::FindModelsDir());
+    assert(!lazy_parser.is_ocr_loaded());
+    std::cout << "    • Lazy state before parse: is_ocr_loaded = false (0 MB overhead)\n";
+
+    std::string sample_img = img_dataset + "/doc_standard_013.png";
+    if (std::filesystem::exists(sample_img)) {
+      std::string out_text;
+      lazy_parser.Parse(sample_img, "png", &out_text);
+      assert(lazy_parser.is_ocr_loaded());
+      std::cout << "    • After first image task: is_ocr_loaded = true (dynamically loaded)\n";
+
+      // Test idle unload
+      lazy_parser.CheckIdleUnload(0.0);
+      assert(!lazy_parser.is_ocr_loaded());
+      std::cout << "    • After CheckIdleUnload(0.0): is_ocr_loaded = false (RAM reclaimed)\n";
+
+      // Test seamless reload on subsequent task
+      lazy_parser.Parse(sample_img, "png", &out_text);
+      assert(lazy_parser.is_ocr_loaded());
+      std::cout << "    • After subsequent image task: is_ocr_loaded = true (transparently reloaded)\n";
+    }
   }
 
   std::cout << ">>> Test 3 (L3 Image Parser): SUCCESS!\n";

@@ -69,7 +69,20 @@ uint64_t GetFileSize(const std::string &path) {
 
 std::string DocToTextImageParserCallback(const std::string &image_name, const char *image_buffer, size_t image_size,
                                          void *user_data) {
-  if (!image_buffer || image_size == 0) return "";
+  if (!image_buffer || image_size < 128 || image_size > 30ULL * 1024ULL * 1024ULL) return "";
+
+  // 1. Fast zero-copy header probe before decoding (< 1 microsecond, 0 memory allocation)
+  auto dim = ocr::ImageFilter::ProbeBufferDimensions(reinterpret_cast<const uint8_t *>(image_buffer), image_size);
+  if (dim.valid) {
+    if (dim.width < 64 || dim.height < 64 || (dim.width * dim.height < 4096)) {
+      return "";  // Drop icons, bullets, decorative buttons immediately without decoding
+    }
+    float aspect = static_cast<float>(dim.width) / static_cast<float>(dim.height);
+    if (aspect > 20.0f || aspect < 0.05f) {
+      return "";  // Drop divider bars and border stripes
+    }
+  }
+
   try {
     std::vector<uint8_t> buf(reinterpret_cast<const uint8_t *>(image_buffer),
                              reinterpret_cast<const uint8_t *>(image_buffer) + image_size);
@@ -85,7 +98,8 @@ std::string DocToTextImageParserCallback(const std::string &image_name, const ch
     static std::unique_ptr<ocr::IOcrEngine> s_ocr_engine;
     std::lock_guard<std::mutex> lock(s_ocr_mutex);
     if (!s_ocr_engine) {
-      s_ocr_engine = ocr::OcrEngineFactory::CreateDefaultEngine();
+      // Use limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
+      s_ocr_engine = ocr::OcrEngineFactory::CreateDefaultEngine("", ocr::OcrMode::kNormal, 640);
     }
     if (!s_ocr_engine) return "";
 
@@ -438,13 +452,69 @@ bool L2OfficeParser::ParsePdf(const std::string &file_path, std::string *out_utf
   if (!out_utf8) return false;
   out_utf8->clear();
 
-  // Pure C++ fallback for embedded text strings
-  ParseLegacyOffice(file_path, "pdf", out_utf8);
-
-  uint64_t file_size = GetFileSize(file_path);
-  if (out_utf8->size() < 15 && file_size > 10 * 1024) {
-    if (is_scanned) *is_scanned = true;
+  // Read file stream to extract text in BT ... ET blocks and string literals
+  auto ifs = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
+  if (!ifs.is_open()) {
+    return false;
   }
+
+  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+  ifs.close();
+
+  // 1. Search for text objects in PDF streams: BT ... ET (ISO 32000-1)
+  std::string extracted;
+  size_t pos = 0;
+  while ((pos = content.find("BT", pos)) != std::string::npos) {
+    // Ensure BT is an isolated token
+    bool valid_bt = (pos == 0 || std::isspace(static_cast<unsigned char>(content[pos - 1]))) &&
+                    (pos + 2 >= content.size() || std::isspace(static_cast<unsigned char>(content[pos + 2])));
+    if (!valid_bt) {
+      pos += 2;
+      continue;
+    }
+
+    size_t end_pos = content.find("ET", pos + 2);
+    if (end_pos == std::string::npos) break;
+
+    std::string bt_block = content.substr(pos + 2, end_pos - (pos + 2));
+    // Extract strings in parentheses: ( ... )
+    size_t str_pos = 0;
+    while ((str_pos = bt_block.find('(', str_pos)) != std::string::npos) {
+      size_t str_end = str_pos + 1;
+      int depth = 1;
+      while (str_end < bt_block.size() && depth > 0) {
+        if (bt_block[str_end] == '\\') {
+          str_end += 2;
+          continue;
+        }
+        if (bt_block[str_end] == '(') {
+          depth++;
+        } else if (bt_block[str_end] == ')') {
+          depth--;
+        }
+        str_end++;
+      }
+      if (depth == 0) {
+        std::string raw_str = bt_block.substr(str_pos + 1, str_end - str_pos - 2);
+        if (!raw_str.empty()) {
+          extracted += common::EncodingUtils::ToUtf8(raw_str) + " ";
+        }
+      }
+      str_pos = str_end;
+    }
+    pos = end_pos + 2;
+  }
+
+  // If no selectable BT...ET text found, check if it is a scanned image PDF (>10KB)
+  uint64_t file_size = GetFileSize(file_path);
+  if (extracted.empty()) {
+    if (file_size > 10 * 1024) {
+      if (is_scanned) *is_scanned = true;
+    }
+  } else {
+    *out_utf8 = std::move(extracted);
+  }
+
   return !out_utf8->empty() || (is_scanned && *is_scanned);
 }
 

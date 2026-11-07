@@ -3,6 +3,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <poll.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -15,9 +16,12 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
+#include "common/encoding_utils.h"
 #include "common/logger.h"
 #include "common/shm_pool.h"
 #include "soeasy_ipc.capnp.h"
@@ -87,23 +91,63 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
              extracted_utf8.size(), cost_ms);
     size_t text_bytes = extracted_utf8.size();
     if (text_bytes > slot_capacity) {
-      text_bytes = slot_capacity;
-    }
+      // Spill to temporary file to eliminate truncation barrier
+      std::error_code ec;
+      std::filesystem::path spill_dir = std::filesystem::temp_directory_path(ec) / "soeasy_spill";
+      std::filesystem::create_directories(spill_dir, ec);
 
-    // Write zero-copy into shared memory slot
-    uint8_t *slot_data = shm_pool.GetWritableSlotData(slot_id);
-    if (slot_data && text_bytes > 0) {
-      std::memcpy(slot_data, extracted_utf8.data(), text_bytes);
-      shm_pool.CommitWrite(slot_id, text_bytes);
+      auto now_us =
+          std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
+              .count();
+#ifdef _WIN32
+      int my_pid = static_cast<int>(GetCurrentProcessId());
+#else
+      int my_pid = static_cast<int>(getpid());
+#endif
+      std::string spill_filename = "soeasy_spill_" + std::to_string(my_pid) + "_" + std::to_string(doc_id) + "_" +
+                                   std::to_string(now_us) + ".tmp";
+      std::filesystem::path spill_path = spill_dir / spill_filename;
+
+      auto ofs = common::EncodingUtils::OpenOfstream(spill_path.string(), std::ios::binary);
+      if (ofs.is_open()) {
+        ofs.write(extracted_utf8.data(), extracted_utf8.size());
+        ofs.close();
+        shm_pool.CommitWrite(slot_id, 0);
+
+        result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
+        result.setExtractedBytes(text_bytes);
+        result.setPageCount(1);
+        result.setIsScannedPdf(is_scanned_pdf);
+        result.setMessage("SPILL:" + spill_path.string());
+        LOG_INFO("[Worker] Document exceeded slot capacity ({} > {} bytes). Spilled to '{}'", text_bytes, slot_capacity,
+                 spill_path.string());
+      } else {
+        // Fallback: write up to slot_capacity if spill file creation fails
+        uint8_t *slot_data = shm_pool.GetWritableSlotData(slot_id);
+        if (slot_data) {
+          std::memcpy(slot_data, extracted_utf8.data(), slot_capacity);
+          shm_pool.CommitWrite(slot_id, slot_capacity);
+        }
+        result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
+        result.setExtractedBytes(slot_capacity);
+        result.setMessage("Success");
+      }
     } else {
-      shm_pool.CommitWrite(slot_id, 0);
-    }
+      // Write zero-copy into shared memory slot
+      uint8_t *slot_data = shm_pool.GetWritableSlotData(slot_id);
+      if (slot_data && text_bytes > 0) {
+        std::memcpy(slot_data, extracted_utf8.data(), text_bytes);
+        shm_pool.CommitWrite(slot_id, text_bytes);
+      } else {
+        shm_pool.CommitWrite(slot_id, 0);
+      }
 
-    result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
-    result.setExtractedBytes(text_bytes);
-    result.setPageCount(1);
-    result.setIsScannedPdf(is_scanned_pdf);
-    result.setMessage("Success");
+      result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
+      result.setExtractedBytes(text_bytes);
+      result.setPageCount(1);
+      result.setIsScannedPdf(is_scanned_pdf);
+      result.setMessage("Success");
+    }
   }
 }
 
@@ -122,6 +166,18 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
   kj::HandleOutputStream output_stream(pipe_handle);
 
   while (true) {
+    DWORD bytes_avail = 0;
+    while (true) {
+      if (!PeekNamedPipe(pipe_handle, NULL, 0, NULL, &bytes_avail, NULL)) {
+        return 0;
+      }
+      if (bytes_avail > 0) {
+        break;
+      }
+      l3_parser.CheckIdleUnload(60.0);
+      Sleep(1000);
+    }
+
     try {
       capnp::InputStreamMessageReader reader(input_stream);
       auto request = reader.getRoot<soeasy::ipc::ParseRequest>();
@@ -141,8 +197,7 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
 }
 #else
 int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
-  // Guarantee worker is immediately killed by kernel if master process dies
-  prctl(PR_SET_PDEATHSIG, SIGKILL);
+  pid_t parent_pid = getppid();
 
   common::ShmSlotPool shm_pool;
   if (!shm_pool.Attach(shm_name, slot_count, slot_capacity)) {
@@ -154,6 +209,27 @@ int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count,
   L3ImageParser l3_parser(ocr::OcrMode::kNormal);
 
   while (true) {
+    struct pollfd pfd;
+    pfd.fd = socket_fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    int ret = poll(&pfd, 1, 1000);  // 1-second timeout
+    if (ret < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    if (ret == 0) {
+      if (getppid() != parent_pid) {
+        break;
+      }
+      // Timeout: periodic check to unload idle heavy models (PP-OCRv6)
+      l3_parser.CheckIdleUnload(60.0);
+      continue;
+    }
+    if (!(pfd.revents & POLLIN)) {
+      break;
+    }
+
     try {
       capnp::StreamFdMessageReader reader(socket_fd);
       auto request = reader.getRoot<soeasy::ipc::ParseRequest>();

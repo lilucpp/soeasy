@@ -49,13 +49,28 @@ class L3ImageParser {
    */
   static bool ParseSvgText(const std::string &file_path, std::string *out_utf8);
 
+  /**
+   * @brief Check and unload OCR engine if idle for specified duration to reclaim RAM.
+   */
+  void CheckIdleUnload(double idle_seconds = 60.0);
+
+  /**
+   * @brief Check if the OCR engine model is currently instantiated in memory.
+   */
+  bool is_ocr_loaded() const { return ocr_engine_ != nullptr; }
+
   void set_min_effective_chars(size_t min_chars) { min_effective_chars_ = min_chars; }
   size_t min_effective_chars() const { return min_effective_chars_; }
 
  private:
+  void EnsureOcrEngineLoaded();
+
   std::unordered_set<std::string> supported_exts_;
   ocr::ImageFilter filter_;
   std::unique_ptr<ocr::IOcrEngine> ocr_engine_;
+  ocr::OcrMode mode_ = ocr::OcrMode::kNormal;
+  std::string models_dir_;
+  std::chrono::steady_clock::time_point last_ocr_active_time_;
   size_t min_effective_chars_ = 4;
 };
 

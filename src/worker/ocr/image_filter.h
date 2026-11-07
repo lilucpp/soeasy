@@ -59,6 +59,11 @@ class ImageFilter {
   static ImageDimension ProbeHeaderDimensions(const std::string &file_path);
 
   /**
+   * @brief Helper to probe image width and height directly from in-memory byte buffer without decoding.
+   */
+  static ImageDimension ProbeBufferDimensions(const uint8_t *buf, size_t bytes);
+
+  /**
    * @brief Check whether file path matches temporary chat/app cache, icon, or thumbnail patterns.
    */
   static bool IsCacheOrThumbnailPath(const std::string &file_path);

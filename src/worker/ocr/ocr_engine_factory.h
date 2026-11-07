@@ -25,7 +25,7 @@ class OcrEngineFactory {
    * Resolves models from standard installation paths or models/ directory.
    */
   static std::unique_ptr<IOcrEngine> CreateDefaultEngine(const std::string &models_base_dir = "",
-                                                         OcrMode mode = OcrMode::kNormal);
+                                                         OcrMode mode = OcrMode::kNormal, int limit_side_len = 736);
 };
 
 }  // namespace ocr

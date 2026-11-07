@@ -131,6 +131,9 @@ int main(int argc, char *argv[]) {
   }
   QDir().mkpath(app_data_dir);
 
+  // Clean orphan spill temporary files left by previous abnormal exits or crashes
+  soeasy::service::WorkerGuard::CleanupOrphanSpillFiles();
+
   // 2. Initialize Index Config from persistent JSON file
   auto config = std::make_shared<soeasy::service::IndexConfig>();
   QString config_path = app_data_dir + "/config.json";
@@ -249,7 +252,7 @@ int main(int argc, char *argv[]) {
                                    "/usr/local/share/soeasy/dict",
                                    "/usr/share/soeasy/dict"};
     for (const auto &candidate : dict_candidates) {
-      if (QFileInfo::exists(candidate + "/jieba.dict.utf8")) {
+      if (QFileInfo::exists(candidate + "/jieba_dat.bin") || QFileInfo::exists(candidate + "/jieba.dict.utf8")) {
         dict_dir = candidate;
         break;
       }

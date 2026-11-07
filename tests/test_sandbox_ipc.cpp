@@ -29,12 +29,12 @@ int main(int argc, char *argv[]) {
 
   soeasy::service::WorkerGuard guard;
 
-  // Initialize WorkerGuard with 2 workers, 1500ms timeout for tests, 8 slots of 8MB
-  std::cout << "[Step 1] 初始化 Worker 进程池与共享内存槽位池...\n";
+  // Initialize WorkerGuard with 2 workers, 1500ms timeout for tests, dynamic slots (2+1 = 3 slots), 2MB capacity
+  std::cout << "[Step 1] 初始化 Worker 进程池与动态共享内存池 (2 workers -> 3 slots x 2MB = 6MB)...\n";
   auto t0 = std::chrono::high_resolution_clock::now();
   bool init_ok = guard.Init(/*worker_bin_path=*/"", /*worker_count=*/2,
-                            /*timeout_ms=*/1500, /*shm_slot_count=*/8,
-                            /*shm_slot_capacity=*/8 * 1024 * 1024);
+                            /*timeout_ms=*/1500, /*shm_slot_count=*/0,
+                            /*shm_slot_capacity=*/0);
   auto t1 = std::chrono::high_resolution_clock::now();
   double init_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
@@ -42,9 +42,13 @@ int main(int argc, char *argv[]) {
     std::cerr << "[-] WorkerGuard 初始化失败!\n";
     return 1;
   }
+  assert(guard.shm_pool()->slot_count() == 3);
+  assert(guard.shm_pool()->slot_capacity() == 2 * 1024 * 1024);
   std::cout << "[+] WorkerGuard 初始化成功! 启动工作进程数: " << guard.worker_count()
-            << ", 槽位数: " << guard.shm_pool()->slot_count() << ", 槽位容量: 8MB (总池 64MB), 耗时: " << std::fixed
-            << std::setprecision(2) << init_ms << " ms\n\n";
+            << ", 槽位数: " << guard.shm_pool()->slot_count()
+            << ", 槽位容量: " << guard.shm_pool()->slot_capacity() / (1024 * 1024) << "MB (总池 "
+            << (guard.shm_pool()->slot_count() * guard.shm_pool()->slot_capacity()) / (1024 * 1024)
+            << "MB), 耗时: " << std::fixed << std::setprecision(2) << init_ms << " ms\n\n";
 
   // -------------------------------------------------------------
   // Test 1: Normal large document zero-copy extraction via SHM
@@ -205,6 +209,91 @@ int main(int argc, char *argv[]) {
   std::cout << "    • 总任务数: " << kBurstCount << ", 成功完成: " << success_count << ", 总耗时: " << burst_ms
             << " ms\n";
   std::cout << "    • 解析调度吞吐量: " << std::fixed << std::setprecision(1) << qps << " 文件/秒\n\n";
+
+  // -------------------------------------------------------------
+  // Test 7: Spill-to-file Boundary (Exact 2MB vs 2MB + 1 Byte)
+  // -------------------------------------------------------------
+  std::cout << "[Step 8] 验证临界容量边界 (恰好 2MB 走 SHM，2MB + 1 字节精确溢出落盘)...\n";
+  const size_t kSlotCap = guard.shm_pool()->slot_capacity();  // 2 * 1024 * 1024
+
+  // Boundary 1: Exactly 2MB (within capacity)
+  std::string exact_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_exact_2mb.txt").string();
+  {
+    std::string exact_content(kSlotCap, 'A');
+    WriteFile(exact_doc_path, exact_content);
+  }
+  soeasy::service::ParseTask exact_task{299, exact_doc_path, "txt", 1};
+  soeasy::service::ParseTaskResult exact_res;
+  guard.ExecuteTask(exact_task, &exact_res);
+  assert(exact_res.status == soeasy::service::TaskStatus::kSuccess);
+  assert(exact_res.spill_file_path.empty());  // Stays in shared memory!
+  guard.shm_pool()->ReleaseSlot(exact_res.slot_id);
+  std::remove(exact_doc_path.c_str());
+  std::cout << "    • 边界 1 (恰好 2MB): 成功走共享内存零拷贝 (spill_file_path 为空)!\n";
+
+  // Boundary 2: 2MB + 1 Byte (strictly exceeds capacity)
+  std::string overflow_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_overflow.txt").string();
+  {
+    std::string overflow_content(kSlotCap + 1, 'B');
+    WriteFile(overflow_doc_path, overflow_content);
+  }
+  soeasy::service::ParseTask overflow_task{300, overflow_doc_path, "txt", 1};
+  soeasy::service::ParseTaskResult overflow_res;
+  guard.ExecuteTask(overflow_task, &overflow_res);
+  assert(overflow_res.status == soeasy::service::TaskStatus::kSuccess);
+  assert(!overflow_res.spill_file_path.empty());  // Must trigger spill-to-file!
+  assert(std::filesystem::exists(overflow_res.spill_file_path));
+  std::uintmax_t spill_sz = std::filesystem::file_size(overflow_res.spill_file_path);
+  assert(spill_sz == kSlotCap + 1);
+  std::cout << "    • 边界 2 (2MB + 1 字节): 成功触发溢出落盘! 溢出大小: " << spill_sz << " 字节\n";
+
+  std::error_code ec;
+  std::filesystem::remove(overflow_res.spill_file_path, ec);
+  guard.shm_pool()->ReleaseSlot(overflow_res.slot_id);
+  std::remove(overflow_doc_path.c_str());
+
+  // Test CleanupOrphanSpillFiles() Boundary Defense:
+  // Non-matching file must NOT be deleted; matching orphan files MUST be deleted.
+  std::filesystem::path unrelated_file = std::filesystem::path(guard.GetSpillDirectory()) / "unrelated_user_data.txt";
+  std::filesystem::path orphan_file1 =
+      std::filesystem::path(guard.GetSpillDirectory()) / "soeasy_spill_999999_888_12345.tmp";
+  std::filesystem::path orphan_file2 =
+      std::filesystem::path(guard.GetSpillDirectory()) / "soeasy_spill_888888_777_67890.tmp";
+  WriteFile(unrelated_file.string(), "do not delete me");
+  WriteFile(orphan_file1.string(), "orphan 1");
+  WriteFile(orphan_file2.string(), "orphan 2");
+
+  soeasy::service::WorkerGuard::CleanupOrphanSpillFiles();
+  assert(std::filesystem::exists(unrelated_file));  // Safe! Unrelated file preserved!
+  assert(!std::filesystem::exists(orphan_file1));   // Swept!
+  assert(!std::filesystem::exists(orphan_file2));   // Swept!
+  std::remove(unrelated_file.string().c_str());
+  std::cout << "    • 孤儿清理安全边界: 非匹配文件完整保留，孤儿临时文件彻底扫除!\n";
+
+  // -------------------------------------------------------------
+  // Test 8: Worker Idle Eviction & Seamless Respawn Verification
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 9] 验证 Worker 闲置超时自动淘汰与后续任务无缝自愈拉起...\n";
+  std::cout << "    • 当前活跃 Worker 数: " << guard.active_worker_count() << "\n";
+  assert(guard.active_worker_count() > 0);
+
+  // Set idle eviction threshold to 200ms
+  guard.set_idle_evict_ms(200);
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+
+  std::cout << "    • 200ms 闲置淘汰生效后活跃 Worker 数: " << guard.active_worker_count() << "\n";
+  assert(guard.active_worker_count() == 0);  // All workers evicted to 0 RAM!
+
+  // Send new task to test seamless respawn
+  soeasy::service::ParseTask resume_task{301, large_doc_path, "txt", 1};
+  soeasy::service::ParseTaskResult resume_res;
+  bool resume_ok = guard.ExecuteTask(resume_task, &resume_res);
+  assert(resume_ok);
+  assert(resume_res.status == soeasy::service::TaskStatus::kSuccess);
+  guard.shm_pool()->ReleaseSlot(resume_res.slot_id);
+  std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count() << " (成功瞬时拉起并完成解析)!\n";
+  assert(guard.active_worker_count() > 0);
+  std::cout << "[+] Worker 懒加载、闲置归零与无缝拉起验证 100% 通过!\n\n";
 
   guard.Shutdown();
 

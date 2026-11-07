@@ -4,6 +4,15 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+#include <cstring>
+#if defined(__GLIBC__) || defined(__linux__)
+#include <malloc.h>
+#endif
 #endif
 
 #include "common/logger.h"
@@ -11,9 +20,15 @@
 #include "worker/worker_loop.h"
 
 int main(int argc, char *argv[]) {
+#if defined(__GLIBC__) || defined(__linux__)
+  // Constrain glibc multi-arena memory fragmentation from multi-threaded runtimes (OpenCV / ONNX Runtime)
+  mallopt(M_ARENA_MAX, 2);
+#endif
   int socket_fd = -1;
 #ifdef _WIN32
   std::string pipe_name;
+#else
+  std::string socket_name;
 #endif
   std::string shm_name;
   size_t slot_count = 8;
@@ -35,6 +50,10 @@ int main(int argc, char *argv[]) {
 #endif
         if (arg.rfind("--socket-fd=", 0) == 0) {
       socket_fd = std::stoi(arg.substr(12));
+#ifndef _WIN32
+    } else if (arg.rfind("--socket-name=", 0) == 0) {
+      socket_name = arg.substr(14);
+#endif
     } else if (arg.rfind("--shm-name=", 0) == 0) {
       shm_name = arg.substr(11);
     } else if (arg.rfind("--slot-count=", 0) == 0) {
@@ -93,12 +112,33 @@ int main(int argc, char *argv[]) {
   CloseHandle(h_pipe);
   return ret;
 #else
+  if (socket_fd < 0 && !socket_name.empty()) {
+    int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock >= 0) {
+      struct sockaddr_un addr;
+      std::memset(&addr, 0, sizeof(addr));
+      addr.sun_family = AF_UNIX;
+      addr.sun_path[0] = '\0';
+      std::memcpy(addr.sun_path + 1, socket_name.c_str(), socket_name.size());
+      socklen_t addr_len = sizeof(sa_family_t) + 1 + socket_name.size();
+      if (connect(sock, reinterpret_cast<struct sockaddr *>(&addr), addr_len) == 0) {
+        socket_fd = sock;
+      } else {
+        LOG_ERROR("Failed to connect to abstract socket '{}': {}", socket_name, strerror(errno));
+        close(sock);
+        return 1;
+      }
+    }
+  }
+
   if (socket_fd < 0 || shm_name.empty()) {
-    std::cerr << "Usage: soeasy-worker --socket-fd=<fd> --shm-name=<name> "
+    std::cerr << "Usage: soeasy-worker (--socket-name=<name> | --socket-fd=<fd>) --shm-name=<name> "
               << "[--slot-count=<N>] [--slot-capacity=<bytes>]\n";
     return 1;
   }
 
-  return soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count, slot_capacity);
+  int ret = soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count, slot_capacity);
+  close(socket_fd);
+  return ret;
 #endif
 }

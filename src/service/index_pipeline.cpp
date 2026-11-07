@@ -229,27 +229,42 @@ size_t IndexPipeline::PerformInitialScan(
   LOG_INFO("[IndexPipeline] Initial scan discovered {} files to index across {} directories.", total_files,
            watched_dirs.size());
 
-  size_t indexed_count = 0;
-  size_t processed_count = 0;
-
   if (storage_engine_) {
     storage_engine_->SetBulkMode(true);
   }
 
   cancel_scan_.store(false);
-  for (const auto &fpath : files_to_index) {
-    if (cancel_scan_.load()) {
-      LOG_INFO("[IndexPipeline] Initial scan cancelled.");
-      break;
+  size_t worker_concurrency = std::max<size_t>(1, config_->worker_count());
+  size_t num_threads = std::min<size_t>(worker_concurrency, total_files > 0 ? total_files : 1);
+  std::atomic<size_t> file_idx{0};
+  std::atomic<size_t> indexed_count{0};
+  std::atomic<size_t> processed_count{0};
+  std::vector<std::thread> workers;
+
+  for (size_t t = 0; t < num_threads; ++t) {
+    workers.emplace_back([&]() {
+      while (!cancel_scan_.load()) {
+        size_t idx = file_idx.fetch_add(1);
+        if (idx >= total_files) {
+          break;
+        }
+        const auto &fpath = files_to_index[idx];
+        bool ok = IndexSingleFile(fpath);
+        if (ok) {
+          indexed_count++;
+        }
+        size_t current_processed = ++processed_count;
+        if (progress_cb) {
+          progress_cb(current_processed, total_files, fpath);
+        }
+      }
+    });
+  }
+
+  for (auto &th : workers) {
+    if (th.joinable()) {
+      th.join();
     }
-    if (progress_cb) {
-      progress_cb(processed_count, total_files, fpath);
-    }
-    bool ok = IndexSingleFile(fpath);
-    if (ok) {
-      indexed_count++;
-    }
-    processed_count++;
   }
 
   FlushWriteQueue();
@@ -262,7 +277,7 @@ size_t IndexPipeline::PerformInitialScan(
     progress_cb(total_files, total_files, "");
   }
 
-  return indexed_count;
+  return indexed_count.load();
 }
 
 bool IndexPipeline::RebuildIndex(
@@ -351,26 +366,41 @@ bool IndexPipeline::RebuildIndex(
   LOG_INFO("[IndexPipeline] Rebuild discovered {} files to index across {} directories.", total_files,
            watched_dirs.size());
 
-  size_t indexed_count = 0;
-  size_t processed_count = 0;
-
   if (storage_engine_) {
     storage_engine_->SetBulkMode(true);
   }
 
   cancel_scan_.store(false);
-  for (const auto &fpath : files_to_index) {
-    if (cancel_scan_.load()) {
-      LOG_INFO("[IndexPipeline] Rebuild cancelled.");
-      break;
-    }
-    bool ok = IndexSingleFile(fpath);
-    if (ok) {
-      indexed_count++;
-    }
-    processed_count++;
-    if (progress_cb) {
-      progress_cb(processed_count, total_files, fpath);
+  size_t worker_concurrency = std::max<size_t>(1, config_->worker_count());
+  size_t num_threads = std::min<size_t>(worker_concurrency, total_files > 0 ? total_files : 1);
+  std::atomic<size_t> file_idx{0};
+  std::atomic<size_t> indexed_count{0};
+  std::atomic<size_t> processed_count{0};
+  std::vector<std::thread> workers;
+
+  for (size_t t = 0; t < num_threads; ++t) {
+    workers.emplace_back([&]() {
+      while (!cancel_scan_.load()) {
+        size_t idx = file_idx.fetch_add(1);
+        if (idx >= total_files) {
+          break;
+        }
+        const auto &fpath = files_to_index[idx];
+        bool ok = IndexSingleFile(fpath);
+        if (ok) {
+          indexed_count++;
+        }
+        size_t current_processed = ++processed_count;
+        if (progress_cb) {
+          progress_cb(current_processed, total_files, fpath);
+        }
+      }
+    });
+  }
+
+  for (auto &th : workers) {
+    if (th.joinable()) {
+      th.join();
     }
   }
 
@@ -396,7 +426,7 @@ bool IndexPipeline::RebuildIndex(
   LOG_INFO(
       "[IndexPipeline] Index rebuild finished in {:.2f} ms | Indexed: {} / {} files | "
       "Total parsed bytes: {}",
-      elapsed_ms, indexed_count, total_files, stats_.total_bytes_indexed);
+      elapsed_ms, indexed_count.load(), total_files, stats_.total_bytes_indexed);
 
   return true;
 }
@@ -489,7 +519,11 @@ bool IndexPipeline::IndexSingleFile(const std::string &file_path) {
 
   if (!ok || res.status != TaskStatus::kSuccess) {
     if (res.slot_id > 0) {
-      worker_guard_->shm_pool()->ReleaseSlot(res.slot_id);
+      worker_guard_->ReleaseSlot(res.slot_id);
+    }
+    if (!res.spill_file_path.empty()) {
+      std::error_code ec;
+      std::filesystem::remove(res.spill_file_path, ec);
     }
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_parse_failures++;
@@ -520,16 +554,39 @@ bool IndexPipeline::IndexSingleFile(const std::string &file_path) {
     return false;
   }
 
-  // 2. Read extracted plain text from shared memory slot
-  const uint8_t *extracted_data = nullptr;
-  size_t extracted_bytes = 0;
-  bool read_ok = worker_guard_->shm_pool()->ReadSlot(res.slot_id, &extracted_data, &extracted_bytes);
-
+  // 2. Read extracted plain text from shared memory slot or spill file
   std::string text_content;
-  if (read_ok && extracted_data && extracted_bytes > 0) {
-    text_content.assign(reinterpret_cast<const char *>(extracted_data), extracted_bytes);
+  size_t extracted_bytes = 0;
+
+  // RAII Guard: Guarantee temporary spill file is ALWAYS cleaned up on exit
+  struct SpillFileGuard {
+    std::string path;
+    ~SpillFileGuard() {
+      if (!path.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+      }
+    }
+  } spill_guard{res.spill_file_path};
+
+  if (!res.spill_file_path.empty()) {
+    std::error_code ec;
+    auto ifs = common::EncodingUtils::OpenIfstream(res.spill_file_path);
+    if (ifs.is_open()) {
+      text_content.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+      ifs.close();
+      extracted_bytes = text_content.size();
+    }
+    std::filesystem::remove(res.spill_file_path, ec);
+    spill_guard.path.clear();
+  } else {
+    const uint8_t *extracted_data = nullptr;
+    bool read_ok = worker_guard_->shm_pool()->ReadSlot(res.slot_id, &extracted_data, &extracted_bytes);
+    if (read_ok && extracted_data && extracted_bytes > 0) {
+      text_content.assign(reinterpret_cast<const char *>(extracted_data), extracted_bytes);
+    }
   }
-  worker_guard_->shm_pool()->ReleaseSlot(res.slot_id);
+  worker_guard_->ReleaseSlot(res.slot_id);
 
   // 3. Update in-memory filename index (for instant filename queries)
   NameRecord rec;

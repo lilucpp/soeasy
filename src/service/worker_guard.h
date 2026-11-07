@@ -17,6 +17,8 @@
 #include <thread>
 #include <vector>
 
+#include <reproc++/reproc.hpp>
+
 #include "common/shm_pool.h"
 
 namespace soeasy {
@@ -46,15 +48,16 @@ struct ParseTaskResult {
   uint64_t extracted_bytes = 0;
   bool is_scanned_pdf = false;
   std::string error_message;
+  std::string spill_file_path;  // Set when text exceeds slot capacity and spilled to temp file
   double elapsed_ms = 0.0;
 };
 
 enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2 };
 
 struct WorkerInstance {
+  std::unique_ptr<reproc::process> process;
   pid_t pid = 0;
 #ifdef _WIN32
-  HANDLE process_handle = nullptr;
   HANDLE pipe_handle = nullptr;
 #else
   int socket_fd = -1;
@@ -64,7 +67,15 @@ struct WorkerInstance {
   uint32_t current_slot_id = 0;
   uint32_t current_timeout_ms = 15000;
   std::chrono::steady_clock::time_point task_start_time;
+  std::chrono::steady_clock::time_point idle_start_time;
   uint64_t total_tasks_processed = 0;
+
+  WorkerInstance() = default;
+  ~WorkerInstance() = default;
+  WorkerInstance(WorkerInstance &&) noexcept = default;
+  WorkerInstance &operator=(WorkerInstance &&) noexcept = default;
+  WorkerInstance(const WorkerInstance &) = delete;
+  WorkerInstance &operator=(const WorkerInstance &) = delete;
 
   bool is_busy() const { return state == WorkerState::kBusy; }
 };
@@ -73,6 +84,7 @@ class WorkerGuard {
  public:
   static constexpr uint32_t kDefaultTimeoutMs = 15000;                 // 15s default
   static constexpr uint32_t kDefaultStallTimeoutMs = 5000;             // 5s stall heartbeat
+  static constexpr uint32_t kDefaultIdleEvictMs = 60000;               // 60s idle eviction
   static constexpr size_t kDefaultMaxMemoryBytes = 512 * 1024 * 1024;  // 512MB RSS
 
   WorkerGuard();
@@ -81,6 +93,16 @@ class WorkerGuard {
   // Disallow copy and assign
   WorkerGuard(const WorkerGuard &) = delete;
   WorkerGuard &operator=(const WorkerGuard &) = delete;
+
+  /**
+   * @brief Ensure orphan spill temp files from prior crashed runs are swept and removed.
+   */
+  static void CleanupOrphanSpillFiles();
+
+  /**
+   * @brief Canonical directory path for temporary spilled text files.
+   */
+  static std::string GetSpillDirectory();
 
   /**
    * @brief Initialize worker pool and shared memory pool.
@@ -115,9 +137,17 @@ class WorkerGuard {
    */
   common::ShmSlotPool *shm_pool() { return &shm_pool_; }
 
+  /**
+   * @brief Safely release an allocated slot and notify any waiting worker threads.
+   */
+  void ReleaseSlot(uint32_t slot_id);
+
   size_t worker_count() const { return workers_.size(); }
+  size_t active_worker_count() const;
   uint32_t timeout_ms() const { return timeout_ms_; }
   void set_timeout_ms(uint32_t ms) { timeout_ms_ = ms; }
+  uint32_t idle_evict_ms() const { return idle_evict_ms_; }
+  void set_idle_evict_ms(uint32_t ms) { idle_evict_ms_ = ms; }
 
   void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                          bool doctotext_logging = false, const std::string &doctotext_log_path = "",
@@ -131,6 +161,7 @@ class WorkerGuard {
 
   std::string worker_bin_path_;
   uint32_t timeout_ms_ = kDefaultTimeoutMs;
+  uint32_t idle_evict_ms_ = kDefaultIdleEvictMs;
   std::string log_level_ = "info";
   bool log_console_ = false;
   bool log_sync_ = false;

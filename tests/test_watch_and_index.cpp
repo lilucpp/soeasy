@@ -237,6 +237,44 @@ int main(int argc, char *argv[]) {
   }
   std::cout << "[+] 搜索路径限定生效! 仅精准返回限定路径下的命中文件: " << scoped_hits[0].file_path << "\n\n";
 
+  // 10.5 Verify End-to-End Large Text (>2MB) Spill-to-file Indexing & Cleanup
+  std::cout << "[Step 10.5] 验证端到端超大文本 (>2MB) 溢出落盘入库、全文检索召回与零残留清理...\n";
+  std::string f_spill = test_dir + "/work/massive_spill_doc.txt";
+  const size_t kSpillDocBytes = 2500 * 1024;  // 2.5MB > 2MB slot capacity
+  {
+    std::string big_content;
+    big_content.reserve(kSpillDocBytes);
+    big_content += "SoEasyPipelineSpillSuperBigDocument2026: 深度架构优化验证正文。";
+    while (big_content.size() + 64 <= kSpillDocBytes) {
+      big_content += " 性能调优多进程沙箱共享内存溢出与双写检索验证数据测试。";
+    }
+    WriteFile(f_spill, big_content);
+  }
+
+  // Wait for efsw debounce and worker parse & spill pipeline
+  std::this_thread::sleep_for(std::chrono::milliseconds(350));
+
+  // Search the unique keyword
+  auto spill_hits = pipeline->SearchFulltext("SoEasyPipelineSpillSuperBigDocument2026", 10, 0);
+  assert(!spill_hits.empty());
+  assert(spill_hits[0].file_path == f_spill);
+  std::cout << "  [+] 端到端全文检索命中超大文本! 命中文件: " << spill_hits[0].file_name
+            << " | 摘要: " << spill_hits[0].snippet << "\n";
+
+  // Check that NO spill files remain in the spill directory
+  size_t lingering_spill_files = 0;
+  std::error_code spill_ec;
+  for (const auto &entry :
+       std::filesystem::directory_iterator(soeasy::service::WorkerGuard::GetSpillDirectory(), spill_ec)) {
+    if (spill_ec) break;
+    std::string fn = entry.path().filename().string();
+    if (fn.rfind("soeasy_spill_", 0) == 0 && fn.find(".tmp") != std::string::npos) {
+      lingering_spill_files++;
+    }
+  }
+  assert(lingering_spill_files == 0);
+  std::cout << "  [+] 临时溢出文件即时销毁验证通过: 目录残留临时文件数为 0!\n\n";
+
   // 11. In-memory Filename Search Benchmark (10,000 files)
   std::cout << "[Step 11] 测试千万量级内存文件名秒搜基准性能 (10,000 文件规模)...\n";
   for (int i = 0; i < 10000; ++i) {

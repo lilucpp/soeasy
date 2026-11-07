@@ -55,6 +55,10 @@ class EncodingUtils {
   // Reads directly from disk on both Windows and POSIX without memory buffering.
   static boost::nowide::ifstream OpenIfstream(const std::string &utf8_path, std::ios::openmode mode = std::ios::binary);
 
+  // Safely open a streaming boost::nowide::ofstream for a UTF-8 file path across platforms.
+  static boost::nowide::ofstream OpenOfstream(const std::string &utf8_path,
+                                              std::ios::openmode mode = std::ios::binary | std::ios::trunc);
+
   // Safely open a C FILE* handle for a UTF-8 file path across platforms.
   static FILE *FopenUtf8(const std::string &utf8_path, const char *mode);
 

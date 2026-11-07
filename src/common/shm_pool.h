@@ -32,8 +32,8 @@ static_assert(sizeof(SlotHeader) == 64, "SlotHeader must be exactly 64 bytes");
 
 class ShmSlotPool {
  public:
-  static constexpr size_t kDefaultSlotCapacity = 8 * 1024 * 1024;  // 8MB per slot
-  static constexpr size_t kDefaultSlotCount = 8;                   // 8 slots (64MB pool)
+  static constexpr size_t kDefaultSlotCapacity = 2 * 1024 * 1024;  // 2MB per slot
+  static constexpr size_t kDefaultSlotCount = 3;                   // 3 slots (for 2 workers: worker_count + 1)
 
   ShmSlotPool();
   ~ShmSlotPool();

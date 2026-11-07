@@ -5,10 +5,12 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -21,6 +23,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -40,6 +43,49 @@ WorkerGuard::WorkerGuard() = default;
 
 WorkerGuard::~WorkerGuard() {
   Shutdown();
+}
+
+size_t WorkerGuard::active_worker_count() const {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(pool_mutex_));
+  size_t count = 0;
+  for (const auto &w : workers_) {
+    if (w.pid > 0) count++;
+  }
+  return count;
+}
+
+void WorkerGuard::ReleaseSlot(uint32_t slot_id) {
+  shm_pool_.ReleaseSlot(slot_id);
+  std::lock_guard<std::mutex> lock(pool_mutex_);
+  worker_available_cv_.notify_all();
+}
+
+std::string WorkerGuard::GetSpillDirectory() {
+  std::error_code ec;
+  std::filesystem::path p = std::filesystem::temp_directory_path(ec) / "soeasy_spill";
+  std::filesystem::create_directories(p, ec);
+  return p.string();
+}
+
+void WorkerGuard::CleanupOrphanSpillFiles() {
+  std::error_code ec;
+  std::filesystem::path dir = GetSpillDirectory();
+  if (!std::filesystem::exists(dir, ec)) return;
+
+  size_t cleaned = 0;
+  for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+    if (ec) break;
+    if (entry.is_regular_file(ec)) {
+      std::string fname = entry.path().filename().string();
+      if (fname.rfind("soeasy_spill_", 0) == 0 && fname.find(".tmp") != std::string::npos) {
+        std::filesystem::remove(entry.path(), ec);
+        cleaned++;
+      }
+    }
+  }
+  if (cleaned > 0) {
+    LOG_INFO("[WorkerGuard] Swept and cleaned {} orphan spill files from prior runs.", cleaned);
+  }
 }
 
 size_t WorkerGuard::GetProcessRssBytes(pid_t pid) {
@@ -71,8 +117,23 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
                        size_t shm_slot_count, size_t shm_slot_capacity) {
   Shutdown();
 
+#ifndef _WIN32
+  signal(SIGPIPE, SIG_IGN);
+#endif
+
+  // Sweep orphan spill files from prior crashes or reboots
+  CleanupOrphanSpillFiles();
+
   worker_bin_path_ = worker_bin_path;
   timeout_ms_ = timeout_ms;
+
+  // Auto-calculate dynamic slot count: worker_count + 1
+  if (shm_slot_count == 0 || shm_slot_count == common::ShmSlotPool::kDefaultSlotCount) {
+    shm_slot_count = worker_count + 1;
+  }
+  if (shm_slot_capacity == 0) {
+    shm_slot_capacity = common::ShmSlotPool::kDefaultSlotCapacity;
+  }
 
 #ifdef _WIN32
   job_handle_ = CreateJobObjectA(NULL, NULL);
@@ -94,11 +155,11 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
   is_running_.store(true, std::memory_order_release);
   workers_.resize(worker_count);
 
+  auto now = std::chrono::steady_clock::now();
   for (size_t i = 0; i < worker_count; ++i) {
-    if (!SpawnWorker(i)) {
-      Shutdown();
-      return false;
-    }
+    workers_[i].pid = 0;
+    workers_[i].state = WorkerState::kIdle;
+    workers_[i].idle_start_time = now;
   }
 
   watchdog_thread_ = std::thread(&WorkerGuard::WatchdogLoop, this);
@@ -128,120 +189,183 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     target_bin = exe_path;
   }
 
-  std::string cmd =
-      "\"" + target_bin + "\" " + "--pipe-name=" + pipe_name + " " + "--shm-name=" + shm_pool_.shm_name() + " " +
-      "--slot-count=" + std::to_string(shm_pool_.slot_count()) + " " +
-      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()) + " " + "--log-level=" + log_level_ + " " +
-      (log_console_ ? "--log-console " : "--no-log-console ") + (log_sync_ ? "--log-sync " : "--no-log-sync ") +
-      (doctotext_logging_ ? "--doctotext-logging " : "--no-doctotext-logging ") +
-      "--doctotext-log-path=" + doctotext_log_path_ + " " +
-      (embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr");
+  std::vector<std::string> args = {
+      target_bin,
+      "--pipe-name=" + pipe_name,
+      "--shm-name=" + shm_pool_.shm_name(),
+      "--slot-count=" + std::to_string(shm_pool_.slot_count()),
+      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
+      "--log-level=" + log_level_,
+      log_console_ ? "--log-console" : "--no-log-console",
+      log_sync_ ? "--log-sync" : "--no-log-sync",
+      doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
+      "--doctotext-log-path=" + doctotext_log_path_,
+      embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
 
-  STARTUPINFOA si;
-  PROCESS_INFORMATION pi;
-  ZeroMemory(&si, sizeof(si));
-  si.cb = sizeof(si);
-  ZeroMemory(&pi, sizeof(pi));
+  reproc::options opts;
+  opts.redirect.parent = false;
 
-  if (!CreateProcessA(NULL, const_cast<char *>(cmd.c_str()), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si,
-                      &pi)) {
-    LOG_ERROR("[WorkerGuard] CreateProcess failed for worker {}: {}", index, GetLastError());
+  auto proc = std::make_unique<reproc::process>();
+  std::error_code ec = proc->start(args, opts);
+  if (ec) {
+    LOG_ERROR("[WorkerGuard] reproc failed to start worker {}: {}", index, ec.message());
     CloseHandle(hPipe);
     return false;
   }
-  CloseHandle(pi.hThread);
 
-  if (job_handle_) {
-    AssignProcessToJobObject(job_handle_, pi.hProcess);
+  auto [pid, pid_ec] = proc->pid();
+
+  if (job_handle_ && pid > 0) {
+    HANDLE hProc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, pid);
+    if (hProc) {
+      AssignProcessToJobObject(job_handle_, hProc);
+      CloseHandle(hProc);
+    }
   }
 
   BOOL connected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
   if (!connected) {
     LOG_ERROR("[WorkerGuard] ConnectNamedPipe failed for worker {}: {}", index, GetLastError());
-    TerminateProcess(pi.hProcess, 1);
-    CloseHandle(pi.hProcess);
+    reproc::stop_actions stop = {
+        {reproc::stop::kill, reproc::milliseconds(100)}, {}, {}};
+    proc->stop(stop);
     CloseHandle(hPipe);
     return false;
   }
 
   WorkerInstance &inst = workers_[index];
-  inst.pid = pi.dwProcessId;
-  inst.process_handle = pi.hProcess;
+  inst.process = std::move(proc);
+  inst.pid = pid;
   inst.pipe_handle = hPipe;
   inst.state = WorkerState::kIdle;
+  inst.idle_start_time = std::chrono::steady_clock::now();
   inst.current_doc_id = 0;
   inst.current_slot_id = 0;
   inst.total_tasks_processed = 0;
   return true;
 #else
-  int fds[2];
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+  int listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (listen_fd < 0) {
+    LOG_ERROR("[WorkerGuard] Failed to create socket for worker {}", index);
     return false;
   }
 
-  pid_t pid = fork();
-  if (pid < 0) {
-    close(fds[0]);
-    close(fds[1]);
+  std::string sock_name = "soeasy_ipc_" + std::to_string(getpid()) + "_" +
+                          std::to_string(index) + "_" + std::to_string(rand() % 1000000);
+  struct sockaddr_un addr;
+  std::memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  addr.sun_path[0] = '\0';
+  std::memcpy(addr.sun_path + 1, sock_name.c_str(), sock_name.size());
+  socklen_t addr_len = sizeof(sa_family_t) + 1 + sock_name.size();
+
+  if (bind(listen_fd, reinterpret_cast<struct sockaddr *>(&addr), addr_len) != 0) {
+    LOG_ERROR("[WorkerGuard] Failed to bind socket for worker {}: {}", index, strerror(errno));
+    close(listen_fd);
     return false;
   }
 
-  if (pid == 0) {
-    // Child process
-    close(fds[0]);  // Close parent end
-    // Ensure child dies when parent dies
-    prctl(PR_SET_PDEATHSIG, SIGKILL);
+  if (listen(listen_fd, 1) != 0) {
+    LOG_ERROR("[WorkerGuard] Failed to listen on socket for worker {}: {}", index, strerror(errno));
+    close(listen_fd);
+    return false;
+  }
 
-    if (!log_console_) {
-      int devnull = open("/dev/null", O_WRONLY);
-      if (devnull >= 0) {
-        dup2(devnull, STDOUT_FILENO);
-        dup2(devnull, STDERR_FILENO);
-        close(devnull);
+  reproc::options opts;
+  opts.redirect.parent = false;
+  if (!log_console_) {
+    opts.redirect.out.type = reproc::redirect::discard;
+    opts.redirect.err.type = reproc::redirect::discard;
+  }
+
+  auto proc = std::make_unique<reproc::process>();
+
+  if (worker_bin_path_.empty()) {
+    // In-process child execution mode via reproc::process::fork()
+    auto [is_child, ec] = proc->fork(opts);
+    if (ec) {
+      LOG_ERROR("[WorkerGuard] reproc fork failed for worker {}: {}", index, ec.message());
+      close(listen_fd);
+      return false;
+    }
+
+    if (is_child) {
+      // Child process branch
+      close(listen_fd);
+
+      int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+      if (sock >= 0) {
+        if (connect(sock, reinterpret_cast<struct sockaddr *>(&addr), addr_len) == 0) {
+          common::Logger::SetLevel(log_level_);
+          common::Logger::SetConsoleEnabled(log_console_);
+          common::Logger::SetSyncMode(log_sync_);
+          worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
+          worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr_);
+          int ret = worker::RunWorkerLoop(sock, shm_pool_.shm_name(), shm_pool_.slot_count(), shm_pool_.slot_capacity());
+          close(sock);
+          _exit(ret);
+        }
+        close(sock);
       }
+      _exit(1);
     }
+  } else {
+    // Exec standalone binary mode via reproc::process::start()
+    std::vector<std::string> args = {
+        worker_bin_path_,
+        "--socket-name=" + sock_name,
+        "--shm-name=" + shm_pool_.shm_name(),
+        "--slot-count=" + std::to_string(shm_pool_.slot_count()),
+        "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
+        "--log-level=" + log_level_,
+        log_console_ ? "--log-console" : "--no-log-console",
+        log_sync_ ? "--log-sync" : "--no-log-sync",
+        doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
+        "--doctotext-log-path=" + doctotext_log_path_,
+        embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
 
-    if (worker_bin_path_.empty()) {
-      // In-process child execution mode
-      common::Logger::SetLevel(log_level_);
-      common::Logger::SetConsoleEnabled(log_console_);
-      common::Logger::SetSyncMode(log_sync_);
-      worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
-      worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr_);
-      int ret = worker::RunWorkerLoop(fds[1], shm_pool_.shm_name(), shm_pool_.slot_count(), shm_pool_.slot_capacity());
-      close(fds[1]);
-      _exit(ret);
-    } else {
-      // Exec standalone binary mode
-      std::string fd_arg = "--socket-fd=" + std::to_string(fds[1]);
-      std::string shm_arg = "--shm-name=" + shm_pool_.shm_name();
-      std::string count_arg = "--slot-count=" + std::to_string(shm_pool_.slot_count());
-      std::string cap_arg = "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity());
-      std::string level_arg = "--log-level=" + log_level_;
-      std::string console_arg = log_console_ ? "--log-console" : "--no-log-console";
-      std::string sync_arg = log_sync_ ? "--log-sync" : "--no-log-sync";
-      std::string dt_log_arg = doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging";
-      std::string dt_path_arg = "--doctotext-log-path=" + doctotext_log_path_;
-      std::string img_ocr_arg = embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr";
-
-      char *const argv[] = {const_cast<char *>(worker_bin_path_.c_str()), const_cast<char *>(fd_arg.c_str()),
-                            const_cast<char *>(shm_arg.c_str()),          const_cast<char *>(count_arg.c_str()),
-                            const_cast<char *>(cap_arg.c_str()),          const_cast<char *>(level_arg.c_str()),
-                            const_cast<char *>(console_arg.c_str()),      const_cast<char *>(sync_arg.c_str()),
-                            const_cast<char *>(dt_log_arg.c_str()),       const_cast<char *>(dt_path_arg.c_str()),
-                            const_cast<char *>(img_ocr_arg.c_str()),      nullptr};
-      execv(worker_bin_path_.c_str(), argv);
-      _exit(127);
+    std::error_code ec = proc->start(args, opts);
+    if (ec) {
+      LOG_ERROR("[WorkerGuard] Failed to start worker binary {}: {}", index, ec.message());
+      close(listen_fd);
+      return false;
     }
   }
 
-  // Parent process
-  close(fds[1]);  // Close child end
+  // Parent process: wait for child to connect with timeout
+  struct pollfd pfd;
+  pfd.fd = listen_fd;
+  pfd.events = POLLIN;
+  pfd.revents = 0;
+  int pret = poll(&pfd, 1, 3000);
+  if (pret <= 0 || !(pfd.revents & POLLIN)) {
+    LOG_ERROR("[WorkerGuard] Worker {} connect timeout or failed", index);
+    close(listen_fd);
+    reproc::stop_actions stop = {
+        {reproc::stop::kill, reproc::milliseconds(100)}, {}, {}};
+    proc->stop(stop);
+    return false;
+  }
+
+  int client_fd = accept(listen_fd, nullptr, nullptr);
+  close(listen_fd);
+
+  if (client_fd < 0) {
+    LOG_ERROR("[WorkerGuard] Failed to accept connection for worker {}: {}", index, strerror(errno));
+    reproc::stop_actions stop = {
+        {reproc::stop::kill, reproc::milliseconds(100)}, {}, {}};
+    proc->stop(stop);
+    return false;
+  }
+
+  auto [pid, pid_ec] = proc->pid();
 
   WorkerInstance &inst = workers_[index];
+  inst.process = std::move(proc);
   inst.pid = pid;
-  inst.socket_fd = fds[0];
+  inst.socket_fd = client_fd;
   inst.state = WorkerState::kIdle;
+  inst.idle_start_time = std::chrono::steady_clock::now();
   inst.current_doc_id = 0;
   inst.current_slot_id = 0;
   inst.total_tasks_processed = 0;
@@ -254,36 +378,32 @@ void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string 
     return;
   }
   WorkerInstance &inst = workers_[index];
+  LOG_WARN("[WorkerGuard] KillWorker index={}: reason={}", index, reason);
 #ifdef _WIN32
-  if (inst.process_handle) {
-    TerminateProcess(inst.process_handle, 1);
-    WaitForSingleObject(inst.process_handle, 1000);
-    CloseHandle(inst.process_handle);
-    inst.process_handle = nullptr;
-  }
   if (inst.pipe_handle) {
     CloseHandle(inst.pipe_handle);
     inst.pipe_handle = nullptr;
   }
-  inst.pid = 0;
 #else
-  if (inst.pid > 0) {
-    kill(inst.pid, SIGKILL);
-    waitpid(inst.pid, nullptr, 0);
-  }
   if (inst.socket_fd >= 0) {
+    shutdown(inst.socket_fd, SHUT_RDWR);
     close(inst.socket_fd);
     inst.socket_fd = -1;
   }
-  inst.pid = -1;
 #endif
+  if (inst.process) {
+    reproc::stop_actions stop = {
+        {reproc::stop::terminate, reproc::milliseconds(50)},
+        {reproc::stop::kill, reproc::milliseconds(100)},
+        {}};
+    inst.process->stop(stop);
+    inst.process.reset();
+  }
+  inst.pid = 0;
   if (inst.is_busy()) {
     shm_pool_.ReleaseSlot(inst.current_slot_id);
   }
   inst.state = WorkerState::kIdle;
-
-  // Respawn clean replacement worker
-  SpawnWorker(index);
 }
 
 void WorkerGuard::WatchdogLoop() {
@@ -295,50 +415,36 @@ void WorkerGuard::WatchdogLoop() {
 
     for (size_t i = 0; i < workers_.size(); ++i) {
       WorkerInstance &inst = workers_[i];
-      if (inst.pid <= 0) {
+      if (!inst.process || inst.pid <= 0) {
         continue;
       }
 
-      // 1. Check if child crashed (exited unexpectedly)
+      // 1. Check if child crashed or exited unexpectedly
+      auto [events, poll_ec] = inst.process->poll(reproc::event::exit, reproc::milliseconds(0));
+      if (!poll_ec && (events & reproc::event::exit)) {
+        auto [exit_code, wait_ec] = inst.process->wait(reproc::milliseconds(0));
+        LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
 #ifdef _WIN32
-      DWORD exit_code = 0;
-      if (inst.process_handle && GetExitCodeProcess(inst.process_handle, &exit_code) && exit_code != STILL_ACTIVE) {
-        if (inst.process_handle) {
-          CloseHandle(inst.process_handle);
-          inst.process_handle = nullptr;
-        }
         if (inst.pipe_handle) {
           CloseHandle(inst.pipe_handle);
           inst.pipe_handle = nullptr;
         }
-        if (inst.is_busy()) {
-          shm_pool_.ReleaseSlot(inst.current_slot_id);
-        }
-        inst.state = WorkerState::kIdle;
-        inst.pid = 0;
-        SpawnWorker(i);
-        worker_available_cv_.notify_one();
-        continue;
-      }
 #else
-      int wstatus = 0;
-      pid_t res = waitpid(inst.pid, &wstatus, WNOHANG);
-      if (res > 0) {
-        // Child died
         if (inst.socket_fd >= 0) {
+          shutdown(inst.socket_fd, SHUT_RDWR);
           close(inst.socket_fd);
           inst.socket_fd = -1;
         }
+#endif
         if (inst.is_busy()) {
           shm_pool_.ReleaseSlot(inst.current_slot_id);
         }
+        inst.process.reset();
+        inst.pid = 0;
         inst.state = WorkerState::kIdle;
-        inst.pid = -1;
-        SpawnWorker(i);
-        worker_available_cv_.notify_one();
+        worker_available_cv_.notify_all();
         continue;
       }
-#endif
 
       // 2. Check for task timeout or stall heartbeat
       if (inst.state == WorkerState::kBusy) {
@@ -350,42 +456,66 @@ void WorkerGuard::WatchdogLoop() {
         bool is_overtime = (elapsed > inst.current_timeout_ms);
 
         if (is_stalled || is_overtime) {
+          LOG_WARN(
+              "[WorkerGuard] Watchdog killing worker {}: is_stalled={}, is_overtime={}, elapsed={}ms, timeout={}ms", i,
+              is_stalled, is_overtime, elapsed, inst.current_timeout_ms);
           inst.state = WorkerState::kKilledByWatchdog;
           shm_pool_.ReleaseSlot(inst.current_slot_id);
 #ifdef _WIN32
-          if (inst.process_handle) {
-            TerminateProcess(inst.process_handle, 1);
-            WaitForSingleObject(inst.process_handle, 1000);
-            CloseHandle(inst.process_handle);
-            inst.process_handle = nullptr;
-          }
           if (inst.pipe_handle) {
             CloseHandle(inst.pipe_handle);
             inst.pipe_handle = nullptr;
           }
-          inst.pid = 0;
 #else
-          if (inst.pid > 0) {
-            kill(inst.pid, SIGKILL);
-            waitpid(inst.pid, nullptr, 0);
-            inst.pid = -1;
-          }
           if (inst.socket_fd >= 0) {
+            shutdown(inst.socket_fd, SHUT_RDWR);
             close(inst.socket_fd);
             inst.socket_fd = -1;
           }
 #endif
-          // Do not spawn here, let ExecuteTask unblock and safely respawn
+          reproc::stop_actions stop = {
+              {reproc::stop::terminate, reproc::milliseconds(50)},
+              {reproc::stop::kill, reproc::milliseconds(100)},
+              {}};
+          inst.process->stop(stop);
+          inst.process.reset();
+          inst.pid = 0;
           continue;
         }
       }
 
-      // 3. Check memory limit when idle
-      if (inst.state == WorkerState::kIdle) {
+      // 3. Check idle eviction or memory limit when idle
+      if (inst.state == WorkerState::kIdle && inst.pid > 0) {
+        auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.idle_start_time).count();
+        if (idle_ms >= idle_evict_ms_) {
+          LOG_INFO("[WorkerGuard] Worker {} idle for {:.1f}s. Evicted to reclaim memory.", i, idle_ms / 1000.0);
+#ifdef _WIN32
+          if (inst.pipe_handle) {
+            CloseHandle(inst.pipe_handle);
+            inst.pipe_handle = nullptr;
+          }
+#else
+          if (inst.socket_fd >= 0) {
+            shutdown(inst.socket_fd, SHUT_RDWR);
+            close(inst.socket_fd);
+            inst.socket_fd = -1;
+          }
+#endif
+          reproc::stop_actions stop = {
+              {reproc::stop::terminate, reproc::milliseconds(50)},
+              {reproc::stop::kill, reproc::milliseconds(100)},
+              {}};
+          inst.process->stop(stop);
+          inst.process.reset();
+          inst.pid = 0;
+          inst.state = WorkerState::kIdle;
+          continue;
+        }
+
         size_t rss = GetProcessRssBytes(inst.pid);
         if (rss > kDefaultMaxMemoryBytes) {
           KillWorker(i, TaskStatus::kSuccess, "Memory limit exceeded; recycling");
-          worker_available_cv_.notify_one();
+          worker_available_cv_.notify_all();
         }
       }
     }
@@ -416,18 +546,13 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
   {
     std::unique_lock<std::mutex> lock(pool_mutex_);
 
-    // Wait until both an idle worker AND an available SHM slot exist
+    // Wait until both an idle worker slot AND an available SHM slot exist
     worker_available_cv_.wait(lock, [this, &assigned_worker_idx, &slot_id, &slot_data]() {
       if (!is_running_.load(std::memory_order_acquire)) {
         return true;
       }
       for (size_t i = 0; i < workers_.size(); ++i) {
-#ifdef _WIN32
-        if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0 && workers_[i].pipe_handle != nullptr) {
-#else
-        if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0 &&
-            workers_[i].socket_fd >= 0) {
-#endif
+        if (workers_[i].state == WorkerState::kIdle) {
           if (shm_pool_.AllocateSlot(&slot_id, &slot_data)) {
             assigned_worker_idx = i;
             return true;
@@ -442,6 +567,15 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     }
 
     WorkerInstance &worker = workers_[assigned_worker_idx];
+    if (worker.pid <= 0) {
+      if (!SpawnWorker(assigned_worker_idx)) {
+        shm_pool_.ReleaseSlot(slot_id);
+        out_result->status = TaskStatus::kFailed;
+        out_result->error_message = "Failed to spawn worker on demand";
+        worker_available_cv_.notify_all();
+        return true;
+      }
+    }
     worker.state = WorkerState::kBusy;
     worker.current_doc_id = task.doc_id;
     worker.current_slot_id = slot_id;
@@ -477,7 +611,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     KillWorker(assigned_worker_idx, TaskStatus::kFailed, "Pipe write failure");
     out_result->status = TaskStatus::kFailed;
     out_result->error_message = "Failed to send request to worker pipe";
-    worker_available_cv_.notify_one();
+    worker_available_cv_.notify_all();
     return true;
   }
 #else
@@ -489,7 +623,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     KillWorker(assigned_worker_idx, TaskStatus::kFailed, "Socket write failure");
     out_result->status = TaskStatus::kFailed;
     out_result->error_message = "Failed to send request to worker socket";
-    worker_available_cv_.notify_one();
+    worker_available_cv_.notify_all();
     return true;
   }
 #endif
@@ -527,6 +661,10 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       out_result->extracted_bytes = resp.getExtractedBytes();
       out_result->is_scanned_pdf = resp.getIsScannedPdf();
       out_result->error_message = resp.getMessage();
+      std::string msg = resp.getMessage();
+      if (msg.rfind("SPILL:", 0) == 0) {
+        out_result->spill_file_path = msg.substr(6);
+      }
       success_response = true;
     }
   } catch (...) {
@@ -543,9 +681,19 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     out_result->extracted_bytes = resp.getExtractedBytes();
     out_result->is_scanned_pdf = resp.getIsScannedPdf();
     out_result->error_message = resp.getMessage();
+    std::string msg = resp.getMessage();
+    if (msg.rfind("SPILL:", 0) == 0) {
+      out_result->spill_file_path = msg.substr(6);
+    }
     success_response = true;
+  } catch (const kj::Exception &e) {
+    LOG_WARN("[WorkerGuard] kj::Exception reading from worker {}: {}", assigned_worker_idx, e.getDescription().cStr());
+    success_response = false;
+  } catch (const std::exception &e) {
+    LOG_WARN("[WorkerGuard] std::exception reading from worker {}: {}", assigned_worker_idx, e.what());
+    success_response = false;
   } catch (...) {
-    // If reading failed, either the worker crashed or the watchdog killed it for timeout
+    LOG_WARN("[WorkerGuard] Unknown exception reading from worker {}", assigned_worker_idx);
     success_response = false;
   }
 #endif
@@ -563,9 +711,10 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       out_result->status = TaskStatus::kTimeout;
       out_result->error_message = "Task timed out or stalled (killed by watchdog)";
       worker.state = WorkerState::kIdle;
-      SpawnWorker(assigned_worker_idx);
+      worker.idle_start_time = std::chrono::steady_clock::now();
     } else if (success_response) {
       worker.state = WorkerState::kIdle;
+      worker.idle_start_time = std::chrono::steady_clock::now();
       worker.total_tasks_processed++;
       if (out_result->status != TaskStatus::kSuccess) {
         // Task returned FAILED from worker: release the slot immediately
@@ -579,7 +728,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       out_result->slot_id = 0;
       KillWorker(assigned_worker_idx, out_result->status, out_result->error_message);
     }
-    worker_available_cv_.notify_one();
+    worker_available_cv_.notify_all();
   }
 
   return true;
@@ -598,28 +747,26 @@ void WorkerGuard::Shutdown() {
   std::unique_lock<std::mutex> lock(pool_mutex_);
   for (auto &inst : workers_) {
 #ifdef _WIN32
-    if (inst.process_handle) {
-      TerminateProcess(inst.process_handle, 1);
-      WaitForSingleObject(inst.process_handle, 1000);
-      CloseHandle(inst.process_handle);
-      inst.process_handle = nullptr;
-    }
     if (inst.pipe_handle) {
       CloseHandle(inst.pipe_handle);
       inst.pipe_handle = nullptr;
     }
-    inst.pid = 0;
 #else
-    if (inst.pid > 0) {
-      kill(inst.pid, SIGKILL);
-      waitpid(inst.pid, nullptr, 0);
-      inst.pid = -1;
-    }
     if (inst.socket_fd >= 0) {
+      shutdown(inst.socket_fd, SHUT_RDWR);
       close(inst.socket_fd);
       inst.socket_fd = -1;
     }
 #endif
+    if (inst.process) {
+      reproc::stop_actions stop = {
+          {reproc::stop::terminate, reproc::milliseconds(50)},
+          {reproc::stop::kill, reproc::milliseconds(100)},
+          {}};
+      inst.process->stop(stop);
+      inst.process.reset();
+    }
+    inst.pid = 0;
   }
 #ifdef _WIN32
   if (job_handle_) {

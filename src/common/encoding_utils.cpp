@@ -174,6 +174,10 @@ boost::nowide::ifstream EncodingUtils::OpenIfstream(const std::string &utf8_path
   return boost::nowide::ifstream(utf8_path, mode);
 }
 
+boost::nowide::ofstream EncodingUtils::OpenOfstream(const std::string &utf8_path, std::ios::openmode mode) {
+  return boost::nowide::ofstream(utf8_path, mode);
+}
+
 FILE *EncodingUtils::FopenUtf8(const std::string &utf8_path, const char *mode) {
   return boost::nowide::fopen(utf8_path.c_str(), mode);
 }

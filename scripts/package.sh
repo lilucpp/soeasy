@@ -73,7 +73,14 @@ fi
 
 # 5. 收集词典与 OCR 模型文件
 echo "[5/6] 收集结巴词典、PP-OCRv6 模型与启动引导脚本..."
-cp -rp "${PROJECT_ROOT}/third_party/cppjieba/dict/"* "${STAGE_DIR}/dict/"
+if [ ! -f "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" ]; then
+  "${PROJECT_ROOT}/build/build_dat_dict" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba.dict.utf8" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin"
+fi
+# 仅打包运行时必需的 jieba_dat.bin (7.2MB)、hmm_model.utf8 (47KB) 与 user.dict.utf8
+# 剔除无用的 jieba.dict.utf8 (5.2MB) 与 idf.utf8 (3.4MB)，包体积直接瘦身 8.6MB!
+cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" "${STAGE_DIR}/dict/"
+cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/hmm_model.utf8" "${STAGE_DIR}/dict/"
+cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/user.dict.utf8" "${STAGE_DIR}/dict/" 2>/dev/null || touch "${STAGE_DIR}/dict/user.dict.utf8"
 mkdir -p "${STAGE_DIR}/models"
 cp -rp "${PROJECT_ROOT}/models/ppocr_v6" "${STAGE_DIR}/models/"
 cp -p "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/"
