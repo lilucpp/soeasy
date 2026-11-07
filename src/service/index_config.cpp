@@ -9,6 +9,13 @@
 #include <unordered_set>
 #include <vector>
 
+#ifndef _WIN32
+#include <sys/vfs.h>
+#else
+#include <windows.h>
+#endif
+
+#include "common/encoding_utils.h"
 #include "common/format_categories.h"
 #include "common/logger.h"
 #include "nlohmann/json.hpp"
@@ -17,12 +24,44 @@ namespace soeasy {
 namespace service {
 
 IndexConfig::IndexConfig() {
-  // Default common excluded directory patterns
+  // 1. Cross-platform common excluded directory patterns (VCS, dependencies, IDE, build)
   excluded_patterns_ = {
-      "/.git/",      "\\git\\",  "/node_modules/", "\\node_modules\\", "/.idea/",  "\\.idea\\",     "/.vscode/",
-      "\\.vscode\\", "/build/",  "\\build\\",      "/dist/",           "\\dist\\", "/__pycache__/", "\\__pycache__\\",
-      "/.svn/",      "\\.svn\\", "/target/",       "\\target\\",       "/.cache/", "\\.cache\\",
+      // Version control
+      "/.git/",      "\\git\\",      "/.svn/",      "\\.svn\\",      "/.hg/",        "\\.hg\\",
+      // Package managers & dependencies
+      "/node_modules/", "\\node_modules\\", "/bower_components/", "\\bower_components\\",
+      "/.cargo/",    "\\.cargo\\",   "/.gradle/",   "\\.gradle\\",   "/.m2/",        "\\.m2\\",
+      // IDE configs
+      "/.idea/",     "\\.idea\\",    "/.vscode/",   "\\.vscode\\",   "/.vs/",        "\\.vs\\",
+      // Build and compiler outputs
+      "/build/",     "\\build\\",    "/dist/",      "\\dist\\",      "/target/",     "\\target\\",
+      "/__pycache__/", "\\__pycache__\\", "/.pytest_cache/", "\\.pytest_cache\\",
+      "/.venv/",     "\\.venv\\",    "/venv/",      "\\venv\\",
+      // User-level cache
+      "/.cache/",    "\\.cache\\"
   };
+
+#ifdef _WIN32
+  // 2. Windows-specific system, recycle bin, system volume, and temp directories
+  static const std::vector<std::string> kWindowsPatterns = {
+      "/$Recycle.Bin/", "\\$Recycle.Bin\\", "/$RECYCLE.BIN/", "\\$RECYCLE.BIN\\",
+      "/RECYCLER/",  "\\RECYCLER\\", "/System Volume Information/", "\\System Volume Information\\",
+      "/Windows/",   "\\Windows\\",  "/ProgramData/Microsoft/Search/", "\\ProgramData\\Microsoft\\Search\\",
+      "/AppData/Local/Temp/", "\\AppData\\Local\\Temp\\",
+      "/AppData/Local/CrashDumps/", "\\AppData\\Local\\CrashDumps\\",
+      "/AppData/Local/Microsoft/Windows/INetCache/", "\\AppData\\Local\\Microsoft\\Windows\\INetCache\\",
+      "/AppData/Local/Microsoft/Windows/Explorer/", "\\AppData\\Local\\Microsoft\\Windows\\Explorer\\"
+  };
+  excluded_patterns_.insert(excluded_patterns_.end(), kWindowsPatterns.begin(), kWindowsPatterns.end());
+#else
+  // 3. Linux/POSIX-specific daemon, system, log, and container directories
+  static const std::vector<std::string> kPosixPatterns = {
+      "/var/tmp/",   "/var/log/",    "/var/cache/",
+      "/var/lib/docker/", "/var/lib/containerd/",
+      "/.local/share/Trash/"
+  };
+  excluded_patterns_.insert(excluded_patterns_.end(), kPosixPatterns.begin(), kPosixPatterns.end());
+#endif
 
   supported_exts_ = GetDefaultSupportedExtensions();
 }
@@ -165,7 +204,41 @@ bool IndexConfig::IsDirectoryExcluded(const std::string &dir_path) const {
   if (dir_path.empty()) {
     return false;
   }
+
+#ifndef _WIN32
+  // 1. Linux statfs.f_type: probe virtual / pseudo / RAM filesystems (< 50ns)
+  struct statfs fs_info;
+  if (statfs(dir_path.c_str(), &fs_info) == 0) {
+    switch (fs_info.f_type) {
+      case 0x9fa0:      // PROC_SUPER_MAGIC (/proc)
+      case 0x62656572:  // SYSFS_MAGIC_NUMBER (/sys)
+      case 0x01021994:  // TMPFS_MAGIC (/run, /dev/shm, etc.)
+      case 0x858458f6:  // RAMFS_MAGIC
+      case 0x1cd1:      // DEVPTS_SUPER_MAGIC (/dev/pts)
+      case 0x27e0eb:    // CGROUP_SUPER_MAGIC
+      case 0x63677270:  // CGROUP2_SUPER_MAGIC
+      case 0x42494e4d:  // BINFMTFS_MAGIC
+      case 0x534f434b:  // SOCKFS_MAGIC
+        return true;
+    }
+  }
+#else
+  // 2. Windows NTFS Reparse Points (Junction loop prevention) & System Volume
+  std::wstring wpath = common::EncodingUtils::Utf8ToWide(dir_path);
+  DWORD attrs = GetFileAttributesW(wpath.c_str());
+  if (attrs != INVALID_FILE_ATTRIBUTES) {
+    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
+      return true;  // Stop Junction loops (e.g. Application Data infinite recursion)
+    }
+    if ((attrs & FILE_ATTRIBUTE_SYSTEM) && (attrs & FILE_ATTRIBUTE_HIDDEN)) {
+      return true;  // Stop System Volume Information & hidden system caches
+    }
+  }
+#endif
+
+  // 3. Normalized pattern matching
   std::string normalized = dir_path;
+  std::replace(normalized.begin(), normalized.end(), '\\', '/');
   if (normalized.front() != '/') {
     normalized = "/" + normalized;
   }
@@ -173,9 +246,18 @@ bool IndexConfig::IsDirectoryExcluded(const std::string &dir_path) const {
     normalized += "/";
   }
 
+#ifndef _WIN32
+  // Skip root-level ephemeral / recovery folders when traversing from root
+  if (normalized == "/tmp/" || normalized == "/lost+found/") {
+    return true;
+  }
+#endif
+
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto &pattern : excluded_patterns_) {
-    if (normalized.find(pattern) != std::string::npos) {
+    std::string norm_pattern = pattern;
+    std::replace(norm_pattern.begin(), norm_pattern.end(), '\\', '/');
+    if (normalized.find(norm_pattern) != std::string::npos) {
       return true;
     }
   }

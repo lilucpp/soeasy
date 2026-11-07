@@ -57,8 +57,9 @@ int main(int argc, char *argv[]) {
 
   // 2. Initialize WorkerGuard
   std::cout << "[Step 2] 初始化 Worker 解析沙箱进程池...\n";
+  const std::string worker_bin = soeasy::test::FindWorkerBin();
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  if (!worker_guard->Init("", 2, 2000, 8, 8 * 1024 * 1024)) {
+  if (!worker_guard->Init(worker_bin, 2, 2000, 8, 8 * 1024 * 1024)) {
     std::cerr << "[-] WorkerGuard 初始化失败!\n";
     return 1;
   }
@@ -125,10 +126,15 @@ int main(int argc, char *argv[]) {
   auto t_add_start = std::chrono::high_resolution_clock::now();
   WriteFile(f_new, "高新技术企业核心技术转让保密合同协议书，发文字号国发2026号。");
 
-  // Wait for debounce and worker processing (250ms)
-  std::this_thread::sleep_for(std::chrono::milliseconds(250));
-
-  auto hits_new = pipeline->SearchFulltext("技术转让", 10, 0);
+  // Wait for debounce and worker processing (with polling for reliable test convergence)
+  std::vector<soeasy::storage::SearchResultItem> hits_new;
+  for (int retry = 0; retry < 15; ++retry) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    hits_new = pipeline->SearchFulltext("技术转让", 10, 0);
+    if (!hits_new.empty()) {
+      break;
+    }
+  }
   auto t_add_end = std::chrono::high_resolution_clock::now();
   double add_cost_ms = std::chrono::duration<double, std::milli>(t_add_end - t_add_start).count();
 
@@ -142,9 +148,15 @@ int main(int argc, char *argv[]) {
   // 7. Test Dynamic File Modification
   std::cout << "[Step 7] 验证动态文件修改与正文更新...\n";
   WriteFile(f2, "SoEasy 桌面搜索引擎全新升级：集成 efsw 实时变动监控与事件去抖动引擎。");
-  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  std::vector<soeasy::storage::SearchResultItem> hits_mod;
+  for (int retry = 0; retry < 15; ++retry) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    hits_mod = pipeline->SearchFulltext("去抖动", 10, 0);
+    if (!hits_mod.empty()) {
+      break;
+    }
+  }
 
-  auto hits_mod = pipeline->SearchFulltext("去抖动", 10, 0);
   if (hits_mod.empty()) {
     std::cerr << "[-] 修改内容未被增量更新!\n";
     return 1;
@@ -155,10 +167,16 @@ int main(int argc, char *argv[]) {
   // 8. Test Dynamic File Deletion
   std::cout << "[Step 8] 验证文件删除后索引自动注销与清理...\n";
   std::remove(f1.c_str());
-  std::this_thread::sleep_for(std::chrono::milliseconds(250));
-
-  auto hits_del = pipeline->SearchFulltext("财务报表", 10, 0);
-  auto name_del = pipeline->SearchFilename("financial", 10);
+  std::vector<soeasy::storage::SearchResultItem> hits_del;
+  std::vector<soeasy::service::NameMatchResult> name_del;
+  for (int retry = 0; retry < 15; ++retry) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    hits_del = pipeline->SearchFulltext("财务报表", 10, 0);
+    name_del = pipeline->SearchFilename("financial", 10);
+    if (hits_del.empty() && name_del.empty()) {
+      break;
+    }
+  }
   if (!hits_del.empty() || !name_del.empty()) {
     std::cerr << "[-] 删除文件后仍存在残留索引!\n";
     return 1;

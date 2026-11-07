@@ -3,6 +3,8 @@
 #include <sys/stat.h>
 #ifndef _WIN32
 #include <unistd.h>
+#else
+#include <windows.h>
 #endif
 
 #include <algorithm>
@@ -13,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -24,6 +27,50 @@ namespace soeasy {
 namespace service {
 
 namespace {
+
+struct DirFingerprint {
+  uint64_t dev{0};
+  uint64_t ino{0};
+  bool operator==(const DirFingerprint &other) const {
+    return dev == other.dev && ino == other.ino;
+  }
+};
+
+struct DirFingerprintHash {
+  std::size_t operator()(const DirFingerprint &fp) const {
+    return std::hash<uint64_t>()(fp.dev) ^ (std::hash<uint64_t>()(fp.ino) << 1);
+  }
+};
+
+bool GetDirFingerprint(const std::filesystem::path &p, DirFingerprint *fp) {
+#ifndef _WIN32
+  struct stat st;
+  if (::stat(p.c_str(), &st) == 0) {
+    if (fp) {
+      fp->dev = static_cast<uint64_t>(st.st_dev);
+      fp->ino = static_cast<uint64_t>(st.st_ino);
+    }
+    return true;
+  }
+  return false;
+#else
+  HANDLE h_file = CreateFileW(p.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+  if (h_file != INVALID_HANDLE_VALUE) {
+    BY_HANDLE_FILE_INFORMATION info;
+    if (GetFileInformationByHandle(h_file, &info)) {
+      if (fp) {
+        fp->dev = static_cast<uint64_t>(info.dwVolumeSerialNumber);
+        fp->ino = (static_cast<uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+      }
+      CloseHandle(h_file);
+      return true;
+    }
+    CloseHandle(h_file);
+  }
+  return false;
+#endif
+}
 
 std::string ExtractFileName(const std::string &path) {
   size_t pos = path.find_last_of("/\\");
@@ -139,6 +186,12 @@ bool IndexPipeline::AddAndScanDirectory(const std::string &dir_path, bool recurs
 void IndexPipeline::ScanDirectoryRecursive(const std::string &dir_path) {
   try {
     auto target_p = common::EncodingUtils::PathFromUtf8(dir_path);
+    std::unordered_set<DirFingerprint, DirFingerprintHash> visited_dirs;
+    DirFingerprint root_fp;
+    if (GetDirFingerprint(target_p, &root_fp)) {
+      visited_dirs.insert(root_fp);
+    }
+
     for (auto it = std::filesystem::recursive_directory_iterator(
              target_p, std::filesystem::directory_options::skip_permission_denied);
          it != std::filesystem::recursive_directory_iterator(); ++it) {
@@ -147,6 +200,14 @@ void IndexPipeline::ScanDirectoryRecursive(const std::string &dir_path) {
         if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
           it.disable_recursion_pending();
           continue;
+        }
+        DirFingerprint fp;
+        if (GetDirFingerprint(it->path(), &fp)) {
+          if (!visited_dirs.insert(fp).second) {
+            LOG_DEBUG("[IndexPipeline] Skipping duplicate/bind-mounted directory: '{}'", sub_dir);
+            it.disable_recursion_pending();
+            continue;
+          }
         }
       }
       if (it->is_regular_file()) {
@@ -190,9 +251,18 @@ size_t IndexPipeline::PerformInitialScan(
 
   // 2. Discover all candidate files
   std::vector<std::string> files_to_index;
+  std::unordered_set<DirFingerprint, DirFingerprintHash> visited_dirs;
   for (const auto &dir : watched_dirs) {
     try {
       auto target_p = common::EncodingUtils::PathFromUtf8(dir);
+      DirFingerprint root_fp;
+      if (GetDirFingerprint(target_p, &root_fp)) {
+        if (!visited_dirs.insert(root_fp).second) {
+          LOG_INFO("[IndexPipeline] Watched directory '{}' is already scanned or a bind mount mirror, skipping.", dir);
+          continue;
+        }
+      }
+
       for (auto it = std::filesystem::recursive_directory_iterator(
                target_p, std::filesystem::directory_options::skip_permission_denied);
            it != std::filesystem::recursive_directory_iterator(); ++it) {
@@ -201,6 +271,14 @@ size_t IndexPipeline::PerformInitialScan(
           if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
             it.disable_recursion_pending();
             continue;
+          }
+          DirFingerprint fp;
+          if (GetDirFingerprint(it->path(), &fp)) {
+            if (!visited_dirs.insert(fp).second) {
+              LOG_DEBUG("[IndexPipeline] Skipping duplicate/bind-mounted directory: '{}'", sub_dir);
+              it.disable_recursion_pending();
+              continue;
+            }
           }
         }
         if (it->is_regular_file()) {
@@ -326,9 +404,18 @@ bool IndexPipeline::RebuildIndex(
 
   // Collect candidate files first for progress calculation
   std::vector<std::string> files_to_index;
+  std::unordered_set<DirFingerprint, DirFingerprintHash> visited_dirs;
   for (const auto &dir : watched_dirs) {
     try {
       auto target_p = common::EncodingUtils::PathFromUtf8(dir);
+      DirFingerprint root_fp;
+      if (GetDirFingerprint(target_p, &root_fp)) {
+        if (!visited_dirs.insert(root_fp).second) {
+          LOG_INFO("[IndexPipeline] Watched directory '{}' is already scanned or a bind mount mirror, skipping.", dir);
+          continue;
+        }
+      }
+
       for (auto it = std::filesystem::recursive_directory_iterator(
                target_p, std::filesystem::directory_options::skip_permission_denied);
            it != std::filesystem::recursive_directory_iterator(); ++it) {
@@ -337,6 +424,14 @@ bool IndexPipeline::RebuildIndex(
           if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
             it.disable_recursion_pending();
             continue;
+          }
+          DirFingerprint fp;
+          if (GetDirFingerprint(it->path(), &fp)) {
+            if (!visited_dirs.insert(fp).second) {
+              LOG_DEBUG("[IndexPipeline] Skipping duplicate/bind-mounted directory: '{}'", sub_dir);
+              it.disable_recursion_pending();
+              continue;
+            }
           }
         }
         if (it->is_regular_file()) {
