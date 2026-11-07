@@ -246,6 +246,103 @@ int main(int argc, char *argv[]) {
   std::cout << "[+] 分批事务、BulkMode 吞吐与 FTS5 段就地优化验证通过 (50篇批量文档写入检索正常)!\n";
   batch_engine.Close();
 
+  // 9. Test FEAT-001: Cascade DeleteDirectory & in-memory sync
+  std::cout << "\n[Step 9] 验证 FEAT-001: 目录级联物理删除 (DeleteDirectory)...\n";
+  soeasy::storage::StorageEngine del_engine;
+  if (!del_engine.Open(db_path, key, dict_dir)) {
+    std::cerr << "[-] del_engine.Open 失败: " << del_engine.GetLastError() << "\n";
+    return 1;
+  }
+
+  // Index 5 files in /test/project_retired/ and 5 files in /test/project_active/
+  for (int i = 200; i < 205; ++i) {
+    std::string p = "/test/project_retired/sub/file_" + std::to_string(i) + ".md";
+    std::string c = "退休项目敏感合同与工程代码 " + std::to_string(i) + " 关键词物理销毁";
+    if (!del_engine.IndexDocument(i, p, "file_" + std::to_string(i) + ".md", "md", c.size(), 123456, 1, c)) {
+      std::cerr << "[-] IndexDocument 失败: " << del_engine.GetLastError() << "\n";
+      return 1;
+    }
+  }
+  for (int i = 205; i < 210; ++i) {
+    std::string p = "/test/project_active/sub/file_" + std::to_string(i) + ".md";
+    std::string c = "活跃项目常规文档与工程代码 " + std::to_string(i) + " 关键词物理销毁";
+    if (!del_engine.IndexDocument(i, p, "file_" + std::to_string(i) + ".md", "md", c.size(), 123456, 1, c)) {
+      std::cerr << "[-] IndexDocument 失败: " << del_engine.GetLastError() << "\n";
+      return 1;
+    }
+  }
+
+  // Pre-check search
+  auto pre_hits = del_engine.Search("物理销毁", 20, 0);
+  if (pre_hits.size() != 10) {
+    std::cerr << "[-] pre_hits 期望 10 篇，实际: " << pre_hits.size() << "\n";
+    return 1;
+  }
+
+  // Perform cascade delete of /test/project_retired
+  std::vector<int64_t> deleted_ids;
+  int64_t del_count = del_engine.DeleteDirectory("/test/project_retired", &deleted_ids);
+  if (del_count != 5 || deleted_ids.size() != 5) {
+    std::cerr << "[-] DeleteDirectory 期望删除 5 个文件，实际删除: " << del_count 
+              << ", 错误原因: " << del_engine.GetLastError() << "\n";
+    return 1;
+  }
+
+  // Post-check search: hits should drop to 5 (only active project remains)
+  auto post_hits = del_engine.Search("物理销毁", 20, 0);
+  if (post_hits.size() != 5) {
+    std::cerr << "[-] 级联删除后检索期望剩余 5 篇，实际剩余: " << post_hits.size() << "\n";
+    return 1;
+  }
+  for (const auto &item : post_hits) {
+    if (item.file_path.find("/test/project_retired") != std::string::npos ||
+        item.file_path.find("/test/project_active") == std::string::npos) {
+      std::cerr << "[-] 发现未被清理的残留文件: " << item.file_path << "\n";
+      return 1;
+    }
+  }
+
+  // Non-existent directory returns 0
+  std::vector<int64_t> empty_ids;
+  assert(del_engine.DeleteDirectory("/test/non_existent_folder", &empty_ids) == 0);
+  assert(empty_ids.empty());
+
+  std::cout << "[+] FEAT-001 目录级联物理删除验证通过! (退休项目 5 个文件彻底物理销毁，活跃项目无误删)\n";
+  del_engine.Close();
+
+  // 10. Test Adaptive Incremental Vacuum & Space Reclamation
+  std::cout << "\n[Step 10] 验证物理页面回收与碎片统计 (Incremental Vacuum)...\n";
+  soeasy::storage::StorageEngine vac_engine;
+  if (!vac_engine.Open(db_path, key, dict_dir)) {
+    std::cerr << "[-] vac_engine.Open 失败: " << vac_engine.GetLastError() << "\n";
+    return 1;
+  }
+  soeasy::storage::StorageFragmentation frag;
+  if (!vac_engine.GetFragmentation(&frag)) {
+    std::cerr << "[-] 获取数据库碎片统计失败: " << vac_engine.GetLastError() << "\n";
+    return 1;
+  }
+  std::cout << "    [碎片统计] 总页数: " << frag.total_pages 
+            << ", 空闲页: " << frag.free_pages 
+            << ", 页大小: " << frag.page_size 
+            << ", 碎片率: " << frag.frag_ratio * 100.0 << "%\n";
+  if (frag.page_size <= 0 || frag.total_pages < 0) {
+    std::cerr << "[-] 页面统计异常: page_size=" << frag.page_size << "\n";
+    return 1;
+  }
+
+  // Execute incremental vacuum
+  if (!vac_engine.IncrementalVacuum(100)) {
+    std::cerr << "[-] IncrementalVacuum 执行失败: " << vac_engine.GetLastError() << "\n";
+    return 1;
+  }
+  if (!vac_engine.CheckpointWal()) {
+    std::cerr << "[-] CheckpointWal 执行失败: " << vac_engine.GetLastError() << "\n";
+    return 1;
+  }
+  std::cout << "[+] IncrementalVacuum(100) 与 CheckpointWal() 验证通过!\n";
+  vac_engine.Close();
+
   std::cout << "\n========================================================\n";
   std::cout << "🎉 所有验证项全部通过! Phase 1 存储与检索底座验证圆满成功!\n";
   std::cout << "========================================================\n";

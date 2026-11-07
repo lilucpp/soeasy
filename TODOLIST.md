@@ -11,7 +11,7 @@
 
 | 特性代号 | 特性名称 | 相对价值 ($V$) | 缺失惩罚 ($P$) | 实现成本 ($C$) | 技术风险 ($R$) | 综合优先级评分 | 优先级等级 | 当前状态 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **FEAT-001** | **移除索引目录联动清理底层索引库** | 8 | 8 | 3 | 2 | **4.8** | **P0 (极高)** | 待排期 |
+| **FEAT-001** | **移除索引目录联动清理底层索引库** | 8 | 8 | 3 | 2 | **4.8** | **P0 (极高)** | 已完成 (已验证) |
 | **FEAT-005** | **界面视觉美化与设计语言现代化升级 (对齐 Ant Design 桌面规范)** | 8 | 4 | 4 | 2 | **3.3** | **P1 (高优)** | 待排期 |
 | **FEAT-002** | **设置界面提供“自定义分词词典”可视化管理** | 6 | 4 | 4 | 2 | **2.6** | **P1 (中高)** | 待排期 |
 | **FEAT-006** | **设置界面配置与修改数据库物理加密密钥** | 7 | 5 | 4 | 4 | **2.4** | **P1 (中高)** | 待排期 |
@@ -22,22 +22,24 @@
 
 ## 二、 特性规格、验收准则与追踪关系 (Traceability & Acceptance)
 
-### [FEAT-001] 移除索引目录时联动删除对应的底层索引数据
+### [FEAT-001] 移除索引目录时联动删除对应的底层索引数据与自适应磁盘空间回收
 * **需求层级**：功能需求 (Functional Requirement)
 * **业务背景 (实测驱动)**：
   * 当前在配置中已提供移除目录功能，但底层 SQLite3MC 数据库中历史已索引的文件记录未级联剔除；
   * 实测验证 SQLite3MC 在开启批量事务后执行前缀删除效率极高（$<5\text{ms}$），应在目录移除时自动触发前缀清理与内存 `NameIndex` 同步剔除，确保数据一致性与用户隐私物理销毁。
+  * 针对超大目录移除后的磁盘释放：采用业界标准方案（`PRAGMA auto_vacuum = INCREMENTAL;` + 后台分批分块 `incremental_vacuum(250)` + `wal_checkpoint(TRUNCATE)`），无需整库独占重写或 2 倍磁盘开销，平滑回收物理空闲页，彻底避免 GUI 冻结。
 * **关联模块**：`src/service/index_config.cpp`, `src/service/index_pipeline.cpp`, `src/storage/storage_engine.cpp`
 * **关联测试**：`tests/test_storage_engine.cpp`, `tests/test_watch_and_index.cpp`
 * **验收准则 (Acceptance Criteria - Gherkin)**：
   ```gherkin
-  Scenario: 移除监控目录后关联索引彻底物理销毁
+  Scenario: 移除监控目录后关联索引彻底物理销毁与磁盘物理释放
     Given 用户在设置界面删除了已配置的目录 "/home/user/project_retired"
     When 用户点击确认移除该目录
     Then Service 停止对该目录的后台监听 (RemoveWatch)
     And 存储引擎在单个事务内执行删除所有 "path LIKE '/home/user/project_retired/%'" 的文件记录
     And NameIndex 内存文件名哈希表中清除相应条目
     And 用户在检索框中搜索该目录特有文件时，结果集命中数严格为 0
+    And 系统即时截断 WAL 日志并异步分批回收 Freelist 物理页面 (auto_vacuum=INCREMENTAL)
   ```
 
 ---
@@ -157,3 +159,4 @@
 - [x] **[MILE-003] 优化 OCR 内存占用与解析性能**：Header Probe 零拷贝尺寸嗅探 (<1μs)、双档位分辨率限边 (普通文档 736 / 内嵌图 640) 与 glibc 内存 Arena 碎片治理。（由 `tests/test_image_ocr.cpp` 验证闭环）
 - [x] **[MILE-004] 文件系统边界防御与目录拓扑去重**：Linux `statfs` 虚拟文件系统排除、跨平台卷与节点指纹去重，实现 $\mathcal{O}(1)$ 递归物理剪枝。（由 `tests/test_watch_and_index.cpp` 验证闭环）
 - [x] **[MILE-005] 进程文件描述符拉满与 Inotify 监控配额自适应**：免 root 自动提升 `RLIMIT_NOFILE` 至系统硬限制（1048576），智能探测 Inotify 权限并提供配额耗尽自愈指南。（由 `tests/test_system_env.cpp` 验证闭环）
+- [x] **[MILE-006] 移除索引目录联动清理底层索引库 (FEAT-001)**：实现 `StorageEngine::DeleteDirectory` 级联物理清理、`NameIndex::RemoveDirectoryPrefix` 内存秒级清除与 `IndexPipeline::RemoveDirectoryIndex` 调度闭环，确保已移除目录文件 0 命中与数据物理销毁。（由 `tests/test_storage_engine.cpp` [Step 9] 与 `tests/test_watch_and_index.cpp` [Step 12] 验证闭环）

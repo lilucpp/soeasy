@@ -109,7 +109,11 @@ IndexPipeline::IndexPipeline(std::shared_ptr<IndexConfig> config, std::shared_pt
     : config_(std::move(config)), worker_guard_(std::move(worker_guard)), storage_engine_(std::move(storage_engine)) {}
 
 IndexPipeline::~IndexPipeline() {
+  cancel_scan_.store(true);
   StopLiveWatch();
+  if (space_reclaim_thread_.joinable()) {
+    space_reclaim_thread_.join();
+  }
 }
 
 bool IndexPipeline::Init() {
@@ -181,6 +185,128 @@ bool IndexPipeline::AddAndScanDirectory(const std::string &dir_path, bool recurs
   ScanDirectoryRecursive(dir_path);
   FlushWriteQueue();
   return true;
+}
+
+bool IndexPipeline::RemoveDirectoryIndex(const std::string &dir_path) {
+  if (dir_path.empty()) {
+    return true;
+  }
+
+  LOG_INFO("[IndexPipeline] Removing directory index & watch for: '{}'", dir_path);
+
+  // 1. Stop filesystem watcher on this directory first so no new events are captured
+  if (watch_engine_) {
+    watch_engine_->RemoveWatch(dir_path);
+  }
+
+  // 2. Remove from configuration
+  if (config_) {
+    config_->RemoveIndexedDirectory(dir_path);
+  }
+
+  // 3. Drain any pending asynchronous write tasks to prevent race conditions
+  FlushWriteQueue();
+
+  // 4. Cascade delete from StorageEngine
+  std::vector<int64_t> deleted_ids;
+  int64_t deleted_count = 0;
+  if (storage_engine_) {
+    deleted_count = storage_engine_->DeleteDirectory(dir_path, &deleted_ids);
+    if (deleted_count < 0) {
+      LOG_ERROR("[IndexPipeline] Failed to delete directory '{}' from storage: {}", dir_path,
+                storage_engine_->GetLastError());
+      return false;
+    }
+    LOG_INFO("[IndexPipeline] Deleted {} files from storage under '{}'", deleted_count, dir_path);
+    std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+    stats_.total_files_deleted += static_cast<uint64_t>(deleted_count);
+
+    // Stage 1: Immediately truncate WAL to eliminate temporary delete frames
+    storage_engine_->CheckpointWal();
+  }
+
+  // 5. Clean up in-memory NameIndex
+  if (name_index_) {
+    if (!deleted_ids.empty()) {
+      name_index_->RemoveBatch(deleted_ids);
+    }
+    name_index_->RemoveDirectoryPrefix(dir_path);
+  }
+
+  // 6. Purge failed_files_ cache for this directory
+  PurgeFailedFilesUnder(dir_path);
+
+  // 7. Stage 2: Adaptive incremental disk space reclamation
+  if (storage_engine_ && deleted_count > 0) {
+    TriggerAsyncSpaceReclaim();
+  }
+
+  return true;
+}
+
+void IndexPipeline::PurgeFailedFilesUnder(const std::string &dir_path) {
+  std::lock_guard<std::mutex> lock(failed_files_mutex_);
+  std::string norm = dir_path;
+  while (norm.size() > 1 && (norm.back() == '/' || norm.back() == '\\')) {
+    norm.pop_back();
+  }
+  std::string p1 = norm + "/";
+  std::string p2 = norm + "\\";
+  for (auto it = failed_files_.begin(); it != failed_files_.end();) {
+    if (it->first == norm || it->first.rfind(p1, 0) == 0 || it->first.rfind(p2, 0) == 0) {
+      it = failed_files_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void IndexPipeline::TriggerAsyncSpaceReclaim() {
+  if (!storage_engine_ || cancel_scan_.load()) {
+    return;
+  }
+
+  bool expected = false;
+  if (!is_reclaiming_space_.compare_exchange_strong(expected, true)) {
+    return;
+  }
+
+  if (space_reclaim_thread_.joinable()) {
+    space_reclaim_thread_.join();
+  }
+
+  space_reclaim_thread_ = std::thread([this]() {
+    storage::StorageFragmentation frag;
+    if (!storage_engine_->GetFragmentation(&frag)) {
+      is_reclaiming_space_.store(false);
+      return;
+    }
+
+    if (frag.free_pages >= kMinFreePagesForVacuum || frag.frag_ratio >= kMinFragRatioForVacuum) {
+      LOG_INFO(
+          "[IndexPipeline] Storage fragmentation detected (Free: {:.2f} MB, Pages: {}, Ratio: {:.1f}%). Triggering "
+          "incremental reclaim...",
+          frag.free_bytes / (1024.0 * 1024.0), frag.free_pages, frag.frag_ratio * 100.0);
+
+      int64_t remaining_pages = frag.free_pages;
+      while (remaining_pages > 0 && !cancel_scan_.load()) {
+        int chunk = static_cast<int>(std::min<int64_t>(remaining_pages, kVacuumChunkPages));
+        storage_engine_->IncrementalVacuum(chunk);
+        remaining_pages -= chunk;
+        std::this_thread::sleep_for(kVacuumPacingInterval);
+      }
+
+      storage_engine_->CheckpointWal();
+
+      storage::StorageFragmentation after_frag;
+      if (storage_engine_->GetFragmentation(&after_frag)) {
+        LOG_INFO(
+            "[IndexPipeline] Incremental space reclaim completed: remaining free pages = {}, total size = {:.2f} MB",
+            after_frag.free_pages, after_frag.total_bytes / (1024.0 * 1024.0));
+      }
+    }
+    is_reclaiming_space_.store(false);
+  });
 }
 
 void IndexPipeline::ScanDirectoryRecursive(const std::string &dir_path) {

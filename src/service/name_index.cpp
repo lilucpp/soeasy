@@ -60,6 +60,43 @@ void NameIndex::RemoveByPath(const std::string &file_path) {
   }
 }
 
+void NameIndex::RemoveBatch(const std::vector<int64_t> &doc_ids) {
+  if (doc_ids.empty()) {
+    return;
+  }
+  std::unique_lock<std::shared_mutex> lock(rw_mutex_);
+  for (int64_t id : doc_ids) {
+    auto it = records_by_id_.find(id);
+    if (it != records_by_id_.end()) {
+      id_by_path_.erase(it->second.file_path);
+      records_by_id_.erase(it);
+    }
+  }
+}
+
+void NameIndex::RemoveDirectoryPrefix(const std::string &dir_prefix) {
+  if (dir_prefix.empty()) {
+    return;
+  }
+  std::string normalized = dir_prefix;
+  while (normalized.size() > 1 && (normalized.back() == '/' || normalized.back() == '\\')) {
+    normalized.pop_back();
+  }
+  std::string prefix_slash = normalized + "/";
+  std::string prefix_bslash = normalized + "\\";
+
+  std::unique_lock<std::shared_mutex> lock(rw_mutex_);
+  for (auto it = records_by_id_.begin(); it != records_by_id_.end();) {
+    const std::string &path = it->second.file_path;
+    if (path == normalized || path.rfind(prefix_slash, 0) == 0 || path.rfind(prefix_bslash, 0) == 0) {
+      id_by_path_.erase(path);
+      it = records_by_id_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 bool NameIndex::GetMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime) const {
   std::shared_lock<std::shared_mutex> lock(rw_mutex_);
   auto it = records_by_id_.find(doc_id);

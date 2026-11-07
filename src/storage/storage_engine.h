@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,15 @@ struct FileMetaRecord {
   int64_t mtime = 0;
   int parse_level = 0;
   int parse_stat = 0;
+};
+
+struct StorageFragmentation {
+  int page_size = 4096;
+  int64_t total_pages = 0;
+  int64_t free_pages = 0;
+  uint64_t total_bytes = 0;
+  uint64_t free_bytes = 0;
+  double frag_ratio = 0.0;
 };
 
 class StorageEngine {
@@ -109,6 +119,25 @@ class StorageEngine {
   bool CheckpointWal();
 
   /**
+   * @brief Query current database page metrics, freelist count, and fragmentation ratio.
+   */
+  bool GetFragmentation(StorageFragmentation *out_frag);
+
+  /**
+   * @brief Incrementally reclaim up to N free pages directly to the OS without full rewrite.
+   * Requires PRAGMA auto_vacuum = INCREMENTAL (enabled by default on creation).
+   *
+   * @param pages Number of pages to reclaim (0 to reclaim all current free pages)
+   * @return true on success
+   */
+  bool IncrementalVacuum(int pages = 500);
+
+  /**
+   * @brief Rebuild and shrink entire database file to reclaim 100% free space.
+   */
+  bool Vacuum();
+
+  /**
    * @brief Index or re-index a single document.
    *
    * @param doc_id Unique document identifier (e.g. 64-bit path hash)
@@ -128,6 +157,15 @@ class StorageEngine {
    * @brief Delete document from both metadata, content, and FTS5 index.
    */
   bool DeleteDocument(int64_t doc_id);
+
+  /**
+   * @brief Cascade delete all files under a directory prefix from metadata, content, and FTS5.
+   *
+   * @param dir_path Root directory path to cascade remove
+   * @param out_deleted_doc_ids Optional vector to collect deleted doc_ids for in-memory sync
+   * @return Number of documents deleted on success, or -1 on failure
+   */
+  int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr);
 
   /**
    * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild.
@@ -193,9 +231,17 @@ class StorageEngine {
   bool InitTables();
   void FinalizeCachedStatements();
 
+  // Internal unlocked implementations (assumes engine_mutex_ is already acquired by caller)
+  void CloseUnlocked();
+  bool CommitTransactionUnlocked();
+  bool IsInTransactionUnlocked() const;
+  bool CheckpointWalUnlocked();
+  bool GetDocumentContentUnlocked(int64_t doc_id, std::string *out_content);
+
   sqlite3 *db_ = nullptr;
   std::string last_error_;
   size_t uncommitted_count_ = 0;
+  mutable std::mutex engine_mutex_;
 
   sqlite3_stmt *stmt_files_insert_ = nullptr;
   sqlite3_stmt *stmt_contents_insert_ = nullptr;

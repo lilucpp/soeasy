@@ -55,6 +55,16 @@ class NameIndex {
   void RemoveByPath(const std::string &file_path);
 
   /**
+   * @brief Remove multiple file records by doc_ids in batch.
+   */
+  void RemoveBatch(const std::vector<int64_t> &doc_ids);
+
+  /**
+   * @brief Remove all file records matching a directory prefix.
+   */
+  void RemoveDirectoryPrefix(const std::string &dir_prefix);
+
+  /**
    * @brief Retrieve metadata (file_size, mtime) for rapid in-memory incremental check.
    */
   bool GetMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime) const;

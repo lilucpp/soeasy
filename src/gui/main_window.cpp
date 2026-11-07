@@ -636,7 +636,7 @@ void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
       for (const auto &watched : watched_dirs) {
         if (pipeline_->is_scan_cancelled()) break;
         if (active_set.find(watched) == active_set.end()) {
-          pipeline_->watch_engine()->RemoveWatch(watched);
+          pipeline_->RemoveDirectoryIndex(watched);
         }
       }
       for (const auto &dir : configured_dirs) {

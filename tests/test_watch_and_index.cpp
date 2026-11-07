@@ -317,6 +317,28 @@ int main(int argc, char *argv[]) {
     std::cout << "    └─ 最佳命中: " << name_res[0].file_name << "\n";
   }
 
+  // 12. Verify FEAT-001: End-to-end directory index removal & watch unregistration
+  std::cout << "\n[Step 12] 验证 FEAT-001: 移除已监控目录的端到端联动清理 (RemoveDirectoryIndex)...\n";
+  auto before_name = pipeline->SearchFilename("meeting_notes", 10, 0, test_dir + "/work");
+  assert(!before_name.empty());
+  auto before_fts = pipeline->SearchFulltext("架构优化", 10, 0, test_dir + "/work");
+  assert(!before_fts.empty());
+
+  // Call RemoveDirectoryIndex on test_dir + "/work"
+  assert(pipeline->RemoveDirectoryIndex(test_dir + "/work"));
+
+  // Verify after removal
+  auto after_name = pipeline->SearchFilename("meeting_notes", 10, 0, test_dir + "/work");
+  assert(after_name.empty());
+  auto after_fts = pipeline->SearchFulltext("架构优化", 10, 0, test_dir + "/work");
+  assert(after_fts.empty());
+
+  // Verify personal directory was untouched!
+  auto personal_name = pipeline->SearchFilename("meeting_notes", 10, 0, test_dir + "/personal");
+  assert(!personal_name.empty());
+
+  std::cout << "[+] FEAT-001 端到端目录移除验证通过! (work 目录文件彻底清空，personal 目录完整保留)\n";
+
   pipeline->StopLiveWatch();
   storage->Close();
 

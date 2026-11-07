@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "service/async_write_queue.h"
@@ -54,6 +55,21 @@ class IndexPipeline {
    * @brief Add a directory to monitor and perform initial crawl/indexing.
    */
   bool AddAndScanDirectory(const std::string &dir_path, bool recursive = true);
+
+  /**
+   * @brief Remove a directory from monitoring, configuration, storage, and in-memory indexes.
+   * Cascade deletes all indexed files under this directory.
+   *
+   * @param dir_path Directory path to remove
+   * @return true if successfully removed
+   */
+  bool RemoveDirectoryIndex(const std::string &dir_path);
+
+  /**
+   * @brief Asynchronously reclaim unused physical pages and truncate WAL.
+   * Non-blocking for UI and ongoing searches.
+   */
+  void TriggerAsyncSpaceReclaim();
 
   /**
    * @brief Perform initial background scan and indexing of configured directories.
@@ -124,6 +140,13 @@ class IndexPipeline {
  private:
   void ScanDirectoryRecursive(const std::string &dir_path);
   bool IndexSingleFile(const std::string &file_path);
+  void PurgeFailedFilesUnder(const std::string &dir_path);
+
+  // Adaptive space reclamation configuration constants
+  static constexpr int64_t kMinFreePagesForVacuum = 100;
+  static constexpr double kMinFragRatioForVacuum = 0.15;
+  static constexpr int kVacuumChunkPages = 250;
+  static constexpr std::chrono::milliseconds kVacuumPacingInterval{20};
 
   std::shared_ptr<IndexConfig> config_;
   std::shared_ptr<WorkerGuard> worker_guard_;
@@ -145,6 +168,9 @@ class IndexPipeline {
   };
   std::mutex failed_files_mutex_;
   std::unordered_map<std::string, FailedFileInfo> failed_files_;
+
+  std::atomic<bool> is_reclaiming_space_{false};
+  std::thread space_reclaim_thread_;
 };
 
 }  // namespace service

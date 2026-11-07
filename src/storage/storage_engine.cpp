@@ -7,6 +7,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -74,6 +75,11 @@ void StorageEngine::FinalizeCachedStatements() {
 }
 
 void StorageEngine::Close() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  CloseUnlocked();
+}
+
+void StorageEngine::CloseUnlocked() {
   FinalizeCachedStatements();
   if (db_) {
     sqlite3_close_v2(db_);
@@ -83,11 +89,12 @@ void StorageEngine::Close() {
 }
 
 bool StorageEngine::BeginTransaction() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     last_error_ = "Database not open";
     return false;
   }
-  if (IsInTransaction()) {
+  if (IsInTransactionUnlocked()) {
     return true;  // Transaction already active
   }
   char *err = nullptr;
@@ -102,11 +109,16 @@ bool StorageEngine::BeginTransaction() {
 }
 
 bool StorageEngine::CommitTransaction() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  return CommitTransactionUnlocked();
+}
+
+bool StorageEngine::CommitTransactionUnlocked() {
   if (!db_) {
     last_error_ = "Database not open";
     return false;
   }
-  if (!IsInTransaction()) {
+  if (!IsInTransactionUnlocked()) {
     return true;  // Nothing to commit
   }
   char *err = nullptr;
@@ -121,11 +133,12 @@ bool StorageEngine::CommitTransaction() {
 }
 
 bool StorageEngine::RollbackTransaction() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     last_error_ = "Database not open";
     return false;
   }
-  if (!IsInTransaction()) {
+  if (!IsInTransactionUnlocked()) {
     return true;
   }
   char *err = nullptr;
@@ -140,6 +153,11 @@ bool StorageEngine::RollbackTransaction() {
 }
 
 bool StorageEngine::IsInTransaction() const {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  return IsInTransactionUnlocked();
+}
+
+bool StorageEngine::IsInTransactionUnlocked() const {
   if (!db_) {
     return false;
   }
@@ -147,6 +165,7 @@ bool StorageEngine::IsInTransaction() const {
 }
 
 bool StorageEngine::OptimizeFtsIndex() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     last_error_ = "Database not open";
     return false;
@@ -162,6 +181,11 @@ bool StorageEngine::OptimizeFtsIndex() {
 }
 
 bool StorageEngine::CheckpointWal() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  return CheckpointWalUnlocked();
+}
+
+bool StorageEngine::CheckpointWalUnlocked() {
   if (!db_) {
     last_error_ = "Database not open";
     return false;
@@ -176,7 +200,90 @@ bool StorageEngine::CheckpointWal() {
   return true;
 }
 
+bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  if (!db_ || !out_frag) {
+    last_error_ = "Database not open or invalid argument";
+    return false;
+  }
+
+  sqlite3_stmt *stmt = nullptr;
+  int page_size = 4096;
+  int64_t page_count = 0;
+  int64_t free_count = 0;
+
+  if (sqlite3_prepare_v2(db_, "PRAGMA page_size;", -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      page_size = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+  }
+  if (sqlite3_prepare_v2(db_, "PRAGMA page_count;", -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      page_count = sqlite3_column_int64(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+  }
+  if (sqlite3_prepare_v2(db_, "PRAGMA freelist_count;", -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      free_count = sqlite3_column_int64(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+  }
+
+  out_frag->page_size = page_size;
+  out_frag->total_pages = page_count;
+  out_frag->free_pages = free_count;
+  out_frag->total_bytes = static_cast<uint64_t>(page_count * page_size);
+  out_frag->free_bytes = static_cast<uint64_t>(free_count * page_size);
+  out_frag->frag_ratio = (page_count > 0) ? (static_cast<double>(free_count) / static_cast<double>(page_count)) : 0.0;
+  return true;
+}
+
+bool StorageEngine::IncrementalVacuum(int pages) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  char *err = nullptr;
+  std::string sql;
+  if (pages > 0) {
+    sql = "PRAGMA incremental_vacuum(" + std::to_string(pages) + ");";
+  } else {
+    sql = "PRAGMA incremental_vacuum;";
+  }
+  int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "PRAGMA incremental_vacuum failed";
+    sqlite3_free(err);
+    return false;
+  }
+  return true;
+}
+
+bool StorageEngine::Vacuum() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  if (!db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  if (IsInTransactionUnlocked()) {
+    CommitTransactionUnlocked();
+  }
+  char *err = nullptr;
+  int rc = sqlite3_exec(db_, "VACUUM;", nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) {
+    last_error_ = err ? err : "VACUUM failed";
+    sqlite3_free(err);
+    return false;
+  }
+  CheckpointWalUnlocked();
+  return true;
+}
+
 bool StorageEngine::SetBulkMode(bool enable) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     last_error_ = "Database not open";
     return false;
@@ -189,12 +296,13 @@ bool StorageEngine::SetBulkMode(bool enable) {
     // Restore default autocheckpoint threshold and truncate WAL
     sqlite3_exec(db_, "PRAGMA wal_autocheckpoint = 1000;", nullptr, nullptr, nullptr);
     sqlite3_exec(db_, "PRAGMA cache_size = -16000;", nullptr, nullptr, nullptr);  // 16MB cache
-    CheckpointWal();
+    CheckpointWalUnlocked();
   }
   return true;
 }
 
 std::string StorageEngine::GetLastError() const {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!last_error_.empty()) {
     return last_error_;
   }
@@ -205,18 +313,19 @@ std::string StorageEngine::GetLastError() const {
 }
 
 bool StorageEngine::Open(const std::string &db_path, const std::string &key, const std::string &dict_dir) {
-  Close();
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  CloseUnlocked();
   last_error_.clear();
 
   int rc = sqlite3_open_v2(db_path.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
   if (rc != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(db_);
-    Close();
+    CloseUnlocked();
     return false;
   }
 
   if (!ExecutePragmas(key)) {
-    Close();
+    CloseUnlocked();
     return false;
   }
 
@@ -224,12 +333,12 @@ bool StorageEngine::Open(const std::string &db_path, const std::string &key, con
   rc = RegisterFts5JiebaTokenizer(db_, dict_dir);
   if (rc != SQLITE_OK) {
     last_error_ = "Failed to register FTS5 Jieba tokenizer: " + std::string(sqlite3_errmsg(db_));
-    Close();
+    CloseUnlocked();
     return false;
   }
 
   if (!InitTables()) {
-    Close();
+    CloseUnlocked();
     return false;
   }
 
@@ -262,6 +371,9 @@ bool StorageEngine::ExecutePragmas(const std::string &key) {
 
   // Set large 32KB page size for high FTS5 indexing throughput
   sqlite3_exec(db_, "PRAGMA page_size = 32768;", nullptr, nullptr, nullptr);
+
+  // Configure incremental auto-vacuum before tables creation
+  sqlite3_exec(db_, "PRAGMA auto_vacuum = INCREMENTAL;", nullptr, nullptr, nullptr);
 
   // Verify password by testing access to schema
   sqlite3_stmt *check_stmt = nullptr;
@@ -338,6 +450,7 @@ bool StorageEngine::InitTables() {
 bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
                                   const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
                                   const std::string &utf8_content) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     last_error_ = "Database not open";
     return false;
@@ -367,7 +480,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
     }
   }
 
-  bool is_outer_tx = IsInTransaction();
+  bool is_outer_tx = IsInTransactionUnlocked();
   if (!is_outer_tx) {
     sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
   }
@@ -488,11 +601,12 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
 }
 
 bool StorageEngine::DeleteDocument(int64_t doc_id) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     return false;
   }
 
-  bool is_outer_tx = IsInTransaction();
+  bool is_outer_tx = IsInTransactionUnlocked();
   if (!is_outer_tx) {
     sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
   }
@@ -529,7 +643,133 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
   return true;
 }
 
+static std::string EscapeLikePattern(const std::string &input) {
+  std::string out;
+  out.reserve(input.size() * 2);
+  for (char c : input) {
+    if (c == '%' || c == '_' || c == '^') {
+      out.push_back('^');
+    }
+    out.push_back(c);
+  }
+  return out;
+}
+
+int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  if (!db_) {
+    last_error_ = "Database not open";
+    return -1;
+  }
+  if (dir_path.empty()) {
+    return 0;
+  }
+
+  std::string normalized = dir_path;
+  while (normalized.size() > 1 && (normalized.back() == '/' || normalized.back() == '\\')) {
+    normalized.pop_back();
+  }
+  std::string escaped = EscapeLikePattern(normalized);
+  std::string prefix_slash = escaped + "/%";
+  std::string prefix_bslash = escaped + "\\%";
+
+  // 1. Query all matching doc_ids and extensions with ESCAPE clause
+  const char *query_sql =
+      "SELECT doc_id, ext FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE '^';";
+  sqlite3_stmt *stmt_select = nullptr;
+  int rc = sqlite3_prepare_v2(db_, query_sql, -1, &stmt_select, nullptr);
+  if (rc != SQLITE_OK) {
+    last_error_ = sqlite3_errmsg(db_);
+    return -1;
+  }
+
+  sqlite3_bind_text(stmt_select, 1, normalized.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_select, 2, prefix_slash.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_select, 3, prefix_bslash.c_str(), -1, SQLITE_TRANSIENT);
+
+  std::vector<int64_t> doc_ids;
+  std::unordered_map<std::string, int> ext_counts;
+  while (sqlite3_step(stmt_select) == SQLITE_ROW) {
+    int64_t id = sqlite3_column_int64(stmt_select, 0);
+    doc_ids.push_back(id);
+    const char *ext = reinterpret_cast<const char *>(sqlite3_column_text(stmt_select, 1));
+    if (ext) {
+      ext_counts[ext]++;
+    }
+  }
+  sqlite3_finalize(stmt_select);
+
+  if (doc_ids.empty()) {
+    if (out_deleted_doc_ids) {
+      out_deleted_doc_ids->clear();
+    }
+    return 0;
+  }
+
+  // 2. Cascade delete within a single transaction
+  bool is_outer_tx = IsInTransactionUnlocked();
+  if (!is_outer_tx) {
+    sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+  }
+
+  sqlite3_stmt *stmt_del_content = nullptr;
+  sqlite3_stmt *stmt_del_fts = nullptr;
+  sqlite3_prepare_v2(db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, &stmt_del_content, nullptr);
+  sqlite3_prepare_v2(db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, &stmt_del_fts, nullptr);
+
+  for (int64_t id : doc_ids) {
+    if (stmt_del_content) {
+      sqlite3_bind_int64(stmt_del_content, 1, id);
+      sqlite3_step(stmt_del_content);
+      sqlite3_reset(stmt_del_content);
+    }
+    if (stmt_del_fts) {
+      sqlite3_bind_int64(stmt_del_fts, 1, id);
+      sqlite3_step(stmt_del_fts);
+      sqlite3_reset(stmt_del_fts);
+    }
+  }
+  if (stmt_del_content) sqlite3_finalize(stmt_del_content);
+  if (stmt_del_fts) sqlite3_finalize(stmt_del_fts);
+
+  // 3. Delete from files metadata table
+  sqlite3_stmt *stmt_del_files = nullptr;
+  const char *del_files_sql =
+      "DELETE FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE '^';";
+  if (sqlite3_prepare_v2(db_, del_files_sql, -1, &stmt_del_files, nullptr) == SQLITE_OK) {
+    sqlite3_bind_text(stmt_del_files, 1, normalized.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_del_files, 2, prefix_slash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_del_files, 3, prefix_bslash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt_del_files);
+    sqlite3_finalize(stmt_del_files);
+  }
+
+  // 4. Update ext_stats active_count
+  for (const auto &pair : ext_counts) {
+    sqlite3_stmt *stmt_ext = nullptr;
+    const char *ext_sql = "UPDATE ext_stats SET active_count = MAX(0, active_count - ?1) WHERE ext = ?2;";
+    if (sqlite3_prepare_v2(db_, ext_sql, -1, &stmt_ext, nullptr) == SQLITE_OK) {
+      sqlite3_bind_int(stmt_ext, 1, pair.second);
+      sqlite3_bind_text(stmt_ext, 2, pair.first.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_step(stmt_ext);
+      sqlite3_finalize(stmt_ext);
+    }
+  }
+
+  if (is_outer_tx) {
+    uncommitted_count_++;
+  } else {
+    sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+  }
+
+  if (out_deleted_doc_ids) {
+    *out_deleted_doc_ids = doc_ids;
+  }
+  return static_cast<int64_t>(doc_ids.size());
+}
+
 bool StorageEngine::ClearAll() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     return false;
   }
@@ -566,6 +806,7 @@ bool StorageEngine::ClearAll() {
 
 std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, int limit, int offset,
                                                     const std::string &path_prefix, int *out_total_count) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   std::vector<SearchResultItem> results;
   if (out_total_count) {
     *out_total_count = 0;
@@ -650,7 +891,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
     auto &item = results[i];
     if (i < max_body_snippets) {
       std::string full_text;
-      if (GetDocumentContent(item.doc_id, &full_text) && !full_text.empty()) {
+      if (GetDocumentContentUnlocked(item.doc_id, &full_text) && !full_text.empty()) {
         item.snippet = GenerateSnippet(full_text, keywords, 140);
         if (!item.snippet.empty()) {
           item.has_body_snippet = true;
@@ -667,6 +908,11 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
 }
 
 bool StorageEngine::GetDocumentContent(int64_t doc_id, std::string *out_content) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
+  return GetDocumentContentUnlocked(doc_id, out_content);
+}
+
+bool StorageEngine::GetDocumentContentUnlocked(int64_t doc_id, std::string *out_content) {
   if (!out_content) {
     last_error_ = "Output pointer is null";
     return false;
@@ -715,6 +961,7 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id, std::string *out_content)
 }
 
 bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   if (!db_) {
     last_error_ = "Database not open";
     return false;
@@ -749,6 +996,7 @@ bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int
 }
 
 std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
+  std::lock_guard<std::mutex> lock(engine_mutex_);
   std::vector<FileMetaRecord> results;
   if (!db_) {
     last_error_ = "Database not open";
