@@ -159,6 +159,7 @@ add_library(soeasy_common STATIC
     src/common/shm_pool.cpp
     src/common/logger.cpp
     src/common/encoding_utils.cpp
+    src/common/system_env.cpp
 )
 target_include_directories(soeasy_common PUBLIC
     src
@@ -456,6 +457,14 @@ if(BUILD_TESTS)
   )
   target_link_libraries(test_dat_jieba PRIVATE
       soeasy_storage
+      soeasy_common
+  )
+
+  # Test: System Environment & Resource Limits Optimization
+  add_executable(test_system_env
+      tests/test_system_env.cpp
+  )
+  target_link_libraries(test_system_env PRIVATE
       soeasy_common
   )
 endif()

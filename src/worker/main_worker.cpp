@@ -16,6 +16,7 @@
 #endif
 
 #include "common/logger.h"
+#include "common/system_env.h"
 #include "worker/l2_office_parser.h"
 #include "worker/worker_loop.h"
 
@@ -88,6 +89,9 @@ int main(int argc, char *argv[]) {
   auto level = soeasy::common::Logger::ParseLevel(log_level_str);
   soeasy::common::Logger::Init(log_file, 10 * 1024 * 1024, 3, enable_console, level);
   soeasy::common::Logger::SetSyncMode(enable_sync);
+
+  // Optimize worker process file descriptor limits for heavy concurrent parsing
+  soeasy::common::SystemEnv::OptimizeProcessFileLimits();
 
   // Configure DocToText logging and embedded image OCR in this worker process
   soeasy::worker::L2OfficeParser::SetLogging(doctotext_logging, doctotext_log_path);

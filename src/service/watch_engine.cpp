@@ -10,6 +10,8 @@
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
+#include "common/system_env.h"
+#include <cerrno>
 
 namespace soeasy {
 namespace service {
@@ -80,6 +82,13 @@ bool WatchEngine::AddWatch(const std::string &raw_dir_path) {
   efsw::WatchID watch_id = file_watcher_->addWatch(dir_path, this, true);
   if (watch_id <= 0) {
     LOG_ERROR("[WatchEngine] Failed to add watch on '{}'", dir_path);
+#if defined(__linux__)
+    if (errno == ENOSPC) {
+      auto info = common::SystemEnv::CheckAndOptimizeInotifyWatches();
+      LOG_WARN("[WatchEngine] Inotify limit exhausted (ENOSPC). Current limit: {}.{}",
+               info.current_watches, common::SystemEnv::GetInotifyTuningGuide(info.current_watches));
+    }
+#endif
     return false;
   }
 

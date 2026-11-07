@@ -14,6 +14,7 @@
 #include <string>
 
 #include "common/logger.h"
+#include "common/system_env.h"
 #include "gui/i18n.h"
 #include "gui/main_window.h"
 #include "service/index_config.h"
@@ -208,6 +209,10 @@ int main(int argc, char *argv[]) {
   LOG_INFO("   Logging Level:     {} | Console: {} | Sync Flush: {}", soeasy::common::Logger::LevelToString(level_enum),
            enable_console ? "ENABLED" : "DISABLED", enable_sync ? "ENABLED" : "DISABLED");
   LOG_INFO("========================================================");
+
+  // Optimize system environment: Process file descriptors and Inotify watches
+  soeasy::common::SystemEnv::OptimizeProcessFileLimits();
+  soeasy::common::SystemEnv::CheckAndOptimizeInotifyWatches();
 
   if (!config_loaded) {
     LOG_INFO("[Config] Created initial persistent config at: {}", config_path.toStdString());
