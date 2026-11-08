@@ -291,6 +291,7 @@ int main(int argc, char *argv[]) {
   soeasy::service::ParseTaskResult resume_res;
   bool resume_ok = guard.ExecuteTask(resume_task, &resume_res);
   assert(resume_ok);
+  (void)resume_ok;
   assert(resume_res.status == soeasy::service::TaskStatus::kSuccess);
   guard.shm_pool()->ReleaseSlot(resume_res.slot_id);
   std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count() << " (成功瞬时拉起并完成解析)!\n";

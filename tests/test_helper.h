@@ -63,14 +63,24 @@ inline std::string FindDictDir() {
 inline std::string FindWorkerBin() {
   auto root = GetProjectRootDir();
   auto exe_dir = GetExecutableDir();
-  std::vector<std::filesystem::path> candidates = {exe_dir / "soeasy-worker", root / "build/soeasy-worker",
-                                                   exe_dir / "bin/soeasy-worker", exe_dir / "../bin/soeasy-worker"};
+#ifdef _WIN32
+  const std::string bin_name = "soeasy-worker.exe";
+#else
+  const std::string bin_name = "soeasy-worker";
+#endif
+  std::vector<std::filesystem::path> candidates = {
+      exe_dir / bin_name,
+      root / "build" / bin_name,
+      root / "build_test" / bin_name,
+      exe_dir / "bin" / bin_name,
+      exe_dir / ".." / "bin" / bin_name
+  };
   for (const auto &c : candidates) {
     if (std::filesystem::exists(c)) {
       return c.string();
     }
   }
-  return (exe_dir / "soeasy-worker").string();
+  return (exe_dir / bin_name).string();
 }
 
 inline std::string FindModelsDir() {

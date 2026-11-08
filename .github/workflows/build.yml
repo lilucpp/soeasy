@@ -104,12 +104,45 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}"
           cmake --build /tmp/capnproto/build --target install
 
-      - name: Build SoEasy (Windows x64)
+      - name: Build SoEasy and Test Suite (Windows x64)
         run: |
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTS=OFF
-          cmake --build build --target soeasy-gui soeasy-worker build_dat_dict -j4
+            -DBUILD_TESTS=ON
+          cmake --build build -j4
+
+      - name: Deploy Runtime DLLs to Build Directory
+        run: |
+          # Copy third-party runtime DLLs to build directory (same directory as test executables)
+          cp -p third_party/doctotext/lib/*.dll build/ 2>/dev/null || true
+          cp -p third_party/onnxruntime/lib/*.dll build/ 2>/dev/null || true
+          
+          # Copy MinGW system runtime libraries to build directory
+          cp -p ${MINGW_PREFIX}/bin/libopencv*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libuchardet*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libxml2*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libiconv*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/zlib1.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libgcc*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libstdc*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll build/ 2>/dev/null || true
+
+          # Deploy Qt dependencies and plugins into build directory
+          if command -v windeployqt &>/dev/null; then
+            windeployqt --release --no-translations build/soeasy-gui.exe || true
+          fi
+
+      - name: Build DAT Dictionary
+        run: |
+          ./build/build_dat_dict.exe "third_party/cppjieba/dict/jieba.dict.utf8" "third_party/cppjieba/dict/jieba_dat.bin"
+
+      - name: Run Automated Test Suite (Windows CTest Quality Gate)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          mkdir -p /tmp
+          ctest --test-dir build --output-on-failure --timeout 90 -j2
 
       - name: Package Windows Artifacts
         run: |
