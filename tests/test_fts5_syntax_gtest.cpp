@@ -22,7 +22,7 @@ class Fts5SyntaxTest : public ::testing::Test {
  protected:
   void SetUp() override {
     test_db_path_ = (std::filesystem::temp_directory_path() /
-                     ("soeasy_fts5_syntax_" + std::to_string(getpid()) + "_" +
+                     ("soeasy_fts5_syntax_" + std::to_string(soeasy::test::GetProcessIdCompat()) + "_" +
                       std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + "_" +
                       std::to_string(reinterpret_cast<uintptr_t>(this)) + ".db")).string();
     key_ = "Fts5_GTest_Secret_Key_2026!";

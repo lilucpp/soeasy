@@ -17,8 +17,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #else
-#include <psapi.h>
 #include <windows.h>
+#include <psapi.h>
 #endif
 
 #include "common/encoding_utils.h"

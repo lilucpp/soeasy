@@ -45,7 +45,7 @@ void WriteFile(const std::string &path, const std::string &content) {
 
 int main(int argc, char *argv[]) {
   // Run Qt in headless offscreen mode
-  setenv("QT_QPA_PLATFORM", "offscreen", 1);
+  qputenv("QT_QPA_PLATFORM", QByteArray("offscreen"));
 
   QApplication app(argc, argv);
   app.setApplicationName("SoEasy-SmokeTest");

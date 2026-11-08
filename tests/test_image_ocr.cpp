@@ -327,7 +327,7 @@ void TestStorageFts5ImageSearch() {
   std::cout << "======================================================\n";
 
   std::string test_db = (std::filesystem::temp_directory_path() /
-                         ("test_image_ocr_fts_" + std::to_string(getpid()) + "_" +
+                         ("test_image_ocr_fts_" + std::to_string(soeasy::test::GetProcessIdCompat()) + "_" +
                           std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + ".db")).string();
   std::filesystem::remove(test_db);
 

@@ -53,7 +53,7 @@ std::vector<soeasy::gui::DisplayResultItem> GenerateMockResults(size_t count) {
 }  // namespace
 
 int main(int argc, char *argv[]) {
-  setenv("QT_QPA_PLATFORM", "offscreen", 1);
+  qputenv("QT_QPA_PLATFORM", QByteArray("offscreen"));
   QApplication app(argc, argv);
 
   std::cout << "=================================================================\n";

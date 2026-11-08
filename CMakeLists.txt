@@ -616,7 +616,9 @@ if(BUILD_TESTS)
       GTest::gtest_main
       GTest::gmock
   )
-  gtest_discover_tests(test_storage_transaction_gtest PROPERTIES
+  gtest_discover_tests(test_storage_transaction_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       TIMEOUT 30
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
@@ -635,7 +637,9 @@ if(BUILD_TESTS)
       GTest::gtest
       GTest::gtest_main
   )
-  gtest_discover_tests(test_snippet_highlighter_gtest PROPERTIES
+  gtest_discover_tests(test_snippet_highlighter_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       TIMEOUT 10
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
@@ -656,7 +660,9 @@ if(BUILD_TESTS)
       GTest::gtest
       GTest::gtest_main
   )
-  gtest_discover_tests(test_fts5_syntax_gtest PROPERTIES
+  gtest_discover_tests(test_fts5_syntax_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       TIMEOUT 20
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
@@ -680,7 +686,9 @@ if(BUILD_TESTS)
       GTest::gtest
       GTest::gtest_main
   )
-  gtest_discover_tests(test_sqlitecpp_gtest PROPERTIES
+  gtest_discover_tests(test_sqlitecpp_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       TIMEOUT 20
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

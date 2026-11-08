@@ -12,6 +12,10 @@ namespace soeasy {
 namespace test {
 
 #ifndef _WIN32
+#include <unistd.h>
+inline int GetProcessIdCompat() {
+  return getpid();
+}
 inline std::filesystem::path GetExecutableDir() {
   std::error_code ec;
   auto p = std::filesystem::read_symlink("/proc/self/exe", ec);
@@ -21,7 +25,11 @@ inline std::filesystem::path GetExecutableDir() {
   return std::filesystem::current_path();
 }
 #else
+#include <process.h>
 #include <windows.h>
+inline int GetProcessIdCompat() {
+  return _getpid();
+}
 inline std::filesystem::path GetExecutableDir() {
   char path[MAX_PATH];
   GetModuleFileNameA(NULL, path, MAX_PATH);
