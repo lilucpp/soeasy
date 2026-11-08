@@ -48,6 +48,20 @@ struct StorageFragmentation {
 };
 
 /**
+ * @brief Structured parameters for document indexing to eliminate data clumps.
+ */
+struct DocumentIndexEntry {
+  int64_t doc_id = 0;
+  std::string file_path;
+  std::string file_name;
+  std::string ext;
+  uint64_t file_size = 0;
+  int64_t mtime = 0;
+  int parse_level = 0;
+  std::string utf8_content;
+};
+
+/**
  * @brief RAII scoped lease guard for checked-out read connections.
  *
  * Automatically returns the borrowed sqlite3* handle to ReaderConnectionPool upon destruction.
@@ -177,11 +191,27 @@ class IStorageEngine {
   virtual bool Vacuum() = 0;
 
   /**
-   * @brief Index or re-index a single document (Write channel).
+   * @brief Index or re-index a single document (Write channel) using structured entry.
+   */
+  virtual bool IndexDocument(const DocumentIndexEntry &entry) = 0;
+
+  /**
+   * @brief Backward-compatible overload for legacy multi-argument invocation.
    */
   virtual bool IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
                              const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
-                             const std::string &utf8_content) = 0;
+                             const std::string &utf8_content) {
+    DocumentIndexEntry entry;
+    entry.doc_id = doc_id;
+    entry.file_path = file_path;
+    entry.file_name = file_name;
+    entry.ext = ext;
+    entry.file_size = file_size;
+    entry.mtime = mtime;
+    entry.parse_level = parse_level;
+    entry.utf8_content = utf8_content;
+    return IndexDocument(entry);
+  }
 
   /**
    * @brief Delete document from metadata, content, and FTS5 index (Write channel).

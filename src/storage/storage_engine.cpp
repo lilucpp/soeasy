@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "common/logger.h"
+#include "common/snippet_highlighter.h"
 #include "storage/fts5_jieba_tokenizer.h"
 #include "utf8.h"
 #include "zstd.h"
@@ -23,35 +24,98 @@ namespace soeasy {
 namespace storage {
 
 namespace {
+
+/**
+ * @brief Zero-overhead RAII guard for sqlite3_stmt* lifecycle management.
+ * Guarantees sqlite3_finalize is called on all exit paths (normal, error, or exception).
+ */
+class SqliteStmtScope {
+ public:
+  explicit SqliteStmtScope(sqlite3_stmt *stmt = nullptr) : stmt_(stmt) {}
+  ~SqliteStmtScope() { Reset(); }
+
+  SqliteStmtScope(const SqliteStmtScope &) = delete;
+  SqliteStmtScope &operator=(const SqliteStmtScope &) = delete;
+
+  SqliteStmtScope(SqliteStmtScope &&other) noexcept : stmt_(other.stmt_) { other.stmt_ = nullptr; }
+  SqliteStmtScope &operator=(SqliteStmtScope &&other) noexcept {
+    if (this != &other) {
+      Reset();
+      stmt_ = other.stmt_;
+      other.stmt_ = nullptr;
+    }
+    return *this;
+  }
+
+  void Reset(sqlite3_stmt *stmt = nullptr) {
+    if (stmt_) {
+      sqlite3_finalize(stmt_);
+    }
+    stmt_ = stmt;
+  }
+
+  sqlite3_stmt *get() const { return stmt_; }
+  sqlite3_stmt **address() {
+    Reset();
+    return &stmt_;
+  }
+  sqlite3_stmt *release() {
+    sqlite3_stmt *tmp = stmt_;
+    stmt_ = nullptr;
+    return tmp;
+  }
+  operator sqlite3_stmt *() const { return stmt_; }
+
+ private:
+  sqlite3_stmt *stmt_{nullptr};
+};
+
 inline std::string SafeColumnText(sqlite3_stmt *stmt, int col) {
   const auto *text = sqlite3_column_text(stmt, col);
   return text ? reinterpret_cast<const char *>(text) : "";
 }
+
+/**
+ * @brief Sanitize raw query into exact phrase tokens to recover from FTS5 syntax errors.
+ * Wraps tokens in double-quotes and strips unescaped quotes so FTS5 treats them as literals.
+ */
+std::string BuildSanitizedFtsQuery(const std::string &raw_query) {
+  std::istringstream iss(raw_query);
+  std::string token;
+  std::string sanitized;
+  while (iss >> token) {
+    std::string clean;
+    for (char c : token) {
+      if (c != '"') {
+        clean.push_back(c);
+      }
+    }
+    if (clean.empty()) continue;
+    if (!sanitized.empty()) {
+      sanitized.push_back(' ');
+    }
+    sanitized.push_back('"');
+    sanitized.append(clean);
+    sanitized.push_back('"');
+  }
+  return sanitized;
+}
+
+std::string EscapeLikePattern(const std::string &input) {
+  std::string out;
+  out.reserve(input.size() * 2);
+  for (char c : input) {
+    if (c == '%' || c == '_' || c == '^') {
+      out.push_back('^');
+    }
+    out.push_back(c);
+  }
+  return out;
+}
 }  // namespace
 
 std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(const std::string &query) {
-  std::vector<std::string> kws;
-  std::istringstream iss(query);
-  std::string token;
-  while (iss >> token) {
-    if (token == "AND" || token == "OR" || token == "NOT") continue;
-    if (token.rfind("NEAR(", 0) == 0) continue;
-    size_t colon = token.find(':');
-    if (colon != std::string::npos && colon + 1 < token.size()) {
-      token = token.substr(colon + 1);
-    }
-    while (!token.empty() && (token.front() == '"' || token.front() == '\'' || token.front() == '(')) {
-      token.erase(token.begin());
-    }
-    while (!token.empty() &&
-           (token.back() == '"' || token.back() == '\'' || token.back() == ')' || token.back() == '*')) {
-      token.pop_back();
-    }
-    if (!token.empty()) {
-      kws.push_back(token);
-    }
-  }
-  return kws;
+  return common::SnippetHighlighter::ExtractKeywordsFromQuery(query);
 }
 
 StorageEngine::StorageEngine() = default;
@@ -233,28 +297,25 @@ bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
     return false;
   }
 
-  sqlite3_stmt *stmt = nullptr;
+  SqliteStmtScope stmt;
   int page_size = 4096;
   int64_t page_count = 0;
   int64_t free_count = 0;
 
-  if (sqlite3_prepare_v2(target_db, "PRAGMA page_size;", -1, &stmt, nullptr) == SQLITE_OK) {
+  if (sqlite3_prepare_v2(target_db, "PRAGMA page_size;", -1, stmt.address(), nullptr) == SQLITE_OK) {
     if (sqlite3_step(stmt) == SQLITE_ROW) {
       page_size = sqlite3_column_int(stmt, 0);
     }
-    sqlite3_finalize(stmt);
   }
-  if (sqlite3_prepare_v2(target_db, "PRAGMA page_count;", -1, &stmt, nullptr) == SQLITE_OK) {
+  if (sqlite3_prepare_v2(target_db, "PRAGMA page_count;", -1, stmt.address(), nullptr) == SQLITE_OK) {
     if (sqlite3_step(stmt) == SQLITE_ROW) {
       page_count = sqlite3_column_int64(stmt, 0);
     }
-    sqlite3_finalize(stmt);
   }
-  if (sqlite3_prepare_v2(target_db, "PRAGMA freelist_count;", -1, &stmt, nullptr) == SQLITE_OK) {
+  if (sqlite3_prepare_v2(target_db, "PRAGMA freelist_count;", -1, stmt.address(), nullptr) == SQLITE_OK) {
     if (sqlite3_step(stmt) == SQLITE_ROW) {
       free_count = sqlite3_column_int64(stmt, 0);
     }
-    sqlite3_finalize(stmt);
   }
 
   out_frag->page_size = page_size;
@@ -483,9 +544,7 @@ bool StorageEngine::InitTables() {
   return true;
 }
 
-bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
-                                  const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
-                                  const std::string &utf8_content) {
+bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
     last_error_ = "Database not open";
@@ -493,11 +552,11 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
   }
 
   // 1. Compress utf8_content with Zstd (level 3)
-  size_t raw_size = utf8_content.size();
+  size_t raw_size = entry.utf8_content.size();
   size_t max_compressed_size = ZSTD_compressBound(raw_size);
   std::vector<uint8_t> compressed(max_compressed_size);
 
-  size_t compressed_size = ZSTD_compress(compressed.data(), max_compressed_size, utf8_content.data(), raw_size, 3);
+  size_t compressed_size = ZSTD_compress(compressed.data(), max_compressed_size, entry.utf8_content.data(), raw_size, 3);
   if (ZSTD_isError(compressed_size)) {
     last_error_ = "Zstd compression error: " + std::string(ZSTD_getErrorName(compressed_size));
     return false;
@@ -508,7 +567,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
   std::string summary;
   if (raw_size > 0) {
     size_t summary_len = std::min<size_t>(raw_size, 400);
-    summary.assign(utf8_content.data(), summary_len);
+    summary.assign(entry.utf8_content.data(), summary_len);
     if (!utf8::is_valid(summary.begin(), summary.end())) {
       std::string cleaned;
       utf8::replace_invalid(summary.begin(), summary.end(), std::back_inserter(cleaned));
@@ -544,13 +603,13 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
 
   sqlite3_reset(stmt_files_insert_);
   sqlite3_clear_bindings(stmt_files_insert_);
-  sqlite3_bind_int64(stmt_files_insert_, 1, doc_id);
-  sqlite3_bind_text(stmt_files_insert_, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_files_insert_, 3, file_path.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_files_insert_, 4, ext.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(stmt_files_insert_, 5, static_cast<int64_t>(file_size));
-  sqlite3_bind_int64(stmt_files_insert_, 6, mtime);
-  sqlite3_bind_int(stmt_files_insert_, 7, parse_level);
+  sqlite3_bind_int64(stmt_files_insert_, 1, entry.doc_id);
+  sqlite3_bind_text(stmt_files_insert_, 2, entry.file_name.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_files_insert_, 3, entry.file_path.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_files_insert_, 4, entry.ext.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt_files_insert_, 5, static_cast<int64_t>(entry.file_size));
+  sqlite3_bind_int64(stmt_files_insert_, 6, entry.mtime);
+  sqlite3_bind_int(stmt_files_insert_, 7, entry.parse_level);
 
   if (sqlite3_step(stmt_files_insert_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(writer_db_);
@@ -579,7 +638,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
 
   sqlite3_reset(stmt_contents_insert_);
   sqlite3_clear_bindings(stmt_contents_insert_);
-  sqlite3_bind_int64(stmt_contents_insert_, 1, doc_id);
+  sqlite3_bind_int64(stmt_contents_insert_, 1, entry.doc_id);
   sqlite3_bind_int64(stmt_contents_insert_, 2, static_cast<int64_t>(raw_size));
   sqlite3_bind_text(stmt_contents_insert_, 3, summary.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_blob(stmt_contents_insert_, 4, compressed.data(), static_cast<int>(compressed.size()), SQLITE_TRANSIENT);
@@ -600,7 +659,7 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
   if (stmt_fts_del_) {
     sqlite3_reset(stmt_fts_del_);
     sqlite3_clear_bindings(stmt_fts_del_);
-    sqlite3_bind_int64(stmt_fts_del_, 1, doc_id);
+    sqlite3_bind_int64(stmt_fts_del_, 1, entry.doc_id);
     sqlite3_step(stmt_fts_del_);
     sqlite3_reset(stmt_fts_del_);
   }
@@ -616,9 +675,9 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
 
   sqlite3_reset(stmt_fts_ins_);
   sqlite3_clear_bindings(stmt_fts_ins_);
-  sqlite3_bind_int64(stmt_fts_ins_, 1, doc_id);
-  sqlite3_bind_text(stmt_fts_ins_, 2, file_name.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_fts_ins_, 3, utf8_content.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt_fts_ins_, 1, entry.doc_id);
+  sqlite3_bind_text(stmt_fts_ins_, 2, entry.file_name.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_fts_ins_, 3, entry.utf8_content.c_str(), -1, SQLITE_TRANSIENT);
 
   if (sqlite3_step(stmt_fts_ins_) != SQLITE_DONE) {
     last_error_ = sqlite3_errmsg(writer_db_);
@@ -636,6 +695,21 @@ bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, 
   return true;
 }
 
+bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
+                                  const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
+                                  const std::string &utf8_content) {
+  DocumentIndexEntry entry;
+  entry.doc_id = doc_id;
+  entry.file_path = file_path;
+  entry.file_name = file_name;
+  entry.ext = ext;
+  entry.file_size = file_size;
+  entry.mtime = mtime;
+  entry.parse_level = parse_level;
+  entry.utf8_content = utf8_content;
+  return IndexDocument(entry);
+}
+
 bool StorageEngine::DeleteDocument(int64_t doc_id) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
@@ -647,28 +721,23 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
     sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
   }
 
-  sqlite3_stmt *stmt = nullptr;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1, &stmt, nullptr);
+  SqliteStmtScope stmt;
+  sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
   if (stmt) {
     sqlite3_bind_int64(stmt, 1, doc_id);
     sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
   }
 
-  stmt = nullptr;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, &stmt, nullptr);
+  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
   if (stmt) {
     sqlite3_bind_int64(stmt, 1, doc_id);
     sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
   }
 
-  stmt = nullptr;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, &stmt, nullptr);
+  sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt.address(), nullptr);
   if (stmt) {
     sqlite3_bind_int64(stmt, 1, doc_id);
     sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
   }
 
   if (is_outer_tx) {
@@ -677,18 +746,6 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
     sqlite3_exec(writer_db_, "COMMIT;", nullptr, nullptr, nullptr);
   }
   return true;
-}
-
-static std::string EscapeLikePattern(const std::string &input) {
-  std::string out;
-  out.reserve(input.size() * 2);
-  for (char c : input) {
-    if (c == '%' || c == '_' || c == '^') {
-      out.push_back('^');
-    }
-    out.push_back(c);
-  }
-  return out;
 }
 
 int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) {
@@ -712,8 +769,8 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
   // 1. Query all matching doc_ids and extensions with ESCAPE clause
   const char *query_sql =
       "SELECT doc_id, ext FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE '^';";
-  sqlite3_stmt *stmt_select = nullptr;
-  int rc = sqlite3_prepare_v2(writer_db_, query_sql, -1, &stmt_select, nullptr);
+  SqliteStmtScope stmt_select;
+  int rc = sqlite3_prepare_v2(writer_db_, query_sql, -1, stmt_select.address(), nullptr);
   if (rc != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(writer_db_);
     return -1;
@@ -733,7 +790,7 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
       ext_counts[ext]++;
     }
   }
-  sqlite3_finalize(stmt_select);
+  stmt_select.Reset();
 
   if (doc_ids.empty()) {
     if (out_deleted_doc_ids) {
@@ -748,10 +805,10 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
     sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
   }
 
-  sqlite3_stmt *stmt_del_content = nullptr;
-  sqlite3_stmt *stmt_del_fts = nullptr;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, &stmt_del_content, nullptr);
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, &stmt_del_fts, nullptr);
+  SqliteStmtScope stmt_del_content;
+  SqliteStmtScope stmt_del_fts;
+  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(), nullptr);
+  sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(), nullptr);
 
   for (int64_t id : doc_ids) {
     if (stmt_del_content) {
@@ -765,32 +822,30 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
       sqlite3_reset(stmt_del_fts);
     }
   }
-  if (stmt_del_content) sqlite3_finalize(stmt_del_content);
-  if (stmt_del_fts) sqlite3_finalize(stmt_del_fts);
+  stmt_del_content.Reset();
+  stmt_del_fts.Reset();
 
   // 3. Batch delete from files table
   const char *del_files_sql =
       "DELETE FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE '^';";
-  sqlite3_stmt *stmt_del_files = nullptr;
-  if (sqlite3_prepare_v2(writer_db_, del_files_sql, -1, &stmt_del_files, nullptr) == SQLITE_OK) {
+  SqliteStmtScope stmt_del_files;
+  if (sqlite3_prepare_v2(writer_db_, del_files_sql, -1, stmt_del_files.address(), nullptr) == SQLITE_OK) {
     sqlite3_bind_text(stmt_del_files, 1, normalized.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt_del_files, 2, prefix_slash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt_del_files, 3, prefix_bslash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt_del_files);
-    sqlite3_finalize(stmt_del_files);
   }
 
   // 4. Update ext_stats active_count
   const char *update_stat_sql = "UPDATE ext_stats SET active_count = MAX(0, active_count - ?1) WHERE ext = ?2;";
-  sqlite3_stmt *stmt_update_stat = nullptr;
-  if (sqlite3_prepare_v2(writer_db_, update_stat_sql, -1, &stmt_update_stat, nullptr) == SQLITE_OK) {
+  SqliteStmtScope stmt_update_stat;
+  if (sqlite3_prepare_v2(writer_db_, update_stat_sql, -1, stmt_update_stat.address(), nullptr) == SQLITE_OK) {
     for (const auto &pair : ext_counts) {
       sqlite3_bind_int(stmt_update_stat, 1, pair.second);
       sqlite3_bind_text(stmt_update_stat, 2, pair.first.c_str(), -1, SQLITE_TRANSIENT);
       sqlite3_step(stmt_update_stat);
       sqlite3_reset(stmt_update_stat);
     }
-    sqlite3_finalize(stmt_update_stat);
   }
 
   if (is_outer_tx) {
@@ -872,32 +927,14 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
   bool has_prefix = !path_prefix.empty();
   std::string prefix_pattern;
   if (has_prefix) {
-    prefix_pattern = path_prefix + "%";
-  }
-
-  // Calculate total matched count if requested
-  if (out_total_count) {
-    const char *count_sql = has_prefix ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid "
-                                         "WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2;"
-                                       : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
-    sqlite3_stmt *count_stmt = nullptr;
-    if (sqlite3_prepare_v2(target_db, count_sql, -1, &count_stmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_text(count_stmt, 1, query.c_str(), -1, SQLITE_TRANSIENT);
-      if (has_prefix) {
-        sqlite3_bind_text(count_stmt, 2, prefix_pattern.c_str(), -1, SQLITE_TRANSIENT);
-      }
-      if (sqlite3_step(count_stmt) == SQLITE_ROW) {
-        *out_total_count = sqlite3_column_int(count_stmt, 0);
-      }
-      sqlite3_finalize(count_stmt);
-    }
+    prefix_pattern = EscapeLikePattern(path_prefix) + "%";
   }
 
   const char *search_sql = has_prefix ? R"SQL(
           SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
           FROM fts_docs AS fts
           JOIN files AS f ON f.doc_id = fts.rowid
-          WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?4
+          WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?4 ESCAPE '^'
           ORDER BY score ASC
           LIMIT ?2 OFFSET ?3;
         )SQL"
@@ -910,32 +947,80 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
           LIMIT ?2 OFFSET ?3;
         )SQL";
 
-  sqlite3_stmt *stmt = nullptr;
-  if (sqlite3_prepare_v2(target_db, search_sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(target_db);
-    return results;
-  }
+  auto execute_search = [&](const std::string &q, bool is_retry) -> bool {
+    // 1. Calculate total matched count if requested
+    if (out_total_count) {
+      const char *count_sql = has_prefix ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid "
+                                           "WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2 ESCAPE '^';"
+                                         : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
+      SqliteStmtScope count_stmt;
+      if (sqlite3_prepare_v2(target_db, count_sql, -1, count_stmt.address(), nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(count_stmt, 1, q.c_str(), -1, SQLITE_TRANSIENT);
+        if (has_prefix) {
+          sqlite3_bind_text(count_stmt, 2, prefix_pattern.c_str(), -1, SQLITE_TRANSIENT);
+        }
+        int rc = sqlite3_step(count_stmt);
+        if (rc == SQLITE_ROW) {
+          *out_total_count = sqlite3_column_int(count_stmt, 0);
+        } else if (rc != SQLITE_DONE && !is_retry) {
+          return false;
+        }
+      } else if (!is_retry) {
+        return false;
+      }
+    }
 
-  sqlite3_bind_text(stmt, 1, query.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int(stmt, 2, limit);
-  sqlite3_bind_int(stmt, 3, offset);
-  if (has_prefix) {
-    sqlite3_bind_text(stmt, 4, prefix_pattern.c_str(), -1, SQLITE_TRANSIENT);
-  }
+    // 2. Query search rows
+    SqliteStmtScope stmt;
+    if (sqlite3_prepare_v2(target_db, search_sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
+      if (!is_retry) return false;
+      last_error_ = sqlite3_errmsg(target_db);
+      return true;
+    }
 
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
-    SearchResultItem item;
-    item.doc_id = sqlite3_column_int64(stmt, 0);
-    item.file_name = SafeColumnText(stmt, 1);
-    item.file_path = SafeColumnText(stmt, 2);
-    item.ext = SafeColumnText(stmt, 3);
-    item.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
-    item.mtime = sqlite3_column_int64(stmt, 5);
-    item.rank = sqlite3_column_double(stmt, 6);
-    results.push_back(std::move(item));
-  }
+    sqlite3_bind_text(stmt, 1, q.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+    sqlite3_bind_int(stmt, 3, offset);
+    if (has_prefix) {
+      sqlite3_bind_text(stmt, 4, prefix_pattern.c_str(), -1, SQLITE_TRANSIENT);
+    }
 
-  sqlite3_finalize(stmt);
+    while (true) {
+      int rc = sqlite3_step(stmt);
+      if (rc == SQLITE_ROW) {
+        SearchResultItem item;
+        item.doc_id = sqlite3_column_int64(stmt, 0);
+        item.file_name = SafeColumnText(stmt, 1);
+        item.file_path = SafeColumnText(stmt, 2);
+        item.ext = SafeColumnText(stmt, 3);
+        item.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+        item.mtime = sqlite3_column_int64(stmt, 5);
+        item.rank = sqlite3_column_double(stmt, 6);
+        results.push_back(std::move(item));
+      } else if (rc == SQLITE_DONE) {
+        break;
+      } else {
+        if (!is_retry) {
+          results.clear();
+          return false;
+        }
+        last_error_ = sqlite3_errmsg(target_db);
+        break;
+      }
+    }
+    return true;
+  };
+
+  if (!execute_search(query, false)) {
+    // Primary query failed due to FTS5 syntax error (e.g. C++, lock-free, unclosed quotes, pure operators).
+    // Gracefully downgrade to sanitized literal token phrase search.
+    std::string fallback_query = BuildSanitizedFtsQuery(query);
+    if (!fallback_query.empty() && fallback_query != query) {
+      results.clear();
+      if (out_total_count) *out_total_count = 0;
+      execute_search(fallback_query, true);
+    }
+  }
 
   // Extract snippet surrounding matched keywords from decompressed document body
   auto keywords = ExtractKeywordsFromQuery(query);
@@ -982,8 +1067,8 @@ bool StorageEngine::GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::str
   }
 
   const char *sql = "SELECT raw_size, zstd_body FROM doc_contents WHERE doc_id = ?1;";
-  sqlite3_stmt *stmt = nullptr;
-  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(db);
     return false;
   }
@@ -992,7 +1077,6 @@ bool StorageEngine::GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::str
 
   if (sqlite3_step(stmt) != SQLITE_ROW) {
     last_error_ = "Document content not found";
-    sqlite3_finalize(stmt);
     return false;
   }
 
@@ -1002,13 +1086,11 @@ bool StorageEngine::GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::str
 
   if (!blob_data || blob_bytes <= 0 || raw_size == 0) {
     out_content->clear();
-    sqlite3_finalize(stmt);
     return true;
   }
 
   out_content->resize(raw_size);
   size_t decompressed_size = ZSTD_decompress(&(*out_content)[0], raw_size, blob_data, static_cast<size_t>(blob_bytes));
-  sqlite3_finalize(stmt);
 
   if (ZSTD_isError(decompressed_size)) {
     last_error_ = "Zstd decompression error: " + std::string(ZSTD_getErrorName(decompressed_size));
@@ -1033,8 +1115,8 @@ bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int
   }
 
   const char *sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
-  sqlite3_stmt *stmt = nullptr;
-  if (sqlite3_prepare_v2(target_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(target_db);
     return false;
   }
@@ -1053,7 +1135,6 @@ bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int
     }
     found = true;
   }
-  sqlite3_finalize(stmt);
   return found;
 }
 
@@ -1073,8 +1154,8 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
 
   const char *sql =
       "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat FROM files;";
-  sqlite3_stmt *stmt = nullptr;
-  if (sqlite3_prepare_v2(target_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(target_db);
     return results;
   }
@@ -1091,170 +1172,12 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
     r.parse_stat = sqlite3_column_int(stmt, 7);
     results.push_back(std::move(r));
   }
-  sqlite3_finalize(stmt);
   return results;
 }
 
 std::string StorageEngine::GenerateSnippet(const std::string &full_text, const std::vector<std::string> &keywords,
                                            size_t max_chars) {
-  if (full_text.empty() || keywords.empty()) {
-    return "";
-  }
-
-  // Lowercase version of full_text for case-insensitive search
-  std::string lower_text = full_text;
-  for (char &c : lower_text) {
-    if (c >= 'A' && c <= 'Z') {
-      c = static_cast<char>(c + 32);
-    }
-  }
-
-  // Find the earliest matching keyword position
-  size_t best_pos = std::string::npos;
-  for (const auto &kw : keywords) {
-    if (kw.empty()) continue;
-    std::string lower_kw = kw;
-    for (char &c : lower_kw) {
-      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-    }
-    size_t pos = lower_text.find(lower_kw);
-    if (pos != std::string::npos) {
-      if (best_pos == std::string::npos || pos < best_pos) {
-        best_pos = pos;
-      }
-    }
-  }
-
-  // Calculate snippet window surrounding the match
-  size_t start_pos = 0;
-  size_t end_pos = 0;
-  if (best_pos != std::string::npos) {
-    size_t context_padding = max_chars / 3;
-    if (best_pos > context_padding) {
-      start_pos = best_pos - context_padding;
-    } else {
-      start_pos = 0;
-    }
-    end_pos = std::min(full_text.size(), start_pos + max_chars);
-
-    // Adjust start_pos to valid UTF-8 character boundary
-    while (start_pos > 0 && (static_cast<unsigned char>(full_text[start_pos]) & 0xC0) == 0x80) {
-      --start_pos;
-    }
-    // Adjust end_pos to valid UTF-8 character boundary
-    while (end_pos < full_text.size() && (static_cast<unsigned char>(full_text[end_pos]) & 0xC0) == 0x80) {
-      ++end_pos;
-    }
-  } else {
-    // No keyword found; take prefix of text
-    end_pos = std::min(full_text.size(), max_chars);
-    while (end_pos < full_text.size() && (static_cast<unsigned char>(full_text[end_pos]) & 0xC0) == 0x80) {
-      ++end_pos;
-    }
-  }
-
-  std::string raw_snippet = full_text.substr(start_pos, end_pos - start_pos);
-
-  // Validate UTF-8 encoding
-  if (!utf8::is_valid(raw_snippet.begin(), raw_snippet.end())) {
-    std::string cleaned;
-    utf8::replace_invalid(raw_snippet.begin(), raw_snippet.end(), std::back_inserter(cleaned));
-    raw_snippet = std::move(cleaned);
-  }
-
-  std::string lower_snippet = raw_snippet;
-  for (char &c : lower_snippet) {
-    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-  }
-
-  struct Span {
-    size_t start;
-    size_t end;
-  };
-  std::vector<Span> spans;
-
-  for (const auto &kw : keywords) {
-    if (kw.empty()) continue;
-    std::string lower_kw = kw;
-    for (char &c : lower_kw) {
-      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-    }
-
-    size_t search_start = 0;
-    while ((search_start = lower_snippet.find(lower_kw, search_start)) != std::string::npos) {
-      spans.push_back({search_start, search_start + lower_kw.size()});
-      search_start += lower_kw.size();
-    }
-  }
-
-  // Sort spans by start position ascending
-  std::sort(spans.begin(), spans.end(), [](const Span &a, const Span &b) {
-    if (a.start != b.start) return a.start < b.start;
-    return a.end > b.end;
-  });
-
-  // Merge overlapping or adjacent spans
-  std::vector<Span> merged;
-  for (const auto &s : spans) {
-    if (merged.empty()) {
-      merged.push_back(s);
-    } else {
-      if (s.start <= merged.back().end) {
-        merged.back().end = std::max(merged.back().end, s.end);
-      } else {
-        merged.push_back(s);
-      }
-    }
-  }
-
-  auto EscapeHtml = [](const std::string &str) -> std::string {
-    std::string out;
-    out.reserve(str.size() + 16);
-    for (char c : str) {
-      switch (c) {
-        case '&':
-          out.append("&amp;");
-          break;
-        case '<':
-          out.append("&lt;");
-          break;
-        case '>':
-          out.append("&gt;");
-          break;
-        case '"':
-          out.append("&quot;");
-          break;
-        default:
-          out.push_back(c);
-          break;
-      }
-    }
-    return out;
-  };
-
-  std::string formatted;
-  size_t last_idx = 0;
-  for (const auto &span : merged) {
-    if (span.start > last_idx) {
-      formatted.append(EscapeHtml(raw_snippet.substr(last_idx, span.start - last_idx)));
-    }
-    formatted.append("<mark>");
-    formatted.append(EscapeHtml(raw_snippet.substr(span.start, span.end - span.start)));
-    formatted.append("</mark>");
-    last_idx = span.end;
-  }
-  if (last_idx < raw_snippet.size()) {
-    formatted.append(EscapeHtml(raw_snippet.substr(last_idx)));
-  }
-
-  if (start_pos > 0) {
-    formatted = "... " + formatted;
-  }
-  if (end_pos < full_text.size()) {
-    formatted = formatted + " ...";
-  }
-
-  return formatted;
+  return common::SnippetHighlighter::GenerateSnippet(full_text, keywords, max_chars);
 }
 
 }  // namespace storage

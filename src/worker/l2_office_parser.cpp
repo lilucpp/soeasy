@@ -354,6 +354,20 @@ class ZipFileScope {
   FILE *file_;
 };
 
+/**
+ * @brief Helper to safely extract and parse an XML entry from a zip archive using RAII.
+ */
+std::string ExtractZipEntryXmlText(mz_zip_archive *zip, const char *entry_name, bool strip_tags) {
+  size_t uncomp_size = 0;
+  void *data = mz_zip_reader_extract_file_to_heap(zip, entry_name, &uncomp_size, 0);
+  if (!data) {
+    return "";
+  }
+  std::unique_ptr<char, decltype(&mz_free)> data_guard(static_cast<char *>(data), mz_free);
+  std::string xml(data_guard.get(), uncomp_size);
+  return L2OfficeParser::ExtractXmlText(xml, strip_tags);
+}
+
 }  // namespace
 
 bool L2OfficeParser::ParseDocx(const std::string &file_path, std::string *out_utf8) {
@@ -361,18 +375,7 @@ bool L2OfficeParser::ParseDocx(const std::string &file_path, std::string *out_ut
   if (!zip_scope.Open(file_path)) {
     return false;
   }
-  mz_zip_archive *zip = zip_scope.zip();
-
-  size_t uncomp_size = 0;
-  void *data = mz_zip_reader_extract_file_to_heap(zip, "word/document.xml", &uncomp_size, 0);
-  if (!data) {
-    return false;
-  }
-
-  std::string xml(static_cast<const char *>(data), uncomp_size);
-  mz_free(data);
-
-  *out_utf8 = ExtractXmlText(xml, true);
+  *out_utf8 = ExtractZipEntryXmlText(zip_scope.zip(), "word/document.xml", true);
   return !out_utf8->empty();
 }
 
@@ -386,12 +389,9 @@ bool L2OfficeParser::ParseXlsx(const std::string &file_path, std::string *out_ut
   std::ostringstream oss;
 
   // 1. Extract sharedStrings.xml (primary string table in XLSX)
-  size_t shared_size = 0;
-  void *shared_data = mz_zip_reader_extract_file_to_heap(zip, "xl/sharedStrings.xml", &shared_size, 0);
-  if (shared_data) {
-    std::string shared_xml(static_cast<const char *>(shared_data), shared_size);
-    mz_free(shared_data);
-    oss << ExtractXmlText(shared_xml, true) << "\n";
+  std::string shared_text = ExtractZipEntryXmlText(zip, "xl/sharedStrings.xml", true);
+  if (!shared_text.empty()) {
+    oss << shared_text << "\n";
   }
 
   // 2. Extract worksheet cell contents
@@ -402,12 +402,9 @@ bool L2OfficeParser::ParseXlsx(const std::string &file_path, std::string *out_ut
     std::string filename(file_stat.m_filename);
     if (filename.rfind("xl/worksheets/sheet", 0) == 0 && filename.size() >= 4 &&
         filename.substr(filename.size() - 4) == ".xml") {
-      size_t sheet_size = 0;
-      void *sheet_data = mz_zip_reader_extract_file_to_heap(zip, file_stat.m_filename, &sheet_size, 0);
-      if (sheet_data) {
-        std::string sheet_xml(static_cast<const char *>(sheet_data), sheet_size);
-        mz_free(sheet_data);
-        oss << ExtractXmlText(sheet_xml, false) << "\n";
+      std::string sheet_text = ExtractZipEntryXmlText(zip, file_stat.m_filename, false);
+      if (!sheet_text.empty()) {
+        oss << sheet_text << "\n";
       }
     }
   }
@@ -433,12 +430,9 @@ bool L2OfficeParser::ParsePptx(const std::string &file_path, std::string *out_ut
     std::string filename(file_stat.m_filename);
     if (filename.rfind("ppt/slides/slide", 0) == 0 && filename.size() >= 4 &&
         filename.substr(filename.size() - 4) == ".xml") {
-      size_t slide_size = 0;
-      void *slide_data = mz_zip_reader_extract_file_to_heap(zip, file_stat.m_filename, &slide_size, 0);
-      if (slide_data) {
-        std::string slide_xml(static_cast<const char *>(slide_data), slide_size);
-        mz_free(slide_data);
-        oss << ExtractXmlText(slide_xml, true) << "\n";
+      std::string slide_text = ExtractZipEntryXmlText(zip, file_stat.m_filename, true);
+      if (!slide_text.empty()) {
+        oss << slide_text << "\n";
       }
     }
   }

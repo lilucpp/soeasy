@@ -80,6 +80,15 @@ struct WorkerInstance {
   bool is_busy() const { return state == WorkerState::kBusy; }
 };
 
+struct WorkerLoggingOptions {
+  std::string level = "info";
+  bool enable_console = false;
+  bool enable_sync = false;
+  bool doctotext_logging = false;
+  std::string doctotext_log_path;
+  bool embedded_image_ocr = false;
+};
+
 class WorkerGuard {
  public:
   static constexpr uint32_t kDefaultTimeoutMs = 15000;                 // 15s default
@@ -149,6 +158,8 @@ class WorkerGuard {
   uint32_t idle_evict_ms() const { return idle_evict_ms_; }
   void set_idle_evict_ms(uint32_t ms) { idle_evict_ms_ = ms; }
 
+  void SetLoggingOptions(const WorkerLoggingOptions &options);
+
   void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                          bool doctotext_logging = false, const std::string &doctotext_log_path = "",
                          bool embedded_image_ocr = false);
@@ -171,7 +182,7 @@ class WorkerGuard {
   common::ShmSlotPool shm_pool_;
 
   std::vector<WorkerInstance> workers_;
-  std::mutex pool_mutex_;
+  mutable std::mutex pool_mutex_;
   std::condition_variable worker_available_cv_;
 
   std::atomic<bool> is_running_{false};

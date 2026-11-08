@@ -122,9 +122,19 @@ void SettingsDialog::SetupUi() {
     tab_widget_->tabBar()->setExpanding(false);
   }
 
-  // -------------------------------------------------------------
-  // Tab 0: 常规与语言 (General & Language)
-  // -------------------------------------------------------------
+  tab_widget_->addTab(CreateGeneralTab(), "常规与语言");
+  tab_widget_->addTab(CreateDirectoriesTab(), "索引目录");
+  tab_widget_->addTab(CreatePatternsTab(), "排除目录规则");
+  tab_widget_->addTab(CreateExtensionsTab(), "文件格式与解析");
+  tab_widget_->addTab(CreatePerformanceTab(), "性能与日志");
+
+  main_layout->addWidget(tab_widget_);
+  main_layout->addLayout(CreateBottomBar());
+
+  RetranslateUi();
+}
+
+QWidget *SettingsDialog::CreateGeneralTab() {
   auto *tab_gen = new QWidget();
   auto *form_gen = new QFormLayout(tab_gen);
   form_gen->setContentsMargins(16, 16, 16, 16);
@@ -140,17 +150,16 @@ void SettingsDialog::SetupUi() {
   label_lang_hint_->setStyleSheet("color: #64748B; font-size: 12px; margin-top: 4px;");
   form_gen->addRow("", label_lang_hint_);
 
-  tab_widget_->addTab(tab_gen, "常规与语言");
-
   connect(language_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
     std::string chosen_lang = language_combo_->currentData().toString().toStdString();
     I18n::Instance().SetLanguage(chosen_lang);
     RetranslateUi();
   });
 
-  // -------------------------------------------------------------
-  // Tab 1: 索引监控目录 (Indexed Directories)
-  // -------------------------------------------------------------
+  return tab_gen;
+}
+
+QWidget *SettingsDialog::CreateDirectoriesTab() {
   auto *tab_dirs = new QWidget();
   auto *layout_dirs = new QVBoxLayout(tab_dirs);
 
@@ -167,14 +176,14 @@ void SettingsDialog::SetupUi() {
   layout_dirs->addWidget(label_dirs_);
   layout_dirs->addWidget(dirs_list_);
   layout_dirs->addLayout(btn_layout_dirs);
-  tab_widget_->addTab(tab_dirs, "索引目录");
 
   connect(btn_add_dir_, &QPushButton::clicked, this, &SettingsDialog::OnAddDirectory);
   connect(btn_rm_dir_, &QPushButton::clicked, this, &SettingsDialog::OnRemoveDirectory);
 
-  // -------------------------------------------------------------
-  // Tab 2: 排除目录与规则 (Excluded Patterns)
-  // -------------------------------------------------------------
+  return tab_dirs;
+}
+
+QWidget *SettingsDialog::CreatePatternsTab() {
   auto *tab_patterns = new QWidget();
   auto *layout_patterns = new QVBoxLayout(tab_patterns);
 
@@ -193,14 +202,14 @@ void SettingsDialog::SetupUi() {
   layout_patterns->addWidget(label_patterns_);
   layout_patterns->addWidget(patterns_list_);
   layout_patterns->addLayout(add_pattern_layout);
-  tab_widget_->addTab(tab_patterns, "排除目录规则");
 
   connect(btn_add_pattern_, &QPushButton::clicked, this, &SettingsDialog::OnAddPattern);
   connect(btn_rm_pattern_, &QPushButton::clicked, this, &SettingsDialog::OnRemovePattern);
 
-  // -------------------------------------------------------------
-  // Tab 3: 支持与自定义文件格式 (File Extensions & Categories)
-  // -------------------------------------------------------------
+  return tab_patterns;
+}
+
+QWidget *SettingsDialog::CreateExtensionsTab() {
   auto *tab_exts = new QWidget();
   auto *layout_exts = new QVBoxLayout(tab_exts);
 
@@ -312,8 +321,6 @@ void SettingsDialog::SetupUi() {
   bottom_exts_layout->addWidget(exts_count_label_);
   layout_exts->addLayout(bottom_exts_layout);
 
-  tab_widget_->addTab(tab_exts, "文件格式与解析");
-
   connect(btn_add_custom_ext_, &QPushButton::clicked, this, &SettingsDialog::OnAddCustomExtension);
   connect(btn_rm_custom_ext_, &QPushButton::clicked, this, &SettingsDialog::OnRemoveCustomExtension);
   connect(btn_select_all_, &QPushButton::clicked, this, &SettingsDialog::OnSelectAllExtensions);
@@ -321,9 +328,10 @@ void SettingsDialog::SetupUi() {
   connect(btn_reset_exts_, &QPushButton::clicked, this, &SettingsDialog::OnResetExtensionsToDefault);
   connect(exts_tree_, &QTreeWidget::itemChanged, this, &SettingsDialog::OnTreeItemChanged);
 
-  // -------------------------------------------------------------
-  // Tab 4: 性能与调度参数 (Performance)
-  // -------------------------------------------------------------
+  return tab_exts;
+}
+
+QWidget *SettingsDialog::CreatePerformanceTab() {
   auto *tab_perf = new QWidget();
   auto *form_perf = new QFormLayout(tab_perf);
 
@@ -388,13 +396,10 @@ void SettingsDialog::SetupUi() {
 
   connect(dt_browse_btn_, &QPushButton::clicked, this, &SettingsDialog::OnBrowseDocToTextLogPath);
 
-  tab_widget_->addTab(tab_perf, "性能与日志");
+  return tab_perf;
+}
 
-  main_layout->addWidget(tab_widget_);
-
-  // -------------------------------------------------------------
-  // Bottom Buttons: 重建索引 / 保存 / 取消
-  // -------------------------------------------------------------
+QHBoxLayout *SettingsDialog::CreateBottomBar() {
   auto *bottom_layout = new QHBoxLayout();
   btn_rebuild_ = new QPushButton("清空并重建索引...", this);
   btn_rebuild_->setStyleSheet("QPushButton { color: #D32F2F; }");
@@ -405,7 +410,6 @@ void SettingsDialog::SetupUi() {
   btn_cancel_ = new QPushButton("取消", this);
   bottom_layout->addWidget(btn_save_);
   bottom_layout->addWidget(btn_cancel_);
-  main_layout->addLayout(bottom_layout);
 
   connect(btn_rebuild_, &QPushButton::clicked, this, &SettingsDialog::OnRebuildIndex);
   connect(btn_save_, &QPushButton::clicked, this, &SettingsDialog::OnSaveAndApply);
@@ -416,7 +420,7 @@ void SettingsDialog::SetupUi() {
     reject();
   });
 
-  RetranslateUi();
+  return bottom_layout;
 }
 
 void SettingsDialog::RetranslateUi() {

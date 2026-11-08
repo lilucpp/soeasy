@@ -82,7 +82,7 @@ WorkerGuard::~WorkerGuard() {
 }
 
 size_t WorkerGuard::active_worker_count() const {
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(pool_mutex_));
+  std::lock_guard<std::mutex> lock(pool_mutex_);
   size_t count = 0;
   for (const auto &w : workers_) {
     if (w.pid > 0) count++;
@@ -790,19 +790,18 @@ void WorkerGuard::Shutdown() {
   shm_pool_.Close();
 }
 
-void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
-                                    bool doctotext_logging, const std::string &doctotext_log_path,
-                                    bool embedded_image_ocr) {
+void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
   std::lock_guard<std::mutex> lock(pool_mutex_);
-  bool changed = (log_level_ != level || log_console_ != enable_console || log_sync_ != enable_sync ||
-                  doctotext_logging_ != doctotext_logging || doctotext_log_path_ != doctotext_log_path ||
-                  embedded_image_ocr_ != embedded_image_ocr);
-  log_level_ = level;
-  log_console_ = enable_console;
-  log_sync_ = enable_sync;
-  doctotext_logging_ = doctotext_logging;
-  doctotext_log_path_ = doctotext_log_path;
-  embedded_image_ocr_ = embedded_image_ocr;
+  bool changed = (log_level_ != options.level || log_console_ != options.enable_console ||
+                  log_sync_ != options.enable_sync || doctotext_logging_ != options.doctotext_logging ||
+                  doctotext_log_path_ != options.doctotext_log_path ||
+                  embedded_image_ocr_ != options.embedded_image_ocr);
+  log_level_ = options.level;
+  log_console_ = options.enable_console;
+  log_sync_ = options.enable_sync;
+  doctotext_logging_ = options.doctotext_logging;
+  doctotext_log_path_ = options.doctotext_log_path;
+  embedded_image_ocr_ = options.embedded_image_ocr;
 
   if (changed) {
     // Respawn idle workers with new arguments
@@ -812,6 +811,19 @@ void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_consol
       }
     }
   }
+}
+
+void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
+                                    bool doctotext_logging, const std::string &doctotext_log_path,
+                                    bool embedded_image_ocr) {
+  WorkerLoggingOptions opts;
+  opts.level = level;
+  opts.enable_console = enable_console;
+  opts.enable_sync = enable_sync;
+  opts.doctotext_logging = doctotext_logging;
+  opts.doctotext_log_path = doctotext_log_path;
+  opts.embedded_image_ocr = embedded_image_ocr;
+  SetLoggingOptions(opts);
 }
 
 }  // namespace service

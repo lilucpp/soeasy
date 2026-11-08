@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -52,6 +53,14 @@ class SettingsDialog : public QDialog {
   void RetranslateUi();
   void PopulateFromConfig();
   void UpdateExtensionsCount();
+
+  // Tab builders (Extract Method for SetupUi decomposition)
+  QWidget *CreateGeneralTab();
+  QWidget *CreateDirectoriesTab();
+  QWidget *CreatePatternsTab();
+  QWidget *CreateExtensionsTab();
+  QWidget *CreatePerformanceTab();
+  QHBoxLayout *CreateBottomBar();
 
   std::shared_ptr<service::IndexConfig> config_;
 

@@ -167,6 +167,7 @@ add_library(soeasy_common STATIC
     src/common/logger.cpp
     src/common/encoding_utils.cpp
     src/common/system_env.cpp
+    src/common/snippet_highlighter.cpp
 )
 target_include_directories(soeasy_common PUBLIC
     src
@@ -596,6 +597,46 @@ if(BUILD_TESTS)
   gtest_discover_tests(test_storage_transaction_gtest PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       TIMEOUT 30
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
+
+  # Modern Unit Test Suite: Common Snippet Highlighter & FTS Keyword Extraction Boundary Matrix
+  add_executable(test_snippet_highlighter_gtest
+      tests/test_snippet_highlighter_gtest.cpp
+  )
+  target_include_directories(test_snippet_highlighter_gtest PRIVATE
+      src
+      third_party/utfcpp/source
+  )
+  target_link_libraries(test_snippet_highlighter_gtest PRIVATE
+      soeasy_common
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_snippet_highlighter_gtest PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 10
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
+
+  # Modern Unit Test Suite: FTS5 Syntax Matrix, Boolean, Column, NEAR, & Graceful Fallback
+  add_executable(test_fts5_syntax_gtest
+      tests/test_fts5_syntax_gtest.cpp
+  )
+  target_include_directories(test_fts5_syntax_gtest PRIVATE
+      src
+      third_party/sqlite3mc
+      third_party/utfcpp/source
+  )
+  target_link_libraries(test_fts5_syntax_gtest PRIVATE
+      soeasy_storage
+      soeasy_common
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_fts5_syntax_gtest PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 20
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
   )
 endif()

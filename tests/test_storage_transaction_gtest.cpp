@@ -159,6 +159,7 @@ class MockStorageEngineContract : public IStorageEngine {
   MOCK_METHOD(bool, GetFragmentation, (StorageFragmentation *), (override));
   MOCK_METHOD(bool, IncrementalVacuum, (int), (override));
   MOCK_METHOD(bool, Vacuum, (), (override));
+  MOCK_METHOD(bool, IndexDocument, (const DocumentIndexEntry &), (override));
   MOCK_METHOD(bool, IndexDocument,
               (int64_t, const std::string &, const std::string &, const std::string &, uint64_t, int64_t, int,
                const std::string &),
