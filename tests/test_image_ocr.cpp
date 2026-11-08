@@ -51,8 +51,8 @@ struct SyntheticDataset {
     cv::Mat stripe(2, 500, CV_8UC3, cv::Scalar(64, 64, 64));
     cv::imwrite(stripe_path, stripe);
 
-    // 3. Solid color (100x100 white)
-    cv::Mat solid(100, 100, CV_8UC3, cv::Scalar(255, 255, 255));
+    // 3. Solid color (300x300 white, larger than min_side 120 to test stddev blank filter)
+    cv::Mat solid(300, 300, CV_8UC3, cv::Scalar(255, 255, 255));
     cv::imwrite(solid_path, solid);
 
     // 4. Document image with text (600x800 white background with black text)

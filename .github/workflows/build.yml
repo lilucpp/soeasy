@@ -85,7 +85,7 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-qt5-base
-            mingw-w64-x86_64-qttools
+            mingw-w64-x86_64-qt5-tools
             mingw-w64-x86_64-opencv
             mingw-w64-x86_64-libxml2
             mingw-w64-x86_64-zlib
@@ -129,8 +129,9 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll build/ 2>/dev/null || true
 
           # Deploy Qt dependencies and plugins into build directory
-          if command -v windeployqt &>/dev/null; then
-            windeployqt --release --no-translations build/soeasy-gui.exe || true
+          WINDEPLOYQT=$(command -v windeployqt-qt5 || command -v windeployqt || true)
+          if [ -n "${WINDEPLOYQT}" ]; then
+            "${WINDEPLOYQT}" --release --no-translations build/soeasy-gui.exe || true
           fi
 
       - name: Build DAT Dictionary
@@ -159,8 +160,9 @@ jobs:
           cp -p build/soeasy-worker.exe "${STAGE_DIR}/bin/"
           
           # Deploy Qt dependencies using windeployqt
-          if command -v windeployqt &>/dev/null; then
-            windeployqt --release --no-translations "${STAGE_DIR}/bin/soeasy-gui.exe" || true
+          WINDEPLOYQT=$(command -v windeployqt-qt5 || command -v windeployqt || true)
+          if [ -n "${WINDEPLOYQT}" ]; then
+            "${WINDEPLOYQT}" --release --no-translations "${STAGE_DIR}/bin/soeasy-gui.exe" || true
           fi
           
           # Ensure jieba_dat.bin exists

@@ -255,7 +255,8 @@ int main(int argc, char *argv[]) {
   // 4.6 词条存在性纳秒级探测 HasWord 验证
   assert(!dj.HasWord(""));
   assert(dj.HasWord("中国"));
-  assert(dj.HasWord("自然语言处理"));
+  assert(dj.HasWord("自然语言"));
+  assert(dj.HasWord("清华大学"));
   assert(!dj.HasWord("绝对不可能存在的未知自定义测试词条_XYZ999"));
   
   std::string new_term = "极轻量沙箱架构";
