@@ -151,12 +151,12 @@ void CreateSamplePdf(const std::string &path) {
   char xref_buf[256];
   std::snprintf(xref_buf, sizeof(xref_buf),
                 "xref\n0 6\n"
-                "0000000000 65535 f \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
+                "0000000000 65535 f \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
                 "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%zu\n%%%%EOF\n",
                 off1, off2, off3, off4, off5, xref_off);
   pdf_data.append(xref_buf);
@@ -182,11 +182,11 @@ void CreateScannedSamplePdf(const std::string &path) {
   char xref_buf[256];
   std::snprintf(xref_buf, sizeof(xref_buf),
                 "xref\n0 5\n"
-                "0000000000 65535 f \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
-                "%010zu 00000 n \r\n"
+                "0000000000 65535 f \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
+                "%010zu 00000 n \n"
                 "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%zu\n%%%%EOF\n",
                 off1, off2, off3, off4, xref_off);
   pdf_data.append(xref_buf);

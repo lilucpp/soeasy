@@ -160,12 +160,19 @@ jobs:
                 echo "::error title=FailedTest::${line}"
               done < build/Testing/Temporary/LastTestsFailed.log
             fi
-            echo "================ CTest LastTest.log ================"
-            cat build/Testing/Temporary/LastTest.log || true
-            echo "===================================================="
+            if [ -f build/Testing/Temporary/LastTest.log ]; then
+              echo "================ CTest LastTest.log ================"
+              cat build/Testing/Temporary/LastTest.log || true
+              echo "===================================================="
+              grep -E "CHECK FAILED|FAILED|Exception|Assertion" build/Testing/Temporary/LastTest.log | while IFS= read -r l; do
+                echo "::error title=CTestLog::${l}"
+              done
+            fi
             if grep -q "test_office_parser" build/Testing/Temporary/LastTestsFailed.log 2>/dev/null; then
               echo ">>> Diagnostic direct run of test_office_parser.exe:"
-              ./build/test_office_parser.exe || true
+              ./build/test_office_parser.exe 2>&1 | while IFS= read -r l; do
+                echo "::error title=OfficeParserDirect::${l}"
+              done || true
             fi
             exit 1
           fi
