@@ -164,12 +164,7 @@ jobs:
               echo "================ CTest LastTest.log ================"
               cat build/Testing/Temporary/LastTest.log || true
               echo "===================================================="
-              python3 -c '
-with open("build/Testing/Temporary/LastTest.log", errors="ignore") as f:
-    for line in f:
-        if "test_office_parser" in line or "CHECK FAILED" in line:
-            print("::error title=OfficeFail::" + line.strip())
-' 2>/dev/null || true
+              python3 -c 'import sys; [print("::error title=OfficeFail::" + l.strip()) for l in open("build/Testing/Temporary/LastTest.log", errors="ignore") if "test_office_parser" in l or "CHECK FAILED" in l]' 2>/dev/null || true
             fi
             if grep -q "test_office_parser" build/Testing/Temporary/LastTestsFailed.log 2>/dev/null; then
               echo ">>> Diagnostic direct run of test_office_parser.exe:"
