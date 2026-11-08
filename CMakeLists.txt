@@ -196,6 +196,7 @@ target_link_libraries(soeasy_schema PUBLIC
 add_library(soeasy_storage STATIC
     src/storage/dat_jieba.cpp
     src/storage/fts5_jieba_tokenizer.cpp
+    src/storage/reader_connection_pool.cpp
     src/storage/storage_engine.cpp
 )
 target_include_directories(soeasy_storage PUBLIC
@@ -337,6 +338,15 @@ if(BUILD_TESTS)
   )
   target_link_libraries(test_storage_engine PRIVATE
       soeasy_storage
+  )
+
+  # Stage 2 Test: Reader Connection Pool & Concurrent Read/Write Under WAL
+  add_executable(test_connection_pool
+      tests/test_connection_pool.cpp
+  )
+  target_link_libraries(test_connection_pool PRIVATE
+      soeasy_storage
+      soeasy_common
   )
 
   # Phase 2 Test: Sandbox & IPC

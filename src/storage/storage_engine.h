@@ -1,3 +1,6 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Use of this source code is governed by an Apache-2.0 license.
+
 #ifndef SOEASY_SRC_STORAGE_STORAGE_ENGINE_H_
 #define SOEASY_SRC_STORAGE_STORAGE_ENGINE_H_
 
@@ -8,207 +11,147 @@
 #include <vector>
 
 #include "sqlite3mc_amalgamation.h"
+#include "storage/istorage_engine.h"
+#include "storage/reader_connection_pool.h"
 
 namespace soeasy {
 namespace storage {
 
-struct SearchResultItem {
-  int64_t doc_id = 0;
-  std::string file_name;
-  std::string file_path;
-  std::string ext;
-  uint64_t file_size = 0;
-  int64_t mtime = 0;
-  double rank = 0.0;
-  std::string snippet;
-  bool has_body_snippet = false;
-};
-
-struct FileMetaRecord {
-  int64_t doc_id = 0;
-  std::string file_name;
-  std::string file_path;
-  std::string ext;
-  uint64_t file_size = 0;
-  int64_t mtime = 0;
-  int parse_level = 0;
-  int parse_stat = 0;
-};
-
-struct StorageFragmentation {
-  int page_size = 4096;
-  int64_t total_pages = 0;
-  int64_t free_pages = 0;
-  uint64_t total_bytes = 0;
-  uint64_t free_bytes = 0;
-  double frag_ratio = 0.0;
-};
-
-class StorageEngine {
+class StorageEngine : public IStorageEngine {
  public:
   StorageEngine();
-  ~StorageEngine();
+  ~StorageEngine() override;
 
   // Disallow copy and assign
   StorageEngine(const StorageEngine &) = delete;
   StorageEngine &operator=(const StorageEngine &) = delete;
 
   /**
-   * @brief Open or create an encrypted SQLite database and initialize schemas.
+   * @brief Open or create encrypted SQLite database, initialize schemas, and configure connection pool.
    *
    * @param db_path Absolute filesystem path to the database file
    * @param key Encryption passphrase / derived key
    * @param dict_dir Path to Jieba dictionary directory
    * @return true on success, false on error
    */
-  bool Open(const std::string &db_path, const std::string &key, const std::string &dict_dir);
+  bool Open(const std::string &db_path, const std::string &key, const std::string &dict_dir) override;
 
   /**
-   * @brief Close database connection.
+   * @brief Close write connection and reader connection pool.
    */
-  void Close();
+  void Close() override;
 
   /**
    * @brief Check if the database connection is open and active.
    */
-  bool is_open() const { return db_ != nullptr; }
+  [[nodiscard]] bool is_open() const override { return writer_db_ != nullptr; }
 
   /**
-   * @brief Begin an explicit transaction for batch operations.
+   * @brief Begin an explicit write transaction using BEGIN IMMEDIATE.
    * @return true on success or if transaction already started
    */
-  bool BeginTransaction();
+  bool BeginTransaction() override;
 
   /**
-   * @brief Commit the current explicit transaction.
+   * @brief Commit the current write transaction.
    * @return true on success or if no transaction was active
    */
-  bool CommitTransaction();
+  bool CommitTransaction() override;
 
   /**
-   * @brief Rollback the current explicit transaction.
+   * @brief Rollback the current write transaction.
    * @return true on success or if no transaction was active
    */
-  bool RollbackTransaction();
+  bool RollbackTransaction() override;
 
   /**
-   * @brief Check whether an explicit transaction is currently active.
+   * @brief Check whether an explicit write transaction is currently active.
    */
-  bool IsInTransaction() const;
+  [[nodiscard]] bool IsInTransaction() const override;
 
   /**
    * @brief Get count of uncommitted indexed documents in current transaction.
    */
-  size_t GetUncommittedCount() const { return uncommitted_count_; }
+  [[nodiscard]] size_t GetUncommittedCount() const override { return uncommitted_count_; }
 
   /**
    * @brief Compact and merge FTS5 index segments.
    */
-  bool OptimizeFtsIndex();
+  bool OptimizeFtsIndex() override;
 
   /**
    * @brief Toggle bulk mode for high-throughput batch operations (e.g. initial scan, rebuild).
-   *
-   * @param enable If true, optimizes WAL autocheckpoint and cache size; if false, restores defaults and truncates WAL.
    */
-  bool SetBulkMode(bool enable);
+  bool SetBulkMode(bool enable) override;
 
   /**
    * @brief Checkpoint and truncate the WAL file back into the main database.
    */
-  bool CheckpointWal();
+  bool CheckpointWal() override;
 
   /**
    * @brief Query current database page metrics, freelist count, and fragmentation ratio.
    */
-  bool GetFragmentation(StorageFragmentation *out_frag);
+  bool GetFragmentation(StorageFragmentation *out_frag) override;
 
   /**
    * @brief Incrementally reclaim up to N free pages directly to the OS without full rewrite.
-   * Requires PRAGMA auto_vacuum = INCREMENTAL (enabled by default on creation).
-   *
-   * @param pages Number of pages to reclaim (0 to reclaim all current free pages)
-   * @return true on success
    */
-  bool IncrementalVacuum(int pages = 500);
+  bool IncrementalVacuum(int pages = 500) override;
 
   /**
    * @brief Rebuild and shrink entire database file to reclaim 100% free space.
    */
-  bool Vacuum();
+  bool Vacuum() override;
 
   /**
-   * @brief Index or re-index a single document.
-   *
-   * @param doc_id Unique document identifier (e.g. 64-bit path hash)
-   * @param file_path Canonical absolute path
-   * @param file_name File name with extension
-   * @param ext File extension in lowercase (without dot)
-   * @param file_size Size of file on disk in bytes
-   * @param mtime Modification timestamp
-   * @param parse_level Parsing level completed (1..4)
-   * @param utf8_content Extracted full plain text
-   * @return true on success
+   * @brief Index or re-index a single document (Write channel).
    */
   bool IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name, const std::string &ext,
-                     uint64_t file_size, int64_t mtime, int parse_level, const std::string &utf8_content);
+                     uint64_t file_size, int64_t mtime, int parse_level, const std::string &utf8_content) override;
 
   /**
-   * @brief Delete document from both metadata, content, and FTS5 index.
+   * @brief Delete document from metadata, content, and FTS5 index (Write channel).
    */
-  bool DeleteDocument(int64_t doc_id);
+  bool DeleteDocument(int64_t doc_id) override;
 
   /**
-   * @brief Cascade delete all files under a directory prefix from metadata, content, and FTS5.
-   *
-   * @param dir_path Root directory path to cascade remove
-   * @param out_deleted_doc_ids Optional vector to collect deleted doc_ids for in-memory sync
-   * @return Number of documents deleted on success, or -1 on failure
+   * @brief Cascade delete all files under a directory prefix (Write channel).
    */
-  int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr);
+  int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) override;
 
   /**
-   * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild.
+   * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild (Write channel).
    */
-  bool ClearAll();
+  bool ClearAll() override;
 
   /**
-   * @brief Perform full-text search against fts_docs.
-   *
-   * @param query FTS5 query string
-   * @param limit Max hits to return
-   * @param offset Result pagination offset
-   * @param path_prefix Optional path filter: only return hits located under this path
-   * @param out_total_count Optional pointer to receive total number of matching documents
-   * @return std::vector<SearchResultItem> List of matching documents
+   * @brief Perform full-text search against fts_docs (Read channel via ReaderConnectionPool).
    */
   std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
-                                       const std::string &path_prefix = "", int *out_total_count = nullptr);
+                                       const std::string &path_prefix = "",
+                                       int *out_total_count = nullptr) override;
 
   /**
-   * @brief Decompress and fetch original UTF-8 content from doc_contents.
-   *
-   * @param doc_id Document ID
-   * @param out_content Output string to receive decompressed text
-   * @return true on success
+   * @brief Decompress and fetch original UTF-8 content from doc_contents (Read channel).
    */
-  bool GetDocumentContent(int64_t doc_id, std::string *out_content);
+  bool GetDocumentContent(int64_t doc_id, std::string *out_content) override;
 
   /**
-   * @brief Retrieve metadata (file_size, mtime, parse_stat) for incremental check.
-   *
-   * @param doc_id Document ID
-   * @param out_file_size Output pointer for file size
-   * @param out_mtime Output pointer for mtime
-   * @param out_parse_stat Output pointer for parse status
-   * @return true if document exists in files table
+   * @brief Retrieve metadata for incremental check (Read channel).
    */
-  bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat = nullptr);
+  bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime,
+                       int *out_parse_stat = nullptr) override;
 
   /**
-   * @brief Retrieve all indexed files metadata for rapid cold-restart.
+   * @brief Retrieve all indexed files metadata for rapid cold-restart (Read channel).
    */
-  std::vector<FileMetaRecord> GetAllFilesMetadata();
+  std::vector<FileMetaRecord> GetAllFilesMetadata() override;
+
+  /**
+   * @brief Acquire a dedicated read-only connection handle from the pool (Zero-lock read lease).
+   */
+  ScopedReadConnection AcquireReadConnection() override;
 
   /**
    * @brief Generate highlighted snippet with <mark> tags around keywords.
@@ -224,24 +167,29 @@ class StorageEngine {
   /**
    * @brief Get low-level error message from SQLite.
    */
-  std::string GetLastError() const;
+  [[nodiscard]] std::string GetLastError() const override;
 
  private:
-  bool ExecutePragmas(const std::string &key);
+  bool ExecutePragmas(sqlite3 *db, const std::string &key);
   bool InitTables();
   void FinalizeCachedStatements();
 
-  // Internal unlocked implementations (assumes engine_mutex_ is already acquired by caller)
+  // Internal unlocked implementations on writer_db_ (writer_mutex_ already held by caller)
   void CloseUnlocked();
   bool CommitTransactionUnlocked();
   bool IsInTransactionUnlocked() const;
   bool CheckpointWalUnlocked();
-  bool GetDocumentContentUnlocked(int64_t doc_id, std::string *out_content);
+  bool GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content);
 
-  sqlite3 *db_ = nullptr;
+  sqlite3 *writer_db_ = nullptr;
+  mutable std::mutex writer_mutex_;
+  ReaderConnectionPool reader_pool_;
+
+  std::string db_path_;
+  std::string key_;
+  std::string dict_dir_;
   std::string last_error_;
   size_t uncommitted_count_ = 0;
-  mutable std::mutex engine_mutex_;
 
   sqlite3_stmt *stmt_files_insert_ = nullptr;
   sqlite3_stmt *stmt_contents_insert_ = nullptr;
