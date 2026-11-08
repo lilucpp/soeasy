@@ -17,6 +17,8 @@ namespace common {
  */
 class SnippetHighlighter {
  public:
+  static constexpr size_t kMaxScanBytes = 128 * 1024;  // 128KB max text scan window
+
   /**
    * @brief Parse FTS / query tokens into clean keyword list for highlighting.
    */

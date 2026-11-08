@@ -264,6 +264,8 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  config->set_dict_dir(dict_dir.toStdString());
+
   // 1. Initialize Storage Engine (SQLite3MC with AES-128 page encryption)
   auto storage_engine = std::make_shared<soeasy::storage::StorageEngine>();
   const std::string kEncryptionKey = "soeasy_master_page_key_2026";

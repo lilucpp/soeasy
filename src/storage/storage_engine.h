@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include <SQLiteCpp/SQLiteCpp.h>
 #include "sqlite3mc_amalgamation.h"
 #include "storage/istorage_engine.h"
 #include "storage/reader_connection_pool.h"
@@ -183,6 +184,7 @@ class StorageEngine : public IStorageEngine {
   bool CheckpointWalUnlocked();
   bool GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content);
 
+  std::unique_ptr<SQLite::Database> writer_cpp_db_;
   sqlite3 *writer_db_ = nullptr;
   mutable std::mutex writer_mutex_;
   ReaderConnectionPool reader_pool_;

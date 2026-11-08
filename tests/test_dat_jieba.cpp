@@ -252,6 +252,20 @@ int main(int argc, char *argv[]) {
   (void)found_sword;
   std::cout << "  • 单字 CJK 用户词防过度合并: PASS\n";
 
+  // 4.6 词条存在性纳秒级探测 HasWord 验证
+  assert(!dj.HasWord(""));
+  assert(dj.HasWord("中国"));
+  assert(dj.HasWord("自然语言处理"));
+  assert(!dj.HasWord("绝对不可能存在的未知自定义测试词条_XYZ999"));
+  
+  std::string new_term = "极轻量沙箱架构";
+  assert(!dj.HasWord(new_term));
+  assert(dj.InsertUserWord(new_term, 10000));
+  assert(dj.HasWord(new_term));
+  assert(dj.DeleteUserWord(new_term));
+  assert(!dj.HasWord(new_term));
+  std::cout << "  • HasWord 基础词库与 Overlay 动态探测: PASS\n";
+
   // -------------------------------------------------------------------------
   // [Test 5] 多线程高并发切词与动态增删 Overlay 竞态测试 (Thread Safety)
   // -------------------------------------------------------------------------

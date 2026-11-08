@@ -143,6 +143,24 @@ else()
 endif()
 
 # -------------------------------------------------------------
+# 2.1 Third-party: SQLiteCpp (Modern C++ SQLite3 wrapper)
+# -------------------------------------------------------------
+add_library(SQLiteCpp STATIC
+    third_party/SQLiteCpp/src/Backup.cpp
+    third_party/SQLiteCpp/src/Column.cpp
+    third_party/SQLiteCpp/src/Database.cpp
+    third_party/SQLiteCpp/src/Exception.cpp
+    third_party/SQLiteCpp/src/Savepoint.cpp
+    third_party/SQLiteCpp/src/Statement.cpp
+    third_party/SQLiteCpp/src/Transaction.cpp
+)
+target_include_directories(SQLiteCpp PUBLIC
+    third_party/SQLiteCpp/include
+    third_party/sqlite3mc
+)
+target_link_libraries(SQLiteCpp PUBLIC sqlite3mc)
+
+# -------------------------------------------------------------
 # 3. Third-party: efsw (Entropia File System Watcher)
 # -------------------------------------------------------------
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -210,6 +228,7 @@ add_library(soeasy_storage STATIC
 target_include_directories(soeasy_storage PUBLIC
     src
     third_party/sqlite3mc
+    third_party/SQLiteCpp/include
     third_party/utfcpp/source
     third_party/cppjieba/include
     third_party/darts
@@ -217,6 +236,7 @@ target_include_directories(soeasy_storage PUBLIC
 )
 target_link_libraries(soeasy_storage PUBLIC
     soeasy_common
+    SQLiteCpp
     sqlite3mc
     libzstd_static
     pthread
@@ -635,6 +655,30 @@ if(BUILD_TESTS)
       GTest::gtest_main
   )
   gtest_discover_tests(test_fts5_syntax_gtest PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 20
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
+
+  # Modern Unit Test Suite: SQLiteCpp integration, AES-128 physical encryption, and FTS5 tokenization
+  add_executable(test_sqlitecpp_gtest
+      tests/test_sqlitecpp_gtest.cpp
+  )
+  target_include_directories(test_sqlitecpp_gtest PRIVATE
+      src
+      third_party/sqlite3mc
+      third_party/SQLiteCpp/include
+      third_party/utfcpp/source
+  )
+  target_link_libraries(test_sqlitecpp_gtest PRIVATE
+      soeasy_storage
+      soeasy_common
+      SQLiteCpp
+      sqlite3mc
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_sqlitecpp_gtest PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       TIMEOUT 20
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

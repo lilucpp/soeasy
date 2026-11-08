@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -159,10 +158,8 @@ void StorageEngine::Close() {
 void StorageEngine::CloseUnlocked() {
   FinalizeCachedStatements();
   reader_pool_.Close();
-  if (writer_db_) {
-    sqlite3_close_v2(writer_db_);
-    writer_db_ = nullptr;
-  }
+  writer_cpp_db_.reset();
+  writer_db_ = nullptr;
   uncommitted_count_ = 0;
 }
 
@@ -297,24 +294,40 @@ bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
     return false;
   }
 
-  SqliteStmtScope stmt;
   int page_size = 4096;
   int64_t page_count = 0;
   int64_t free_count = 0;
 
-  if (sqlite3_prepare_v2(target_db, "PRAGMA page_size;", -1, stmt.address(), nullptr) == SQLITE_OK) {
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      page_size = sqlite3_column_int(stmt, 0);
+  if (target_db == writer_db_ && writer_cpp_db_) {
+    try {
+      SQLite::Statement stmt_ps(*writer_cpp_db_, "PRAGMA page_size;");
+      if (stmt_ps.executeStep()) page_size = stmt_ps.getColumn(0).getInt();
+
+      SQLite::Statement stmt_pc(*writer_cpp_db_, "PRAGMA page_count;");
+      if (stmt_pc.executeStep()) page_count = stmt_pc.getColumn(0).getInt64();
+
+      SQLite::Statement stmt_fc(*writer_cpp_db_, "PRAGMA freelist_count;");
+      if (stmt_fc.executeStep()) free_count = stmt_fc.getColumn(0).getInt64();
+    } catch (const std::exception &e) {
+      last_error_ = e.what();
+      return false;
     }
-  }
-  if (sqlite3_prepare_v2(target_db, "PRAGMA page_count;", -1, stmt.address(), nullptr) == SQLITE_OK) {
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      page_count = sqlite3_column_int64(stmt, 0);
+  } else {
+    SqliteStmtScope stmt;
+    if (sqlite3_prepare_v2(target_db, "PRAGMA page_size;", -1, stmt.address(), nullptr) == SQLITE_OK) {
+      if (sqlite3_step(stmt) == SQLITE_ROW) {
+        page_size = sqlite3_column_int(stmt, 0);
+      }
     }
-  }
-  if (sqlite3_prepare_v2(target_db, "PRAGMA freelist_count;", -1, stmt.address(), nullptr) == SQLITE_OK) {
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      free_count = sqlite3_column_int64(stmt, 0);
+    if (sqlite3_prepare_v2(target_db, "PRAGMA page_count;", -1, stmt.address(), nullptr) == SQLITE_OK) {
+      if (sqlite3_step(stmt) == SQLITE_ROW) {
+        page_count = sqlite3_column_int64(stmt, 0);
+      }
+    }
+    if (sqlite3_prepare_v2(target_db, "PRAGMA freelist_count;", -1, stmt.address(), nullptr) == SQLITE_OK) {
+      if (sqlite3_step(stmt) == SQLITE_ROW) {
+        free_count = sqlite3_column_int64(stmt, 0);
+      }
     }
   }
 
@@ -407,9 +420,11 @@ bool StorageEngine::Open(const std::string &db_path, const std::string &key, con
   key_ = key;
   dict_dir_ = dict_dir;
 
-  int rc = sqlite3_open_v2(db_path.c_str(), &writer_db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
-  if (rc != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(writer_db_);
+  try {
+    writer_cpp_db_ = std::make_unique<SQLite::Database>(db_path, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+    writer_db_ = writer_cpp_db_->getHandle();
+  } catch (const std::exception &e) {
+    last_error_ = e.what();
     CloseUnlocked();
     return false;
   }
@@ -420,7 +435,7 @@ bool StorageEngine::Open(const std::string &db_path, const std::string &key, con
   }
 
   // Register FTS5 Jieba tokenizer before compiling FTS5 tables
-  rc = RegisterFts5JiebaTokenizer(writer_db_, dict_dir);
+  int rc = RegisterFts5JiebaTokenizer(writer_db_, dict_dir);
   if (rc != SQLITE_OK) {
     last_error_ = "Failed to register FTS5 Jieba tokenizer on writer: " + std::string(sqlite3_errmsg(writer_db_));
     CloseUnlocked();
@@ -721,23 +736,43 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
     sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
   }
 
-  SqliteStmtScope stmt;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
-  if (stmt) {
-    sqlite3_bind_int64(stmt, 1, doc_id);
-    sqlite3_step(stmt);
-  }
+  if (writer_cpp_db_) {
+    try {
+      SQLite::Statement stmt1(*writer_cpp_db_, "DELETE FROM files WHERE doc_id = ?1;");
+      stmt1.bind(1, doc_id);
+      stmt1.exec();
 
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
-  if (stmt) {
-    sqlite3_bind_int64(stmt, 1, doc_id);
-    sqlite3_step(stmt);
-  }
+      SQLite::Statement stmt2(*writer_cpp_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;");
+      stmt2.bind(1, doc_id);
+      stmt2.exec();
 
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt.address(), nullptr);
-  if (stmt) {
-    sqlite3_bind_int64(stmt, 1, doc_id);
-    sqlite3_step(stmt);
+      SQLite::Statement stmt3(*writer_cpp_db_, "DELETE FROM fts_docs WHERE rowid = ?1;");
+      stmt3.bind(1, doc_id);
+      stmt3.exec();
+    } catch (const std::exception &e) {
+      last_error_ = e.what();
+      if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
+  } else {
+    SqliteStmtScope stmt;
+    sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
+    if (stmt) {
+      sqlite3_bind_int64(stmt, 1, doc_id);
+      sqlite3_step(stmt);
+    }
+
+    sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
+    if (stmt) {
+      sqlite3_bind_int64(stmt, 1, doc_id);
+      sqlite3_step(stmt);
+    }
+
+    sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt.address(), nullptr);
+    if (stmt) {
+      sqlite3_bind_int64(stmt, 1, doc_id);
+      sqlite3_step(stmt);
+    }
   }
 
   if (is_outer_tx) {
@@ -868,6 +903,23 @@ bool StorageEngine::ClearAll() {
   }
 
   FinalizeCachedStatements();
+
+  if (writer_cpp_db_) {
+    try {
+      SQLite::Transaction transaction(*writer_cpp_db_);
+      writer_cpp_db_->exec("DELETE FROM files;");
+      writer_cpp_db_->exec("DELETE FROM doc_contents;");
+      writer_cpp_db_->exec("DELETE FROM ext_stats;");
+      writer_cpp_db_->exec("DROP TABLE IF EXISTS fts_docs;");
+      transaction.commit();
+      uncommitted_count_ = 0;
+      writer_cpp_db_->exec("VACUUM;");
+      return InitTables();
+    } catch (const std::exception &e) {
+      last_error_ = e.what();
+      return false;
+    }
+  }
 
   sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
 

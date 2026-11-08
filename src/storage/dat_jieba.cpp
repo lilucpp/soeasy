@@ -209,6 +209,30 @@ void DatJieba::LoadUserDict(const std::string &user_dict_path) {
   }
 }
 
+bool DatJieba::HasWord(const std::string &word) const {
+  if (word.empty()) {
+    return false;
+  }
+
+  // 1. Check Overlay user dictionary (dynamic additions)
+  {
+    std::lock_guard<std::mutex> lock(user_dict_mutex_);
+    if (user_words_.find(word) != user_words_.end()) {
+      return true;
+    }
+  }
+
+  // 2. Check base Double-Array Trie dictionary
+  if (is_initialized_ && da_.total_size() > 0) {
+    int res = da_.exactMatchSearch<int>(word.c_str(), word.size());
+    if (res >= 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 bool DatJieba::InsertUserWord(const std::string &word, int freq, const std::string &tag) {
   if (word.empty()) return false;
 

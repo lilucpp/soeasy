@@ -52,6 +52,7 @@ third_party/doctotext/.installed_*
 *.db-shm
 /tmp/soeasy*
 logs/
+Testing/
 
 # IDE & Editor files
 .vscode/

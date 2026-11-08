@@ -397,6 +397,10 @@ bool IndexConfig::LoadFromFile(const std::string &file_path) {
       ui_language_ = (lang == "en") ? "en" : "zh";
     }
 
+    if (j.contains("dict_dir") && j["dict_dir"].is_string()) {
+      dict_dir_ = j["dict_dir"].get<std::string>();
+    }
+
     if (j.contains("custom_extensions") && j["custom_extensions"].is_array()) {
       custom_exts_.clear();
       for (const auto &item : j["custom_extensions"]) {
@@ -438,6 +442,9 @@ bool IndexConfig::SaveToFile(const std::string &file_path) const {
       j["enable_embedded_image_ocr"] = enable_embedded_image_ocr_;
       j["ui_language"] = ui_language_;
       j["custom_extensions"] = custom_exts_;
+      if (!dict_dir_.empty()) {
+        j["dict_dir"] = dict_dir_;
+      }
     }
 
     std::string temp_path = file_path + ".tmp";

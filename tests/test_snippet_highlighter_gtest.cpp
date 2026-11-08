@@ -194,5 +194,41 @@ TEST(SnippetHighlighterTest, GenerateSnippetMiddleMatchHasEllipsesOnBothSides) {
   EXPECT_NE(snippet.find("<mark>TARGET</mark>"), std::string::npos);
 }
 
+TEST(SnippetHighlighterTest, GenerateSnippetLargeDocumentBoundedScanDefense) {
+  // 1. Arrange: Create a 200KB large text (>128KB scan window)
+  std::string large_text;
+  large_text.reserve(200 * 1024);
+  for (int i = 0; i < 2000; ++i) {
+    large_text.append("段落内容填充行，用于测试系统内存占用与超大文档安全截断防御。");
+  }
+  // Insert target keyword within the first 128KB (e.g. at ~10KB)
+  const std::string keyword = "关键安全标记";
+  large_text.insert(10000, keyword);
+
+  // 2. Act
+  auto snippet = SnippetHighlighter::GenerateSnippet(large_text, {keyword}, 60);
+
+  // 3. Assert
+  EXPECT_TRUE(utf8::is_valid(snippet.begin(), snippet.end()));
+  EXPECT_NE(snippet.find("<mark>" + keyword + "</mark>"), std::string::npos);
+  EXPECT_LT(snippet.size(), 300u);
+}
+
+TEST(SnippetHighlighterTest, GenerateSnippetLargeDocumentBeyondWindowGracefulPrefix) {
+  // 1. Arrange: 150KB large text where keyword only appears past 140KB (>128KB window)
+  std::string large_text(150 * 1024, 'X');
+  const std::string keyword = "LATE_KEYWORD";
+  large_text.replace(145 * 1024, keyword.size(), keyword);
+
+  // 2. Act
+  auto snippet = SnippetHighlighter::GenerateSnippet(large_text, {keyword}, 40);
+
+  // 3. Assert: Beyond scan window, safely falls back to text prefix without crashing or memory bloat
+  EXPECT_FALSE(snippet.empty());
+  EXPECT_TRUE(utf8::is_valid(snippet.begin(), snippet.end()));
+  EXPECT_EQ(snippet.find("<mark>"), std::string::npos);
+  EXPECT_EQ(snippet.substr(snippet.size() - 3), "...");
+}
+
 }  // namespace test
 }  // namespace soeasy

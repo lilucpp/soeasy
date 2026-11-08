@@ -116,6 +116,15 @@ class IndexConfig {
     return enable_embedded_image_ocr_;
   }
 
+  void set_dict_dir(const std::string &dir) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    dict_dir_ = dir;
+  }
+  std::string dict_dir() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return dict_dir_;
+  }
+
   void SetCustomExtensions(const std::vector<std::string> &exts);
   std::vector<std::string> GetCustomExtensions() const;
   void AddCustomExtension(const std::string &ext);
@@ -219,6 +228,7 @@ class IndexConfig {
   bool enable_embedded_image_ocr_ = false;
   std::string ui_language_ = kDefaultUiLanguage;
   std::vector<std::string> custom_exts_;
+  std::string dict_dir_;
 };
 
 }  // namespace service

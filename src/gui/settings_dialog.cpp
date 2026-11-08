@@ -1,5 +1,11 @@
 #include "gui/settings_dialog.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QCoreApplication>
+#include <QDialog>
+#include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFont>
 #include <QFormLayout>
@@ -7,9 +13,15 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QSpinBox>
+#include <QStandardPaths>
 #include <QTabBar>
+#include <QTableWidget>
+#include <QTextStream>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -20,6 +32,7 @@
 #include "common/format_categories.h"
 #include "common/logger.h"
 #include "gui/i18n.h"
+#include "storage/dat_jieba.h"
 
 namespace soeasy {
 namespace gui {
@@ -31,6 +44,8 @@ SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWi
   SetupUi();
   PopulateFromConfig();
 }
+
+SettingsDialog::~SettingsDialog() = default;
 
 void SettingsDialog::SetupUi() {
   setStyleSheet(
@@ -126,6 +141,7 @@ void SettingsDialog::SetupUi() {
   tab_widget_->addTab(CreateDirectoriesTab(), "索引目录");
   tab_widget_->addTab(CreatePatternsTab(), "排除目录规则");
   tab_widget_->addTab(CreateExtensionsTab(), "文件格式与解析");
+  tab_widget_->addTab(CreateUserDictTab(), "分词词库");
   tab_widget_->addTab(CreatePerformanceTab(), "性能与日志");
 
   main_layout->addWidget(tab_widget_);
@@ -331,6 +347,214 @@ QWidget *SettingsDialog::CreateExtensionsTab() {
   return tab_exts;
 }
 
+QWidget *SettingsDialog::CreateUserDictTab() {
+  auto *tab_dict = new QWidget();
+  auto *layout_dict = new QVBoxLayout(tab_dict);
+  layout_dict->setContentsMargins(16, 16, 16, 16);
+  layout_dict->setSpacing(12);
+
+  label_user_dict_hint_ = new QLabel(tab_dict);
+  label_user_dict_hint_->setWordWrap(true);
+  layout_dict->addWidget(label_user_dict_hint_);
+
+  user_dict_table_ = new QTableWidget(tab_dict);
+  user_dict_table_->setColumnCount(1);
+  user_dict_table_->setHorizontalHeaderLabels({Tr("col_user_dict_word")});
+  user_dict_table_->horizontalHeader()->setStretchLastSection(true);
+  user_dict_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+  user_dict_table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  user_dict_table_->setAlternatingRowColors(true);
+  layout_dict->addWidget(user_dict_table_);
+
+  // Minimalist input bar for adding custom terms
+  auto *input_layout = new QHBoxLayout();
+  user_word_input_ = new QLineEdit(tab_dict);
+  user_word_input_->setPlaceholderText(Tr("word_ph"));
+
+  btn_add_user_word_ = new QPushButton(tab_dict);
+  btn_rm_user_word_ = new QPushButton(tab_dict);
+
+  input_layout->addWidget(user_word_input_, 1);
+  input_layout->addWidget(btn_add_user_word_);
+  input_layout->addWidget(btn_rm_user_word_);
+  layout_dict->addLayout(input_layout);
+
+  auto *bottom_layout = new QHBoxLayout();
+  user_dict_count_label_ = new QLabel(tab_dict);
+  user_dict_count_label_->setStyleSheet("color: #64748B; font-size: 12px;");
+  bottom_layout->addStretch();
+  bottom_layout->addWidget(user_dict_count_label_);
+  layout_dict->addLayout(bottom_layout);
+
+  connect(btn_add_user_word_, &QPushButton::clicked, this, &SettingsDialog::OnAddUserWord);
+  connect(user_word_input_, &QLineEdit::returnPressed, this, &SettingsDialog::OnAddUserWord);
+  connect(btn_rm_user_word_, &QPushButton::clicked, this, &SettingsDialog::OnRemoveUserWord);
+
+  // Initialize Jieba engine instance for instant word-existence probing
+  QString dict_dir;
+  if (config_ && !config_->dict_dir().empty()) {
+    dict_dir = QString::fromStdString(config_->dict_dir());
+  } else {
+    dict_dir = QCoreApplication::applicationDirPath() + "/dict";
+  }
+  if (!jieba_) {
+    jieba_ = std::make_unique<storage::DatJieba>();
+    if (!jieba_->Init(dict_dir.toStdString())) {
+      // Fallback search in standard paths
+      QString fallback = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/dict";
+      jieba_->Init(fallback.toStdString());
+    }
+  }
+
+  LoadUserDict();
+
+  return tab_dict;
+}
+
+void SettingsDialog::LoadUserDict() {
+  if (!user_dict_table_) return;
+  user_dict_table_->setRowCount(0);
+
+  QString dict_dir;
+  if (config_ && !config_->dict_dir().empty()) {
+    dict_dir = QString::fromStdString(config_->dict_dir());
+  } else {
+    dict_dir = QCoreApplication::applicationDirPath() + "/dict";
+  }
+
+  QString user_dict_file = dict_dir + "/user.dict.utf8";
+  QFile file(user_dict_file);
+  if (!file.exists()) {
+    QString fallback = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/dict/user.dict.utf8";
+    if (QFile::exists(fallback)) {
+      user_dict_file = fallback;
+      file.setFileName(user_dict_file);
+    }
+  }
+
+  if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QTextStream in(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    in.setCodec("UTF-8");
+#endif
+    while (!in.atEnd()) {
+      QString line = in.readLine().trimmed();
+      if (line.isEmpty() || line.startsWith("#")) continue;
+      QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+      if (parts.isEmpty()) continue;
+      QString word = parts[0];
+      int freq = parts.size() > 1 ? parts[1].toInt() : 10000;
+      if (freq <= 0) freq = 10000;
+
+      int row = user_dict_table_->rowCount();
+      user_dict_table_->insertRow(row);
+      auto *item = new QTableWidgetItem(word);
+      item->setData(Qt::UserRole, freq);
+      user_dict_table_->setItem(row, 0, item);
+    }
+    file.close();
+  }
+
+  if (user_dict_count_label_) {
+    user_dict_count_label_->setText(Tr("label_word_count").arg(user_dict_table_->rowCount()));
+  }
+}
+
+void SettingsDialog::SaveUserDict() {
+  if (!user_dict_table_) return;
+
+  QString dict_dir;
+  if (config_ && !config_->dict_dir().empty()) {
+    dict_dir = QString::fromStdString(config_->dict_dir());
+  } else {
+    dict_dir = QCoreApplication::applicationDirPath() + "/dict";
+  }
+
+  QDir().mkpath(dict_dir);
+  QString user_dict_file = dict_dir + "/user.dict.utf8";
+  QFile file(user_dict_file);
+  if (file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+    QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    out.setCodec("UTF-8");
+#endif
+    for (int r = 0; r < user_dict_table_->rowCount(); ++r) {
+      auto *w_item = user_dict_table_->item(r, 0);
+      if (w_item && !w_item->text().trimmed().isEmpty()) {
+        QString w = w_item->text().trimmed();
+        int f = w_item->data(Qt::UserRole).toInt();
+        if (f <= 0) f = 10000;
+        out << w << " " << f << "\n";
+      }
+    }
+    file.close();
+    LOG_INFO("[SettingsDialog] Successfully persisted {} custom user words to '{}'",
+             user_dict_table_->rowCount(), user_dict_file.toStdString());
+  }
+}
+
+void SettingsDialog::OnAddUserWord() {
+  if (!user_word_input_ || !user_dict_table_) return;
+  QString word = user_word_input_->text().trimmed();
+  if (word.isEmpty()) return;
+
+  // 1. Check duplicate in current table
+  for (int r = 0; r < user_dict_table_->rowCount(); ++r) {
+    auto *item = user_dict_table_->item(r, 0);
+    if (item && item->text().compare(word, Qt::CaseInsensitive) == 0) {
+      QMessageBox::information(this, Tr("tab_user_dict"), Tr("tip_word_exists_in_custom"));
+      user_dict_table_->selectRow(r);
+      user_dict_table_->scrollToItem(item);
+      return;
+    }
+  }
+
+  // 2. Nanosecond check if already recognized by Jieba base/overlay dictionary
+  if (jieba_ && jieba_->HasWord(word.toStdString())) {
+    QMessageBox::information(this, Tr("tab_user_dict"), Tr("tip_word_exists_in_system"));
+    return;
+  }
+
+  // 3. Add to table with default 10000 weight
+  int row = user_dict_table_->rowCount();
+  user_dict_table_->insertRow(row);
+  auto *item = new QTableWidgetItem(word);
+  item->setData(Qt::UserRole, 10000);
+  user_dict_table_->setItem(row, 0, item);
+
+  if (jieba_) {
+    jieba_->InsertUserWord(word.toStdString(), 10000);
+  }
+
+  user_word_input_->clear();
+  user_dict_table_->scrollToBottom();
+  if (user_dict_count_label_) {
+    user_dict_count_label_->setText(Tr("label_word_count").arg(user_dict_table_->rowCount()));
+  }
+}
+
+void SettingsDialog::OnRemoveUserWord() {
+  if (!user_dict_table_) return;
+  auto selected = user_dict_table_->selectionModel()->selectedRows();
+  if (selected.isEmpty()) return;
+
+  // Best practice: Delete rows in descending index order to avoid shifting indices
+  std::vector<int> rows;
+  rows.reserve(selected.size());
+  for (const auto &idx : selected) {
+    rows.push_back(idx.row());
+  }
+  std::sort(rows.rbegin(), rows.rend());
+
+  for (int r : rows) {
+    user_dict_table_->removeRow(r);
+  }
+
+  if (user_dict_count_label_) {
+    user_dict_count_label_->setText(Tr("label_word_count").arg(user_dict_table_->rowCount()));
+  }
+}
+
 QWidget *SettingsDialog::CreatePerformanceTab() {
   auto *tab_perf = new QWidget();
   auto *form_perf = new QFormLayout(tab_perf);
@@ -430,7 +654,8 @@ void SettingsDialog::RetranslateUi() {
     tab_widget_->setTabText(1, Tr("tab_dirs"));
     tab_widget_->setTabText(2, Tr("tab_patterns"));
     tab_widget_->setTabText(3, Tr("tab_exts"));
-    tab_widget_->setTabText(4, Tr("tab_perf"));
+    tab_widget_->setTabText(4, Tr("tab_user_dict"));
+    tab_widget_->setTabText(5, Tr("tab_perf"));
   }
 
   // Tab 0
@@ -504,7 +729,19 @@ void SettingsDialog::RetranslateUi() {
   if (btn_reset_exts_) btn_reset_exts_->setText(Tr("btn_reset_exts"));
   UpdateExtensionsCount();
 
-  // Tab 4
+  // Tab: User Dict (FEAT-002)
+  if (label_user_dict_hint_) label_user_dict_hint_->setText(Tr("label_user_dict_hint"));
+  if (user_word_input_) user_word_input_->setPlaceholderText(Tr("word_ph"));
+  if (btn_add_user_word_) btn_add_user_word_->setText(Tr("btn_add_word"));
+  if (btn_rm_user_word_) btn_rm_user_word_->setText(Tr("btn_rm_word"));
+  if (user_dict_table_) {
+    user_dict_table_->setHorizontalHeaderLabels({Tr("col_user_dict_word")});
+  }
+  if (user_dict_count_label_ && user_dict_table_) {
+    user_dict_count_label_->setText(Tr("label_word_count").arg(user_dict_table_->rowCount()));
+  }
+
+  // Tab 4: Performance
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
   if (debounce_spin_) debounce_spin_->setSuffix(Tr("suffix_ms"));
   if (label_max_size_) label_max_size_->setText(Tr("label_max_file_size"));
@@ -896,6 +1133,7 @@ void SettingsDialog::OnSaveAndApply() {
 
   // Persist to disk
   config_->Save();
+  SaveUserDict();
 
   emit SettingsApplied();
   accept();

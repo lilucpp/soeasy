@@ -127,7 +127,20 @@ void I18n::InitDictionary() {
       {"tab_dirs", "索引目录"},
       {"tab_patterns", "排除目录规则"},
       {"tab_exts", "文件格式与解析"},
+      {"tab_user_dict", "分词词库"},
       {"tab_perf", "性能与日志"},
+
+      // Settings - User Dict Tab
+      {"label_user_dict_hint", "自定义专有关键词，检索时具备即时自愈能力。点击“重建索引”可全量重新分词："},
+      {"col_user_dict_word", "自定义关键词"},
+      {"col_user_dict_freq", "词频权重"},
+      {"btn_add_word", "添加关键词"},
+      {"btn_rm_word", "移除所选"},
+      {"word_ph", "输入新关键词，回车或点击添加..."},
+      {"label_word_count", "已加载自定义关键词数: %1"},
+      {"tip_word_exists", "该关键词已存在！"},
+      {"tip_word_exists_in_custom", "该关键词已在自定义列表中！"},
+      {"tip_word_exists_in_system", "该关键词已存在于系统基础词库中，分词器天然支持精准切词，无需重复添加。"},
 
       // Settings - General Tab
       {"label_language", "界面显示语言 (UI Language):"},
@@ -305,7 +318,20 @@ void I18n::InitDictionary() {
       {"tab_dirs", "Indexed Directories"},
       {"tab_patterns", "Excluded Patterns"},
       {"tab_exts", "File Formats"},
+      {"tab_user_dict", "User Dictionary"},
       {"tab_perf", "Performance && Logs"},
+
+      // Settings - User Dict Tab
+      {"label_user_dict_hint", "Custom keywords with instant search self-healing. Click 'Rebuild Index' to re-index historical files:"},
+      {"col_user_dict_word", "Custom Keyword"},
+      {"col_user_dict_freq", "Weight"},
+      {"btn_add_word", "Add Keyword"},
+      {"btn_rm_word", "Remove Selected"},
+      {"word_ph", "Enter new keyword, press Enter or click Add..."},
+      {"label_word_count", "Total custom keywords: %1"},
+      {"tip_word_exists", "Keyword already exists!"},
+      {"tip_word_exists_in_custom", "Keyword already exists in the custom list!"},
+      {"tip_word_exists_in_system", "Keyword already exists in system base dictionary; tokenization is naturally supported."},
 
       // Settings - General Tab
       {"label_language", "Interface Language (UI Language):"},

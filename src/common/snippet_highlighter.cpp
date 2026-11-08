@@ -95,9 +95,15 @@ std::string SnippetHighlighter::GenerateSnippet(const std::string &full_text,
     return "";
   }
 
-  // Lowercase version of full_text for case-insensitive search
-  std::string lower_text = full_text;
-  for (char &c : lower_text) {
+  // Restrict search scan to at most kMaxScanBytes (128KB) to avoid memory bloat on large documents
+  size_t scan_size = std::min(full_text.size(), kMaxScanBytes);
+  while (scan_size < full_text.size() && (static_cast<unsigned char>(full_text[scan_size]) & 0xC0) == 0x80) {
+    ++scan_size;
+  }
+
+  // Lowercase bounded scan window for case-insensitive search without full-text duplication
+  std::string lower_scan = full_text.substr(0, scan_size);
+  for (char &c : lower_scan) {
     if (c >= 'A' && c <= 'Z') {
       c = static_cast<char>(c + 32);
     }
@@ -112,7 +118,7 @@ std::string SnippetHighlighter::GenerateSnippet(const std::string &full_text,
     for (char &c : lower_kw) {
       if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
     }
-    size_t pos = lower_text.find(lower_kw);
+    size_t pos = lower_scan.find(lower_kw);
     if (pos != std::string::npos) {
       if (best_pos == std::string::npos || pos < best_pos || (pos == best_pos && kw.size() > best_kw_len)) {
         best_pos = pos;

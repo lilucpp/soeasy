@@ -73,6 +73,12 @@ class DatJieba {
   }
 
   /**
+   * @brief Fast existence check for a word in either overlay user dictionary
+   * or the base Double-Array Trie dictionary (nanosecond lookup).
+   */
+  bool HasWord(const std::string &word) const;
+
+  /**
    * @brief Dynamic user word insertion into the Overlay dictionary (thread-safe).
    * Takes effect immediately in subsequent Cut calls without rebuilding DAT.
    */

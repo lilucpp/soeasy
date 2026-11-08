@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <memory>
@@ -20,6 +21,12 @@
 #include "service/index_config.h"
 
 namespace soeasy {
+namespace storage {
+class DatJieba;
+}
+namespace service {
+class IndexConfig;
+}
 namespace gui {
 
 class SettingsDialog : public QDialog {
@@ -27,7 +34,7 @@ class SettingsDialog : public QDialog {
 
  public:
   explicit SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent = nullptr);
-  ~SettingsDialog() override = default;
+  ~SettingsDialog() override;
 
  signals:
   void SettingsApplied();
@@ -45,6 +52,8 @@ class SettingsDialog : public QDialog {
   void OnResetExtensionsToDefault();
   void OnTreeItemChanged(QTreeWidgetItem *item, int column);
   void OnBrowseDocToTextLogPath();
+  void OnAddUserWord();
+  void OnRemoveUserWord();
   void OnSaveAndApply();
   void OnRebuildIndex();
 
@@ -59,8 +68,12 @@ class SettingsDialog : public QDialog {
   QWidget *CreateDirectoriesTab();
   QWidget *CreatePatternsTab();
   QWidget *CreateExtensionsTab();
+  QWidget *CreateUserDictTab();
   QWidget *CreatePerformanceTab();
   QHBoxLayout *CreateBottomBar();
+
+  void LoadUserDict();
+  void SaveUserDict();
 
   std::shared_ptr<service::IndexConfig> config_;
 
@@ -101,7 +114,16 @@ class SettingsDialog : public QDialog {
   QLabel *exts_count_label_ = nullptr;
   bool is_updating_tree_ = false;
 
-  // Tab 4: Performance & Scheduling
+  // Tab: User Dictionary (FEAT-002)
+  QLabel *label_user_dict_hint_ = nullptr;
+  QTableWidget *user_dict_table_ = nullptr;
+  QLineEdit *user_word_input_ = nullptr;
+  QPushButton *btn_add_user_word_ = nullptr;
+  QPushButton *btn_rm_user_word_ = nullptr;
+  QLabel *user_dict_count_label_ = nullptr;
+  std::unique_ptr<storage::DatJieba> jieba_;
+
+  // Tab: Performance & Scheduling
   QLabel *label_debounce_ = nullptr;
   QSpinBox *debounce_spin_ = nullptr;
   QLabel *label_max_size_ = nullptr;
