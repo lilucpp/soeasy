@@ -1,33 +1,31 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Use of this source code is governed by an Apache-2.0 license.
+
 #ifndef SOEASY_SRC_GUI_RESULT_VIEW_H_
 #define SOEASY_SRC_GUI_RESULT_VIEW_H_
 
 #include <QHeaderView>
 #include <QMouseEvent>
-#include <QTableWidget>
+#include <QTableView>
 #include <QTimer>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "gui/hover_preview_popup.h"
-#include "service/name_index.h"
+#include "gui/search_table_model.h"
 #include "storage/storage_engine.h"
 
 namespace soeasy {
 namespace gui {
 
-struct DisplayResultItem {
-  int64_t doc_id = 0;
-  QString file_name;
-  QString file_path;
-  QString ext;
-  uint64_t file_size = 0;
-  int64_t mtime = 0;
-  double score = 0.0;
-  QString snippet_html;
-  bool has_body_snippet = false;
-};
-
-class ResultView : public QTableWidget {
+/**
+ * @brief High-performance virtual viewport search results view backed by SearchTableModel.
+ *
+ * Inherits from QTableView instead of QTableWidget to achieve lazy cell rendering,
+ * smooth 60fps scrolling, and memory-efficient result inspection.
+ */
+class ResultView : public QTableView {
   Q_OBJECT
 
  public:
@@ -43,6 +41,18 @@ class ResultView : public QTableWidget {
 
   void EnsureSnippetForRows(int start_row, int end_row);
 
+  [[nodiscard]] int rowCount() const { return model_ ? model_->rowCount() : 0; }
+  [[nodiscard]] int columnCount() const { return model_ ? model_->columnCount() : 0; }
+  [[nodiscard]] SearchTableModel *search_model() const { return model_; }
+
+  // Backward compatibility proxy for test inspection
+  struct CompatItemProxy {
+    QString text_val;
+    QString text() const { return text_val; }
+  };
+  [[nodiscard]] std::unique_ptr<CompatItemProxy> item(int row, int col) const;
+  [[nodiscard]] std::unique_ptr<CompatItemProxy> horizontalHeaderItem(int section) const;
+
  signals:
   void FileSelected(int64_t doc_id, const QString &file_name, const QString &file_path);
   void FileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path);
@@ -53,15 +63,15 @@ class ResultView : public QTableWidget {
   void leaveEvent(QEvent *event) override;
 
  private slots:
-  void OnItemDoubleClicked(int row, int column);
+  void OnDoubleClicked(const QModelIndex &index);
+  void OnCurrentChanged(const QModelIndex &current, const QModelIndex &previous);
   void OnHoverTimerFired();
   void OnScrollIdle();
 
  private:
   void SetupTable();
-  void PopulateRow(int row, const DisplayResultItem &item);
 
-  std::vector<DisplayResultItem> current_items_;
+  SearchTableModel *model_ = nullptr;
   HoverPreviewPopup *hover_popup_ = nullptr;
   QTimer *hover_timer_ = nullptr;
   QTimer *scroll_timer_ = nullptr;

@@ -1,32 +1,19 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Use of this source code is governed by an Apache-2.0 license.
+
 #include "gui/result_view.h"
 
-#include <QDateTime>
-#include <QFileInfo>
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QScrollBar>
-#include <QTableWidgetItem>
-
-#include "gui/i18n.h"
-#include "gui/icon_provider.h"
 
 namespace soeasy {
 namespace gui {
 
-namespace {
+ResultView::ResultView(QWidget *parent) : QTableView(parent) {
+  model_ = new SearchTableModel(this);
+  setModel(model_);
 
-QString FormatFileSize(uint64_t bytes) {
-  if (bytes < 1024) {
-    return QString("%1 B").arg(bytes);
-  }
-  if (bytes < 1024 * 1024) {
-    return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
-  }
-  return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 2);
-}
-
-}  // namespace
-
-ResultView::ResultView(QWidget *parent) : QTableWidget(parent) {
   SetupTable();
 
   hover_popup_ = new HoverPreviewPopup(this);
@@ -36,18 +23,15 @@ ResultView::ResultView(QWidget *parent) : QTableWidget(parent) {
 }
 
 void ResultView::SetupTable() {
-  setColumnCount(6);
-  RetranslateUi();
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColIndex, QHeaderView::Fixed);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColFileName, QHeaderView::Interactive);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColPath, QHeaderView::Stretch);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColSize, QHeaderView::ResizeToContents);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColMtime, QHeaderView::ResizeToContents);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColScore, QHeaderView::ResizeToContents);
 
-  horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-  horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
-  horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-  horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-  horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
-  horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
-
-  setColumnWidth(0, 52);
-  setColumnWidth(1, 260);
+  setColumnWidth(SearchTableModel::kColIndex, 52);
+  setColumnWidth(SearchTableModel::kColFileName, 260);
   verticalHeader()->setVisible(false);
   verticalHeader()->setDefaultSectionSize(34);
   setIconSize(QSize(18, 18));
@@ -60,7 +44,7 @@ void ResultView::SetupTable() {
   setMouseTracking(true);
 
   setStyleSheet(
-      "QTableWidget {"
+      "QTableView {"
       "  font-size: 13px;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
@@ -70,12 +54,12 @@ void ResultView::SetupTable() {
       "  selection-color: #0369A1;"
       "  outline: none;"
       "}"
-      "QTableWidget::item {"
+      "QTableView::item {"
       "  padding-left: 8px;"
       "  padding-right: 8px;"
       "  border: none;"
       "}"
-      "QTableWidget::item:hover {"
+      "QTableView::item:hover {"
       "  background-color: #F1F5F9;"
       "}"
       "QHeaderView::section {"
@@ -130,13 +114,11 @@ void ResultView::SetupTable() {
       "  background: transparent;"
       "}");
 
-  connect(this, &QTableWidget::cellDoubleClicked, this, &ResultView::OnItemDoubleClicked);
-  connect(this, &QTableWidget::currentCellChanged, this, [this](int currentRow, int, int, int) {
-    if (currentRow >= 0 && currentRow < static_cast<int>(current_items_.size())) {
-      const auto &it = current_items_[currentRow];
-      emit FileSelected(it.doc_id, it.file_name, it.file_path);
-    }
-  });
+  connect(this, &QTableView::doubleClicked, this, &ResultView::OnDoubleClicked);
+
+  if (selectionModel()) {
+    connect(selectionModel(), &QItemSelectionModel::currentChanged, this, &ResultView::OnCurrentChanged);
+  }
 
   // Viewport scroll lazy loading
   scroll_timer_ = new QTimer(this);
@@ -152,6 +134,27 @@ void ResultView::SetupTable() {
       emit LoadMoreRequested();
     }
   });
+}
+
+void ResultView::OnDoubleClicked(const QModelIndex &index) {
+  hover_popup_->HidePopup();
+  hover_timer_->stop();
+
+  if (index.isValid() && model_) {
+    const auto *it = model_->GetItem(index.row());
+    if (it) {
+      emit FileOpenRequested(it->doc_id, it->file_name, it->file_path);
+    }
+  }
+}
+
+void ResultView::OnCurrentChanged(const QModelIndex &current, const QModelIndex & /*previous*/) {
+  if (current.isValid() && model_) {
+    const auto *it = model_->GetItem(current.row());
+    if (it) {
+      emit FileSelected(it->doc_id, it->file_name, it->file_path);
+    }
+  }
 }
 
 void ResultView::SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage) {
@@ -172,118 +175,77 @@ void ResultView::ClearResults() {
     scroll_timer_->stop();
   }
   hover_row_ = -1;
-  current_items_.clear();
-  setRowCount(0);
+  if (model_) {
+    model_->ClearResults();
+  }
 }
 
 void ResultView::OnScrollIdle() {
-  if (current_items_.empty() || !storage_ || current_query_.isEmpty()) {
+  if (!model_ || model_->items().empty() || !storage_ || current_query_.isEmpty()) {
     return;
   }
   int top_row = rowAt(4);
   int bottom_row = rowAt(viewport()->height() - 4);
   if (top_row < 0) top_row = 0;
-  if (bottom_row < 0) bottom_row = static_cast<int>(current_items_.size()) - 1;
+  if (bottom_row < 0) bottom_row = model_->rowCount() - 1;
 
   int start_row = std::max(0, top_row - 2);
-  int end_row = std::min(static_cast<int>(current_items_.size()) - 1, bottom_row + 2);
+  int end_row = std::min(model_->rowCount() - 1, bottom_row + 2);
   EnsureSnippetForRows(start_row, end_row);
 }
 
 void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
-  if (!storage_ || current_query_.isEmpty() || current_items_.empty()) {
+  if (!model_ || !storage_ || current_query_.isEmpty() || model_->items().empty()) {
     return;
   }
   start_row = std::max(0, start_row);
-  end_row = std::min(static_cast<int>(current_items_.size()) - 1, end_row);
+  end_row = std::min(model_->rowCount() - 1, end_row);
 
   auto keywords = storage::StorageEngine::ExtractKeywordsFromQuery(current_query_.toStdString());
   if (keywords.empty()) return;
 
   for (int r = start_row; r <= end_row; ++r) {
-    auto &item = current_items_[r];
-    if (item.has_body_snippet) continue;
+    auto *item = model_->GetItemMutable(r);
+    if (!item || item->has_body_snippet) continue;
 
-    auto it = snippet_lru_cache_.find(item.doc_id);
+    auto it = snippet_lru_cache_.find(item->doc_id);
     if (it != snippet_lru_cache_.end()) {
-      item.snippet_html = QString::fromStdString(it->second);
-      item.has_body_snippet = true;
+      item->snippet_html = QString::fromStdString(it->second);
+      item->has_body_snippet = true;
       continue;
     }
 
     std::string full_text;
-    if (storage_->GetDocumentContent(item.doc_id, &full_text) && !full_text.empty()) {
+    if (storage_->GetDocumentContent(item->doc_id, &full_text) && !full_text.empty()) {
       std::string snip = storage::StorageEngine::GenerateSnippet(full_text, keywords, 140);
       if (!snip.empty()) {
         if (snippet_lru_cache_.size() >= 300) {
           snippet_lru_cache_.erase(snippet_lru_cache_.begin());
         }
-        snippet_lru_cache_[item.doc_id] = snip;
-        item.snippet_html = QString::fromStdString(snip);
-        item.has_body_snippet = true;
+        snippet_lru_cache_[item->doc_id] = snip;
+        item->snippet_html = QString::fromStdString(snip);
+        item->has_body_snippet = true;
       }
     }
   }
 }
 
-void ResultView::PopulateRow(int row, const DisplayResultItem &it) {
-  auto *seq_item = new QTableWidgetItem(QString::number(row + 1));
-  seq_item->setTextAlignment(Qt::AlignCenter);
-  seq_item->setForeground(QColor("#94A3B8"));
-
-  QFileInfo fi(it.file_path);
-  QString ext = it.ext.isEmpty() ? fi.suffix() : it.ext;
-
-  auto *name_item = new QTableWidgetItem(it.file_name);
-  name_item->setIcon(IconProvider::GetFileIcon(ext));
-
-  auto *path_item = new QTableWidgetItem(fi.absolutePath());
-  path_item->setForeground(QColor("#64748B"));
-
-  auto *size_item = new QTableWidgetItem(FormatFileSize(it.file_size));
-  size_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-  QString date_str = QDateTime::fromSecsSinceEpoch(it.mtime).toString("yyyy-MM-dd hh:mm");
-  auto *date_item = new QTableWidgetItem(date_str);
-  date_item->setTextAlignment(Qt::AlignCenter);
-
-  auto *score_item = new QTableWidgetItem(QString::number(it.score, 'f', 2));
-  score_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-  setItem(row, 0, seq_item);
-  setItem(row, 1, name_item);
-  setItem(row, 2, path_item);
-  setItem(row, 3, size_item);
-  setItem(row, 4, date_item);
-  setItem(row, 5, score_item);
-}
-
 void ResultView::SetResults(const std::vector<DisplayResultItem> &items) {
   ClearResults();
-  current_items_ = items;
-  setRowCount(static_cast<int>(items.size()));
-
-  for (size_t i = 0; i < items.size(); ++i) {
-    PopulateRow(static_cast<int>(i), items[i]);
+  if (model_) {
+    model_->SetResults(items);
   }
 }
 
 void ResultView::AppendResults(const std::vector<DisplayResultItem> &items) {
-  if (items.empty()) {
+  if (items.empty() || !model_) {
     return;
   }
-  int old_count = static_cast<int>(current_items_.size());
-  current_items_.insert(current_items_.end(), items.begin(), items.end());
-  setRowCount(static_cast<int>(current_items_.size()));
-
-  for (size_t i = 0; i < items.size(); ++i) {
-    int row = old_count + static_cast<int>(i);
-    PopulateRow(row, items[i]);
-  }
+  model_->AppendResults(items);
 }
 
 void ResultView::mouseMoveEvent(QMouseEvent *event) {
-  QTableWidget::mouseMoveEvent(event);
+  QTableView::mouseMoveEvent(event);
 
   int row = rowAt(event->pos().y());
   if (row != hover_row_) {
@@ -291,7 +253,7 @@ void ResultView::mouseMoveEvent(QMouseEvent *event) {
     hover_row_ = row;
     hover_pos_ = event->globalPos();
 
-    if (hover_row_ >= 0 && hover_row_ < static_cast<int>(current_items_.size())) {
+    if (model_ && hover_row_ >= 0 && hover_row_ < model_->rowCount()) {
       hover_timer_->start(150);  // 150ms hover delay
     } else {
       hover_timer_->stop();
@@ -300,47 +262,42 @@ void ResultView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void ResultView::leaveEvent(QEvent *event) {
-  QTableWidget::leaveEvent(event);
+  QTableView::leaveEvent(event);
   hover_popup_->HidePopup();
   hover_timer_->stop();
   hover_row_ = -1;
 }
 
 void ResultView::OnHoverTimerFired() {
-  if (hover_row_ >= 0 && hover_row_ < static_cast<int>(current_items_.size())) {
+  if (model_ && hover_row_ >= 0 && hover_row_ < model_->rowCount()) {
     EnsureSnippetForRows(hover_row_, hover_row_);
-    const auto &it = current_items_[hover_row_];
-    hover_popup_->ShowSnippet(hover_pos_, it.file_name, it.file_path, it.snippet_html, it.file_size, it.mtime,
-                              it.score);
+    const auto *it = model_->GetItem(hover_row_);
+    if (it) {
+      hover_popup_->ShowSnippet(hover_pos_, it->file_name, it->file_path, it->snippet_html, it->file_size, it->mtime,
+                                it->score);
+    }
   }
 }
 
-void ResultView::OnItemDoubleClicked(int row, int /*column*/) {
-  hover_popup_->HidePopup();
-  hover_timer_->stop();
-
-  if (row >= 0 && row < static_cast<int>(current_items_.size())) {
-    const auto &it = current_items_[row];
-    emit FileOpenRequested(it.doc_id, it.file_name, it.file_path);
+std::unique_ptr<ResultView::CompatItemProxy> ResultView::item(int row, int col) const {
+  if (!model_ || row < 0 || row >= model_->rowCount()) {
+    return nullptr;
   }
+  QString text = model_->data(model_->index(row, col), Qt::DisplayRole).toString();
+  return std::make_unique<CompatItemProxy>(CompatItemProxy{text});
+}
+
+std::unique_ptr<ResultView::CompatItemProxy> ResultView::horizontalHeaderItem(int section) const {
+  if (!model_ || section < 0 || section >= model_->columnCount()) {
+    return nullptr;
+  }
+  QString text = model_->headerData(section, Qt::Horizontal, Qt::DisplayRole).toString();
+  return std::make_unique<CompatItemProxy>(CompatItemProxy{text});
 }
 
 void ResultView::RetranslateUi() {
-  QStringList headers;
-  headers << Tr("th_id") << Tr("th_filename") << Tr("th_path") << Tr("th_size") << Tr("th_mtime") << Tr("th_score");
-  setHorizontalHeaderLabels(headers);
-
-  if (auto *item = horizontalHeaderItem(0)) {
-    item->setTextAlignment(Qt::AlignCenter);
-  }
-  if (auto *item = horizontalHeaderItem(3)) {
-    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-  }
-  if (auto *item = horizontalHeaderItem(4)) {
-    item->setTextAlignment(Qt::AlignCenter);
-  }
-  if (auto *item = horizontalHeaderItem(5)) {
-    item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  if (model_) {
+    model_->RetranslateUi();
   }
 }
 
