@@ -408,6 +408,7 @@ int main(int argc, char *argv[]) {
 
   std::ifstream log_ifs(dt_log_file);
   std::string log_content((std::istreambuf_iterator<char>(log_ifs)), std::istreambuf_iterator<char>());
+  log_ifs.close();
   CHECK(log_content.find("[DocToText Session Started]") != std::string::npos);
   std::string lower_log = log_content;
   std::transform(lower_log.begin(), lower_log.end(), lower_log.begin(), ::tolower);
@@ -418,8 +419,10 @@ int main(int argc, char *argv[]) {
   // Cleanup
   worker_guard.reset();
   storage->Close();
+  storage.reset();
 
-  std::filesystem::remove_all(test_dir);
+  std::error_code ec;
+  std::filesystem::remove_all(test_dir, ec);
   std::remove(test_db.c_str());
   std::remove((test_db + "-wal").c_str());
   std::remove((test_db + "-shm").c_str());
