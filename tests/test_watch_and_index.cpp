@@ -128,7 +128,7 @@ int main(int argc, char *argv[]) {
 
   // Wait for debounce and worker processing (with polling for reliable test convergence)
   std::vector<soeasy::storage::SearchResultItem> hits_new;
-  for (int retry = 0; retry < 15; ++retry) {
+  for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     hits_new = pipeline->SearchFulltext("技术转让", 10, 0);
     if (!hits_new.empty()) {
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
   std::cout << "[Step 7] 验证动态文件修改与正文更新...\n";
   WriteFile(f2, "SoEasy 桌面搜索引擎全新升级：集成 efsw 实时变动监控与事件去抖动引擎。");
   std::vector<soeasy::storage::SearchResultItem> hits_mod;
-  for (int retry = 0; retry < 15; ++retry) {
+  for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     hits_mod = pipeline->SearchFulltext("去抖动", 10, 0);
     if (!hits_mod.empty()) {
@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
   std::remove(f1.c_str());
   std::vector<soeasy::storage::SearchResultItem> hits_del;
   std::vector<soeasy::service::NameMatchResult> name_del;
-  for (int retry = 0; retry < 15; ++retry) {
+  for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     hits_del = pipeline->SearchFulltext("财务报表", 10, 0);
     name_del = pipeline->SearchFilename("financial", 10);

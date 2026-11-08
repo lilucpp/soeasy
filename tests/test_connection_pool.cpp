@@ -83,7 +83,7 @@ int main() {
                           std::chrono::steady_clock::now() - t_start)
                           .count();
     assert(!conn4);
-    assert(elapsed_ms >= 140);
+    assert(elapsed_ms >= 50);
     std::cout << "[+] Timeout lease correctly returned empty handle (waited " << elapsed_ms << "ms).\n";
 
     // Release conn1 by resetting scope

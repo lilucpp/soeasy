@@ -107,9 +107,13 @@ int main(int argc, char *argv[]) {
   WriteFile(file3, "动态生成的新文件，用于验证实时文件监控日志输出。");
 
   // 等待去抖动与自动索引
-  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  std::vector<soeasy::storage::SearchResultItem> hits3;
+  for (int retry = 0; retry < 40; ++retry) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    hits3 = pipeline->SearchFulltext("动态生成", 10);
+    if (!hits3.empty()) break;
+  }
 
-  auto hits3 = pipeline->SearchFulltext("动态生成", 10);
   assert(!hits3.empty() && "Live added file should be indexed");
   std::cout << "  [+] 实时监控感知并索引新文件: " << hits3[0].file_name << "\n\n";
 

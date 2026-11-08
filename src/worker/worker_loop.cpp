@@ -164,6 +164,7 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
 
   while (true) {
     DWORD bytes_avail = 0;
+    int idle_counter = 0;
     while (true) {
       if (!PeekNamedPipe(pipe_handle, NULL, 0, NULL, &bytes_avail, NULL)) {
         return 0;
@@ -171,8 +172,11 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
       if (bytes_avail > 0) {
         break;
       }
-      registry.CheckIdleUnload(60.0);
-      Sleep(1000);
+      if (++idle_counter >= 500) {
+        idle_counter = 0;
+        registry.CheckIdleUnload(60.0);
+      }
+      Sleep(2);
     }
 
     try {
