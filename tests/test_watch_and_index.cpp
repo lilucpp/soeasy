@@ -245,10 +245,17 @@ int main(int argc, char *argv[]) {
 
   WriteFile(f_work, "工作例会备忘录：关于下季度核心技术研发规划。");
   WriteFile(f_personal, "私人生活备忘录：关于周末家庭聚餐规划。");
-  std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
-  // Search constrained to work directory
-  auto scoped_hits = pipeline->SearchFulltext("备忘录", 10, 0, /*path_prefix=*/test_dir + "/work");
+  // Search constrained to work directory with retry loop for reliable test convergence
+  std::vector<soeasy::storage::SearchResultItem> scoped_hits;
+  for (int retry = 0; retry < 50; ++retry) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pipeline->FlushWriteQueue();
+    scoped_hits = pipeline->SearchFulltext("备忘录", 10, 0, /*path_prefix=*/test_dir + "/work");
+    if (scoped_hits.size() == 1) {
+      break;
+    }
+  }
   if (scoped_hits.size() != 1 ||
       (scoped_hits[0].file_path.find("/work/") == std::string::npos &&
        scoped_hits[0].file_path.find("\\work\\") == std::string::npos &&

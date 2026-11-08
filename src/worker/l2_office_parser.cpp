@@ -173,13 +173,23 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
   std::string lower = ext;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-  // 1. Direct specialized extractors for modern OOXML spreadsheets & presentations
+  // 1. Direct specialized extractors for modern OOXML spreadsheets, presentations & PDF documents
   // (DocToText does not support XLSX/PPTX archive formats; using internal high-speed extractors)
   if (lower == "xlsx") {
     return ParseXlsx(file_path, out_utf8_text);
   }
   if (lower == "pptx") {
     return ParsePptx(file_path, out_utf8_text);
+  }
+  if (lower == "pdf") {
+    bool ok = ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
+    std::lock_guard<std::mutex> lock(g_dt_mutex);
+    if (g_dt_logging_enabled && g_dt_file_stream && g_dt_file_stream->is_open()) {
+      *g_dt_file_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower << ")\n"
+                        << "[DocToText] Extracted " << out_utf8_text->size() << " characters\n"
+                        << std::flush;
+    }
+    return ok;
   }
 
   // 2. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
