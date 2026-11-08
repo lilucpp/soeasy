@@ -144,8 +144,15 @@ jobs:
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
           ctest --test-dir build --output-on-failure --timeout 180 -j1 || {
-            echo "::error::CTest execution failed! Printing LastTest.log..."
-            cat build/Testing/Temporary/LastTest.log | grep -E "(\*\*\*|Failed|Timeout|Exception)" -A 5 -B 2 || true
+            python3 -c "
+with open('build/Testing/Temporary/LastTest.log', 'r', errors='ignore') as f:
+    lines = f.readlines()
+for i, line in enumerate(lines):
+    if any(k in line for k in ['***Failed', '***Timeout', '***Exception']):
+        snippet = ''.join(lines[max(0, i-5):min(len(lines), i+15)])
+        encoded = snippet.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+        print(f'::error title={line.strip()}::{encoded}')
+" || true
             exit 1
           }
 
