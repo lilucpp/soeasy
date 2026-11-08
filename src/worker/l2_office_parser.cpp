@@ -663,5 +663,14 @@ std::string L2OfficeParser::UnescapeXmlEntities(const std::string &text) {
   return result;
 }
 
+bool L2OfficeParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
+  if (!out_doc) {
+    return false;
+  }
+  out_doc->is_scanned_pdf = false;
+  out_doc->page_count = 1;
+  return Parse(ctx.file_path, ctx.ext, &out_doc->utf8_text, &out_doc->is_scanned_pdf);
+}
+
 }  // namespace worker
 }  // namespace soeasy

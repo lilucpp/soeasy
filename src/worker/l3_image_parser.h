@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_set>
 
+#include "worker/idocument_parser.h"
 #include "worker/ocr/i_ocr_engine.h"
 #include "worker/ocr/image_filter.h"
 #include "worker/ocr/ocr_types.h"
@@ -15,15 +16,20 @@
 namespace soeasy {
 namespace worker {
 
-class L3ImageParser {
+class L3ImageParser : public IDocumentParser {
  public:
   explicit L3ImageParser(ocr::OcrMode mode = ocr::OcrMode::kNormal, const std::string &models_dir = "");
-  ~L3ImageParser() = default;
+  ~L3ImageParser() override = default;
 
   // Disallow copy and assign
   L3ImageParser(const L3ImageParser &) = delete;
   L3ImageParser &operator=(const L3ImageParser &) = delete;
 
+  // IDocumentParser implementation
+  bool CanHandle(const ParseContext &ctx) const override { return IsSupported(ctx.ext); }
+  bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  int Priority() const override { return 30; }
+  std::string Name() const override { return "L3ImageParser"; }
   /**
    * @brief Check if file extension is an image format handled by L3ImageParser.
    */
@@ -52,7 +58,7 @@ class L3ImageParser {
   /**
    * @brief Check and unload OCR engine if idle for specified duration to reclaim RAM.
    */
-  void CheckIdleUnload(double idle_seconds = 60.0);
+  void CheckIdleUnload(double idle_seconds = 60.0) override;
 
   /**
    * @brief Check if the OCR engine model is currently instantiated in memory.

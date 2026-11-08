@@ -272,5 +272,19 @@ bool L1TextParser::ParseFile(const std::string &file_path, const std::string &ex
   return Parse(buffer.data(), buffer.size(), ext, out_utf8_text);
 }
 
+bool L1TextParser::CanHandle(const ParseContext &ctx) const {
+  // L1 text/code parser acts as the general fallback parser in the chain
+  return !ctx.file_path.empty();
+}
+
+bool L1TextParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
+  if (!out_doc) {
+    return false;
+  }
+  out_doc->is_scanned_pdf = false;
+  out_doc->page_count = 1;
+  return ParseFile(ctx.file_path, ctx.ext, &out_doc->utf8_text);
+}
+
 }  // namespace worker
 }  // namespace soeasy

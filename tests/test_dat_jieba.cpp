@@ -1,8 +1,7 @@
 // Copyright 2026 SoEasy Team. All rights reserved.
 // Use of this source code is governed by an Apache-2.0 license.
 
-#include <sys/wait.h>
-#include <unistd.h>
+#include <reproc++/reproc.hpp>
 
 #include <atomic>
 #include <cassert>
@@ -35,7 +34,19 @@ void AssertOffsetInvariant(const std::string &sentence, const std::vector<cppjie
 
 }  // namespace
 
-int main() {
+int main(int argc, char *argv[]) {
+  // Child execution branch for crash isolation test
+  if (argc >= 3 && std::string(argv[1]) == "--child-crash") {
+    std::string dict_dir = argv[2];
+    soeasy::storage::DatJieba child_dj;
+    if (!child_dj.Init(dict_dir)) {
+      return 1;
+    }
+    std::vector<std::string> words;
+    child_dj.Cut("子进程切词测试，即将模拟异常崩溃", words, true);
+    return 42;
+  }
+
   std::cout << "========================================================================\n";
   std::cout << "   SoEasy DatJieba 底层库全方位边界、并发、容错与稳健性实证矩阵\n";
   std::cout << "========================================================================\n";
@@ -292,24 +303,24 @@ int main() {
   // [Test 6] 跨进程 mmap 映射与子进程异常崩溃隔离测试 (Crash & Leak Defense)
   // -------------------------------------------------------------------------
   std::cout << "\n[Test 6/6] 验证: 跨进程只读映射与子进程异常崩溃隔离 (Crash Isolation)...\n";
-  pid_t pid = fork();
-  if (pid == 0) {
-    // 子进程：同样使用 mmap 映射
-    soeasy::storage::DatJieba child_dj;
-    if (!child_dj.Init(dict_dir)) {
-      _exit(1);
-    }
-    std::vector<std::string> words;
-    child_dj.Cut("子进程切词测试，即将模拟异常崩溃", words, true);
-    // 模拟子进程突然发生段错误或崩溃
-    _exit(42);
+  reproc::process child_proc;
+  std::vector<std::string> child_args = {argv[0], "--child-crash", dict_dir};
+  reproc::options child_opts;
+  child_opts.redirect.out.type = reproc::redirect::discard;
+  child_opts.redirect.err.type = reproc::redirect::discard;
+
+  std::error_code child_ec = child_proc.start(child_args, child_opts);
+  if (child_ec) {
+    std::cerr << "[-] Failed to start child crash test: " << child_ec.message() << std::endl;
+    assert(false);
   }
 
-  // 父进程等待子进程退出
-  int status = 0;
-  waitpid(pid, &status, 0);
-  assert(WIFEXITED(status));
-  assert(WEXITSTATUS(status) == 42);
+  auto [exit_code, wait_ec] = child_proc.wait(reproc::milliseconds(5000));
+  if (wait_ec) {
+    std::cerr << "[-] Child crash test wait failed: " << wait_ec.message() << std::endl;
+    assert(false);
+  }
+  assert(exit_code == 42);
 
   // 验证父进程的 DatJieba 依然完好无损，底层 mmap 映射文件没有损坏
   std::vector<std::string> parent_words;

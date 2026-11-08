@@ -25,16 +25,14 @@
 #include "common/logger.h"
 #include "common/shm_pool.h"
 #include "soeasy_ipc.capnp.h"
-#include "worker/l1_text_parser.h"
-#include "worker/l2_office_parser.h"
-#include "worker/l3_image_parser.h"
+#include "worker/parser_registry.h"
 
 namespace soeasy {
 namespace worker {
 
 static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common::ShmSlotPool &shm_pool,
-                        size_t slot_capacity, L1TextParser &l1_parser, L2OfficeParser &l2_parser,
-                        L3ImageParser &l3_parser, capnp::MallocMessageBuilder &response_builder) {
+                        size_t slot_capacity, ParserRegistry &registry,
+                        capnp::MallocMessageBuilder &response_builder) {
   int64_t doc_id = request.getDocId();
   std::string file_path = request.getFilePath();
   std::string ext = request.getExt();
@@ -58,27 +56,23 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
     *null_ptr = 42;  // Trigger SIGSEGV
   }
 
-  // Parse document via L3 Image Parser / L2 Office Parser if supported, otherwise L1 Text Parser
-  std::string extracted_utf8;
-  bool is_scanned_pdf = false;
-  bool parse_ok = false;
+  // Parse document via ParserRegistry (Strategy + Responsibility Chain)
+  ParseContext ctx;
+  ctx.doc_id = doc_id;
+  ctx.file_path = file_path;
+  ctx.ext = ext;
 
+  ExtractedDocument doc;
   shm_pool.TouchHeartbeat(slot_id);
   auto parse_start = std::chrono::high_resolution_clock::now();
-  if (l3_parser.IsSupported(ext)) {
-    parse_ok = l3_parser.Parse(file_path, ext, &extracted_utf8);
-  } else if (l2_parser.IsSupported(ext)) {
-    parse_ok = l2_parser.Parse(file_path, ext, &extracted_utf8, &is_scanned_pdf);
-  } else {
-    parse_ok = l1_parser.ParseFile(file_path, ext, &extracted_utf8);
-  }
+  bool parse_ok = registry.ParseDocument(ctx, &doc);
   shm_pool.TouchHeartbeat(slot_id);
   auto parse_end = std::chrono::high_resolution_clock::now();
   double cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
   auto result = response_builder.initRoot<soeasy::ipc::ParseResult>();
   result.setDocId(doc_id);
-  result.setIsScannedPdf(is_scanned_pdf);
+  result.setIsScannedPdf(doc.is_scanned_pdf);
 
   if (!parse_ok) {
     LOG_ERROR("[Worker] Parse FAILED | file: '{}' | ext: '{}' | cost: {:.2f} ms", file_path, ext, cost_ms);
@@ -88,8 +82,8 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
     result.setMessage("Failed to parse document");
   } else {
     LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path, ext,
-             extracted_utf8.size(), cost_ms);
-    size_t text_bytes = extracted_utf8.size();
+             doc.utf8_text.size(), cost_ms);
+    size_t text_bytes = doc.utf8_text.size();
     if (text_bytes > slot_capacity) {
       // Spill to temporary file to eliminate truncation barrier
       std::error_code ec;
@@ -110,14 +104,14 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
 
       auto ofs = common::EncodingUtils::OpenOfstream(spill_path.string(), std::ios::binary);
       if (ofs.is_open()) {
-        ofs.write(extracted_utf8.data(), extracted_utf8.size());
+        ofs.write(doc.utf8_text.data(), doc.utf8_text.size());
         ofs.close();
         shm_pool.CommitWrite(slot_id, 0);
 
         result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
         result.setExtractedBytes(text_bytes);
-        result.setPageCount(1);
-        result.setIsScannedPdf(is_scanned_pdf);
+        result.setPageCount(doc.page_count > 0 ? doc.page_count : 1);
+        result.setIsScannedPdf(doc.is_scanned_pdf);
         result.setMessage("SPILL:" + spill_path.string());
         LOG_INFO("[Worker] Document exceeded slot capacity ({} > {} bytes). Spilled to '{}'", text_bytes, slot_capacity,
                  spill_path.string());
@@ -125,7 +119,7 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
         // Fallback: write up to slot_capacity if spill file creation fails
         uint8_t *slot_data = shm_pool.GetWritableSlotData(slot_id);
         if (slot_data) {
-          std::memcpy(slot_data, extracted_utf8.data(), slot_capacity);
+          std::memcpy(slot_data, doc.utf8_text.data(), slot_capacity);
           shm_pool.CommitWrite(slot_id, slot_capacity);
         }
         result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
@@ -136,7 +130,7 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
       // Write zero-copy into shared memory slot
       uint8_t *slot_data = shm_pool.GetWritableSlotData(slot_id);
       if (slot_data && text_bytes > 0) {
-        std::memcpy(slot_data, extracted_utf8.data(), text_bytes);
+        std::memcpy(slot_data, doc.utf8_text.data(), text_bytes);
         shm_pool.CommitWrite(slot_id, text_bytes);
       } else {
         shm_pool.CommitWrite(slot_id, 0);
@@ -144,23 +138,26 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
 
       result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
       result.setExtractedBytes(text_bytes);
-      result.setPageCount(1);
-      result.setIsScannedPdf(is_scanned_pdf);
+      result.setPageCount(doc.page_count > 0 ? doc.page_count : 1);
+      result.setIsScannedPdf(doc.is_scanned_pdf);
       result.setMessage("Success");
     }
   }
 }
 
 #ifdef _WIN32
-int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
+int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_count, size_t slot_capacity,
+                  ParserRegistry *custom_registry) {
   common::ShmSlotPool shm_pool;
   if (!shm_pool.Attach(shm_name, slot_count, slot_capacity)) {
     return 1;
   }
 
-  L1TextParser l1_parser;
-  L2OfficeParser l2_parser;
-  L3ImageParser l3_parser(ocr::OcrMode::kNormal);
+  std::unique_ptr<ParserRegistry> default_registry;
+  if (!custom_registry) {
+    default_registry = ParserRegistry::CreateDefaultRegistry();
+  }
+  ParserRegistry &registry = custom_registry ? *custom_registry : *default_registry;
 
   kj::HandleInputStream input_stream(pipe_handle);
   kj::HandleOutputStream output_stream(pipe_handle);
@@ -174,7 +171,7 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
       if (bytes_avail > 0) {
         break;
       }
-      l3_parser.CheckIdleUnload(60.0);
+      registry.CheckIdleUnload(60.0);
       Sleep(1000);
     }
 
@@ -183,7 +180,7 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
       auto request = reader.getRoot<soeasy::ipc::ParseRequest>();
 
       capnp::MallocMessageBuilder response_builder;
-      ProcessTask(request, shm_pool, slot_capacity, l1_parser, l2_parser, l3_parser, response_builder);
+      ProcessTask(request, shm_pool, slot_capacity, registry, response_builder);
 
       capnp::writeMessage(output_stream, response_builder);
     } catch (const kj::Exception &e) {
@@ -196,7 +193,8 @@ int RunWorkerLoop(void *pipe_handle, const std::string &shm_name, size_t slot_co
   return 0;
 }
 #else
-int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
+int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count, size_t slot_capacity,
+                  ParserRegistry *custom_registry) {
   pid_t parent_pid = getppid();
 
   common::ShmSlotPool shm_pool;
@@ -204,9 +202,11 @@ int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count,
     return 1;
   }
 
-  L1TextParser l1_parser;
-  L2OfficeParser l2_parser;
-  L3ImageParser l3_parser(ocr::OcrMode::kNormal);
+  std::unique_ptr<ParserRegistry> default_registry;
+  if (!custom_registry) {
+    default_registry = ParserRegistry::CreateDefaultRegistry();
+  }
+  ParserRegistry &registry = custom_registry ? *custom_registry : *default_registry;
 
   while (true) {
     struct pollfd pfd;
@@ -223,7 +223,7 @@ int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count,
         break;
       }
       // Timeout: periodic check to unload idle heavy models (PP-OCRv6)
-      l3_parser.CheckIdleUnload(60.0);
+      registry.CheckIdleUnload(60.0);
       continue;
     }
     if (!(pfd.revents & POLLIN)) {
@@ -235,7 +235,7 @@ int RunWorkerLoop(int socket_fd, const std::string &shm_name, size_t slot_count,
       auto request = reader.getRoot<soeasy::ipc::ParseRequest>();
 
       capnp::MallocMessageBuilder response_builder;
-      ProcessTask(request, shm_pool, slot_capacity, l1_parser, l2_parser, l3_parser, response_builder);
+      ProcessTask(request, shm_pool, slot_capacity, registry, response_builder);
 
       capnp::writeMessageToFd(socket_fd, response_builder);
     } catch (const kj::Exception &e) {

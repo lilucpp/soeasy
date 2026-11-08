@@ -3,7 +3,7 @@
 > **文档版本**: v1.0.0  
 > **状态**: Approved Baseline (已批准基线)  
 > **标准对齐**: ISO/IEC/IEEE 29148:2018 & Karl Wiegers《软件需求》（第3版）  
-> **关联文档**: [《愿景与范围说明书》](./vision_and_scope.md) | [《业务规则目录》](./business_rules.md) | [《特性跟踪矩阵》](../../TODOLIST.md)
+> **关联文档**: [《愿景与范围说明书》](./vision_and_scope.md) | [《业务规则目录》](./business_rules.md) | [《详细设计说明书 (LLD)》](../design/detailed_design_specification.md) | [《特性跟踪矩阵》](../../TODOLIST.md)
 
 ---
 

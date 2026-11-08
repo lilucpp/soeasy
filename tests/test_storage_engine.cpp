@@ -1,9 +1,11 @@
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "storage/storage_engine.h"
@@ -342,6 +344,59 @@ int main(int argc, char *argv[]) {
   }
   std::cout << "[+] IncrementalVacuum(100) 与 CheckpointWal() 验证通过!\n";
   vac_engine.Close();
+
+  // 11. Test Concurrent Long Transaction & Search Stress (Lock Reentrancy Defense)
+  std::cout << "\n[Step 11] 验证并发批事务与多线程检索竞态压力 (无死锁/重入锁防御)...\n";
+  {
+    soeasy::storage::StorageEngine stress_engine;
+    if (!stress_engine.Open(db_path, key, dict_dir)) {
+      std::cerr << "[-] stress_engine.Open 失败: " << stress_engine.GetLastError() << "\n";
+      return 1;
+    }
+
+    std::atomic<bool> stop_flag{false};
+    std::atomic<uint64_t> read_ops{0};
+
+    // 4 concurrent reader threads
+    std::vector<std::thread> readers;
+    for (int r = 0; r < 4; ++r) {
+      readers.emplace_back([&stress_engine, &stop_flag, &read_ops]() {
+        while (!stop_flag.load(std::memory_order_relaxed)) {
+          int total_hits = 0;
+          auto hits = stress_engine.Search("SoEasy", 5, 0, "", &total_hits);
+          (void)hits;
+          soeasy::storage::StorageFragmentation f;
+          stress_engine.GetFragmentation(&f);
+          read_ops.fetch_add(1, std::memory_order_relaxed);
+          std::this_thread::yield();
+        }
+      });
+    }
+
+    // 1 writer executing multiple batch transactions
+    for (int batch = 0; batch < 5; ++batch) {
+      assert(stress_engine.BeginTransaction());
+      for (int i = 0; i < 20; ++i) {
+        int64_t doc_id = 90000 + batch * 100 + i;
+        std::string fname = "stress_doc_" + std::to_string(doc_id) + ".txt";
+        std::string fpath = "/test/stress/" + fname;
+        std::string body = "SoEasy 并发压力测试正文内容与倒排索引写入验证，批次: " + std::to_string(batch);
+        bool idx_ok = stress_engine.IndexDocument(doc_id, fpath, fname, "txt", body.size(), 1700000000, 1, body);
+        assert(idx_ok);
+        (void)idx_ok;
+      }
+      assert(stress_engine.CommitTransaction());
+    }
+
+    stop_flag.store(true, std::memory_order_release);
+    for (auto &t : readers) {
+      t.join();
+    }
+
+    std::cout << "  [+] 并发压力测试通过! 5 批次写事务 + 4 读线程并发完成 " << read_ops.load()
+              << " 次查询 (零死锁/零异常)!\n";
+    stress_engine.Close();
+  }
 
   std::cout << "\n========================================================\n";
   std::cout << "🎉 所有验证项全部通过! Phase 1 存储与检索底座验证圆满成功!\n";

@@ -189,5 +189,14 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
   return true;
 }
 
+bool L3ImageParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
+  if (!out_doc) {
+    return false;
+  }
+  out_doc->is_scanned_pdf = false;
+  out_doc->page_count = 1;
+  return Parse(ctx.file_path, ctx.ext, &out_doc->utf8_text);
+}
+
 }  // namespace worker
 }  // namespace soeasy

@@ -9,17 +9,25 @@
 #include <unordered_set>
 #include <vector>
 
+#include "worker/idocument_parser.h"
+
 namespace soeasy {
 namespace worker {
 
-class L2OfficeParser {
+class L2OfficeParser : public IDocumentParser {
  public:
   L2OfficeParser();
-  ~L2OfficeParser() = default;
+  ~L2OfficeParser() override = default;
 
   // Disallow copy and assign
   L2OfficeParser(const L2OfficeParser &) = delete;
   L2OfficeParser &operator=(const L2OfficeParser &) = delete;
+
+  // IDocumentParser implementation
+  bool CanHandle(const ParseContext &ctx) const override { return IsSupported(ctx.ext); }
+  bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  int Priority() const override { return 20; }
+  std::string Name() const override { return "L2OfficeParser"; }
 
   /**
    * @brief Check if this extension is handled by L2OfficeParser.

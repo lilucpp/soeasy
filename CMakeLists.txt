@@ -228,6 +228,7 @@ add_library(soeasy_worker_lib STATIC
     src/worker/l1_text_parser.cpp
     src/worker/l2_office_parser.cpp
     src/worker/l3_image_parser.cpp
+    src/worker/parser_registry.cpp
     src/worker/ocr/image_filter.cpp
     src/worker/ocr/ppocr_v6_engine.cpp
     src/worker/ocr/ocr_engine_factory.cpp
@@ -418,6 +419,19 @@ if(BUILD_TESTS)
       soeasy_storage
   )
 
+  # Architecture Refactoring Test: Worker Parser Polymorphism & ParserRegistry (Stage 1)
+  add_executable(test_parser_registry
+      tests/test_parser_registry.cpp
+  )
+  target_include_directories(test_parser_registry PRIVATE
+      src
+  )
+  target_link_libraries(test_parser_registry PRIVATE
+      soeasy_worker_lib
+      soeasy_service
+      soeasy_storage
+  )
+
   # Test: spdlog Logging & Index Rebuild Verification
   add_executable(test_logging_and_rebuild
       tests/test_logging_and_rebuild.cpp
@@ -458,6 +472,7 @@ if(BUILD_TESTS)
   target_link_libraries(test_dat_jieba PRIVATE
       soeasy_storage
       soeasy_common
+      reproc++
   )
 
   # Test: System Environment & Resource Limits Optimization

@@ -5,17 +5,25 @@
 #include <string>
 #include <string_view>
 
+#include "worker/idocument_parser.h"
+
 namespace soeasy {
 namespace worker {
 
-class L1TextParser {
+class L1TextParser : public IDocumentParser {
  public:
   L1TextParser();
-  ~L1TextParser();
+  ~L1TextParser() override;
 
   // Disallow copy and assign
   L1TextParser(const L1TextParser &) = delete;
   L1TextParser &operator=(const L1TextParser &) = delete;
+
+  // IDocumentParser implementation
+  bool CanHandle(const ParseContext &ctx) const override;
+  bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  int Priority() const override { return 10; }
+  std::string Name() const override { return "L1TextParser"; }
 
   /**
    * @brief Parse a text or code document from raw bytes into normalized UTF-8 plain text.

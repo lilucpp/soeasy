@@ -107,7 +107,7 @@ class WorkerGuard {
   /**
    * @brief Initialize worker pool and shared memory pool.
    *
-   * @param worker_bin_path Absolute path to soeasy-worker binary, or empty for in-process fork
+   * @param worker_bin_path Absolute path to soeasy-worker binary, or empty to auto-resolve from executable directory
    * @param worker_count Number of worker processes to spawn
    * @param timeout_ms Max execution time allowed per document before SIGKILL
    * @param shm_slot_count Number of SHM slots

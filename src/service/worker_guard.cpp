@@ -39,6 +39,42 @@
 namespace soeasy {
 namespace service {
 
+namespace {
+
+std::string ResolveWorkerBinary(const std::string &hint_path) {
+  std::error_code ec;
+  if (!hint_path.empty() && std::filesystem::exists(hint_path, ec)) {
+    return std::filesystem::canonical(hint_path, ec).string();
+  }
+
+  // 1. Try directory containing current executable
+#ifdef _WIN32
+  char exe_buf[MAX_PATH];
+  if (GetModuleFileNameA(NULL, exe_buf, MAX_PATH) > 0) {
+    std::filesystem::path dir = std::filesystem::path(exe_buf).parent_path();
+    std::filesystem::path target = dir / "soeasy-worker.exe";
+    if (std::filesystem::exists(target, ec)) {
+      return std::filesystem::canonical(target, ec).string();
+    }
+  }
+#elif defined(__linux__)
+  char exe_buf[PATH_MAX];
+  ssize_t len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+  if (len > 0) {
+    exe_buf[len] = '\0';
+    std::filesystem::path dir = std::filesystem::path(exe_buf).parent_path();
+    std::filesystem::path target = dir / "soeasy-worker";
+    if (std::filesystem::exists(target, ec)) {
+      return std::filesystem::canonical(target, ec).string();
+    }
+  }
+#endif
+
+  return "";
+}
+
+}  // namespace
+
 WorkerGuard::WorkerGuard() = default;
 
 WorkerGuard::~WorkerGuard() {
@@ -124,7 +160,13 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
   // Sweep orphan spill files from prior crashes or reboots
   CleanupOrphanSpillFiles();
 
-  worker_bin_path_ = worker_bin_path;
+  worker_bin_path_ = ResolveWorkerBinary(worker_bin_path);
+  if (worker_bin_path_.empty()) {
+    LOG_ERROR(
+        "[WorkerGuard] Failed to locate soeasy-worker binary (hint: '{}'). Multithreaded in-process fork is prohibited.",
+        worker_bin_path);
+    return false;
+  }
   timeout_ms_ = timeout_ms;
 
   // Auto-calculate dynamic slot count: worker_count + 1
@@ -182,15 +224,8 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     return false;
   }
 
-  std::string target_bin = worker_bin_path_;
-  if (target_bin.empty()) {
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    target_bin = exe_path;
-  }
-
   std::vector<std::string> args = {
-      target_bin,
+      worker_bin_path_,
       "--pipe-name=" + pipe_name,
       "--shm-name=" + shm_pool_.shm_name(),
       "--slot-count=" + std::to_string(shm_pool_.slot_count()),
@@ -280,56 +315,24 @@ bool WorkerGuard::SpawnWorker(size_t index) {
 
   auto proc = std::make_unique<reproc::process>();
 
-  if (worker_bin_path_.empty()) {
-    // In-process child execution mode via reproc::process::fork()
-    auto [is_child, ec] = proc->fork(opts);
-    if (ec) {
-      LOG_ERROR("[WorkerGuard] reproc fork failed for worker {}: {}", index, ec.message());
-      close(listen_fd);
-      return false;
-    }
+  std::vector<std::string> args = {
+      worker_bin_path_,
+      "--socket-name=" + sock_name,
+      "--shm-name=" + shm_pool_.shm_name(),
+      "--slot-count=" + std::to_string(shm_pool_.slot_count()),
+      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
+      "--log-level=" + log_level_,
+      log_console_ ? "--log-console" : "--no-log-console",
+      log_sync_ ? "--log-sync" : "--no-log-sync",
+      doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
+      "--doctotext-log-path=" + doctotext_log_path_,
+      embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
 
-    if (is_child) {
-      // Child process branch
-      close(listen_fd);
-
-      int sock = socket(AF_UNIX, SOCK_STREAM, 0);
-      if (sock >= 0) {
-        if (connect(sock, reinterpret_cast<struct sockaddr *>(&addr), addr_len) == 0) {
-          common::Logger::SetLevel(log_level_);
-          common::Logger::SetConsoleEnabled(log_console_);
-          common::Logger::SetSyncMode(log_sync_);
-          worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
-          worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr_);
-          int ret = worker::RunWorkerLoop(sock, shm_pool_.shm_name(), shm_pool_.slot_count(), shm_pool_.slot_capacity());
-          close(sock);
-          _exit(ret);
-        }
-        close(sock);
-      }
-      _exit(1);
-    }
-  } else {
-    // Exec standalone binary mode via reproc::process::start()
-    std::vector<std::string> args = {
-        worker_bin_path_,
-        "--socket-name=" + sock_name,
-        "--shm-name=" + shm_pool_.shm_name(),
-        "--slot-count=" + std::to_string(shm_pool_.slot_count()),
-        "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
-        "--log-level=" + log_level_,
-        log_console_ ? "--log-console" : "--no-log-console",
-        log_sync_ ? "--log-sync" : "--no-log-sync",
-        doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
-        "--doctotext-log-path=" + doctotext_log_path_,
-        embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
-
-    std::error_code ec = proc->start(args, opts);
-    if (ec) {
-      LOG_ERROR("[WorkerGuard] Failed to start worker binary {}: {}", index, ec.message());
-      close(listen_fd);
-      return false;
-    }
+  std::error_code ec = proc->start(args, opts);
+  if (ec) {
+    LOG_ERROR("[WorkerGuard] Failed to start worker binary {}: {}", index, ec.message());
+    close(listen_fd);
+    return false;
   }
 
   // Parent process: wait for child to connect with timeout
@@ -791,12 +794,6 @@ void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_consol
   doctotext_logging_ = doctotext_logging;
   doctotext_log_path_ = doctotext_log_path;
   embedded_image_ocr_ = embedded_image_ocr;
-
-  // In in-process mode, apply directly
-  if (worker_bin_path_.empty()) {
-    worker::L2OfficeParser::SetLogging(doctotext_logging_, doctotext_log_path_);
-    worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr_);
-  }
 
   if (changed) {
     // Respawn idle workers with new arguments

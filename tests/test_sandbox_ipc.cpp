@@ -10,6 +10,7 @@
 
 #include "common/shm_pool.h"
 #include "service/worker_guard.h"
+#include "test_helper.h"
 #include "worker/l1_text_parser.h"
 
 namespace {
@@ -32,7 +33,8 @@ int main(int argc, char *argv[]) {
   // Initialize WorkerGuard with 2 workers, 1500ms timeout for tests, dynamic slots (2+1 = 3 slots), 2MB capacity
   std::cout << "[Step 1] 初始化 Worker 进程池与动态共享内存池 (2 workers -> 3 slots x 2MB = 6MB)...\n";
   auto t0 = std::chrono::high_resolution_clock::now();
-  bool init_ok = guard.Init(/*worker_bin_path=*/"", /*worker_count=*/2,
+  std::string worker_bin = soeasy::test::FindWorkerBin();
+  bool init_ok = guard.Init(worker_bin, /*worker_count=*/2,
                             /*timeout_ms=*/1500, /*shm_slot_count=*/0,
                             /*shm_slot_capacity=*/0);
   auto t1 = std::chrono::high_resolution_clock::now();
@@ -137,7 +139,7 @@ int main(int argc, char *argv[]) {
   std::cout << "[Step 4] 验证死循环文档超时熔断强杀与自愈 (Watchdog SIGKILL)...\n";
   std::cout << "    (向 Worker 下发死循环恶意任务，设定熔断阈值: 1500 ms)...\n";
   std::string hang_doc_path = (std::filesystem::temp_directory_path() / "TEST_TRIGGER_HANG_malicious.txt").string();
-  soeasy::service::ParseTask task_hang{103, hang_doc_path, "txt", 1};
+  soeasy::service::ParseTask task_hang{103, hang_doc_path, "txt", 1, 1500};
   soeasy::service::ParseTaskResult res_hang;
 
   auto t_hang_start = std::chrono::high_resolution_clock::now();
