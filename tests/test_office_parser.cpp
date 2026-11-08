@@ -166,8 +166,8 @@ int main(int argc, char *argv[]) {
   std::cout << "   DocToText (lithiumFlower) + OOXML + PDF + 扫描件识别 + 沙箱与检索\n";
   std::cout << "========================================================\n\n";
 
-  const std::string test_dir = "/tmp/soeasy_phase5_test";
-  const std::string test_db = "/tmp/soeasy_phase5_test.db";
+  const std::string test_dir = soeasy::test::GetTestTempPath("soeasy_phase5_test").string();
+  const std::string test_db = soeasy::test::GetTestTempPath("soeasy_phase5_test.db").string();
   const std::string passphrase = "SoEasy_Phase5_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 

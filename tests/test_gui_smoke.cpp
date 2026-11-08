@@ -55,8 +55,8 @@ int main(int argc, char *argv[]) {
   std::cout << "   SearchBar + SettingsDialog + HoverPopup + Preview + MainWindow\n";
   std::cout << "========================================================\n\n";
 
-  const std::string test_dir = "/tmp/soeasy_gui_test";
-  const std::string test_db = "/tmp/soeasy_gui_test.db";
+  const std::string test_dir = soeasy::test::GetTestTempPath("soeasy_gui_test").string();
+  const std::string test_db = soeasy::test::GetTestTempPath("soeasy_gui_test.db").string();
   const std::string passphrase = "SoEasy_Phase4_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 
@@ -109,7 +109,7 @@ int main(int argc, char *argv[]) {
   {
     auto config = std::make_shared<soeasy::service::IndexConfig>();
     size_t default_pats_count = config->GetExcludedPatterns().size();
-    config->AddIndexedDirectory("/tmp/soeasy_gui_test");
+    config->AddIndexedDirectory(test_dir);
     config->AddExcludedPattern(".custom_cache_dir");
 
     soeasy::gui::SettingsDialog dlg(config);
@@ -168,12 +168,12 @@ int main(int argc, char *argv[]) {
       }
       app.processEvents();
       QPixmap pix = dlg_en.grab();
-      bool ok = pix.save("/tmp/soeasy_settings_dlg_en.png");
+      bool ok = pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_en.png").string()));
       std::cout << "  -> dlg_en save ok: " << ok << ", isNull: " << pix.isNull() << ", size: " << pix.width() << "x"
                 << pix.height() << "\n";
     }
 
-    std::string test_cfg_file = "/tmp/soeasy_i18n_test_config.json";
+    std::string test_cfg_file = soeasy::test::GetTestTempPath("soeasy_i18n_test_config.json").string();
     CHECK(config->SaveToFile(test_cfg_file));
 
     auto loaded_cfg = std::make_shared<soeasy::service::IndexConfig>();
@@ -199,7 +199,7 @@ int main(int argc, char *argv[]) {
       }
       app.processEvents();
       QPixmap pix = dlg_zh.grab();
-      pix.save("/tmp/soeasy_settings_dlg_zh.png");
+      pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_zh.png").string()));
     }
 
     std::cout << "  -> 中英双语即时翻译、文件格式说明、配置持久化与切换验证完全通过!\n";
@@ -211,7 +211,7 @@ int main(int argc, char *argv[]) {
   std::cout << "\n[Step 3] 测试 HoverPreviewPopup 悬浮摘要卡片渲染...\n";
   {
     soeasy::gui::HoverPreviewPopup popup;
-    popup.ShowSnippet(QPoint(100, 100), "深度学习笔记.md", "/tmp/soeasy_gui_test/深度学习笔记.md",
+    popup.ShowSnippet(QPoint(100, 100), "深度学习笔记.md", QString::fromStdString(test_dir + "/深度学习笔记.md"),
                       "这里是正文摘要: <mark>深度学习</mark> 是机器学习的核心分支...", 1024, 1700000000, 0.95);
 
     CHECK(popup.isVisible());

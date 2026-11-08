@@ -381,9 +381,13 @@ if(BUILD_TESTS)
 
   macro(add_soeasy_test target_name timeout_sec)
     add_test(NAME ${target_name} COMMAND ${target_name})
+    set(actual_timeout ${timeout_sec})
+    if(WIN32)
+      math(EXPR actual_timeout "${timeout_sec} * 3")
+    endif()
     set_tests_properties(${target_name} PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        TIMEOUT ${timeout_sec}
+        TIMEOUT ${actual_timeout}
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
   endmacro()

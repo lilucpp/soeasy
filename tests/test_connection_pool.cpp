@@ -21,7 +21,7 @@ int main() {
   std::cout << "   SoEasy Reader Connection Pool & WAL Dual-Channel Test\n";
   std::cout << "========================================================\n\n";
 
-  const std::string db_path = "/tmp/soeasy_test_reader_pool.db";
+  const std::string db_path = soeasy::test::GetTestTempPath("soeasy_test_reader_pool.db").string();
   const std::string key = "Pool_Secret_Key_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 

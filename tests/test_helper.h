@@ -37,6 +37,13 @@ inline std::filesystem::path GetExecutableDir() {
 }
 #endif
 
+inline std::filesystem::path GetTestTempPath(const std::string &sub_name = "") {
+  if (sub_name.empty()) {
+    return std::filesystem::temp_directory_path();
+  }
+  return std::filesystem::temp_directory_path() / sub_name;
+}
+
 inline std::filesystem::path GetProjectRootDir() {
 #ifdef SOEASY_PROJECT_ROOT_DIR
   if (std::filesystem::exists(std::filesystem::path(SOEASY_PROJECT_ROOT_DIR) / "CMakeLists.txt")) {

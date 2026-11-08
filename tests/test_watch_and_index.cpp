@@ -30,8 +30,8 @@ int main(int argc, char *argv[]) {
   std::cout << "   efsw 跨平台监控 + 去抖动流水线 + 内存文件名秒搜 + 范围限定\n";
   std::cout << "========================================================\n\n";
 
-  const std::string test_dir = "/tmp/soeasy_watch_test";
-  const std::string test_db = "/tmp/soeasy_phase3_test.db";
+  const std::string test_dir = soeasy::test::GetTestTempPath("soeasy_watch_test").string();
+  const std::string test_db = soeasy::test::GetTestTempPath("soeasy_phase3_test.db").string();
   const std::string passphrase = "SoEasy_Phase3_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 

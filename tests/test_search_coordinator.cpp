@@ -19,7 +19,7 @@ int main() {
   std::cout << "   SoEasy SearchCoordinator CQRS Query-Side Unit Test\n";
   std::cout << "========================================================\n\n";
 
-  const std::string db_path = "/tmp/soeasy_test_search_coordinator.db";
+  const std::string db_path = soeasy::test::GetTestTempPath("soeasy_test_search_coordinator.db").string();
   const std::string key = "Coordinator_Secret_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 

@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
   std::cout << "   SQLite3MC (AES-128, kdf_iter=1) + FTS5 (Jieba) + Zstd\n";
   std::cout << "========================================================\n\n";
 
-  const std::string db_path = "/tmp/soeasy_demo_encrypted.db";
+  const std::string db_path = soeasy::test::GetTestTempPath("soeasy_demo_encrypted.db").string();
   const std::string key = "SoEasy_TopSecret_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 

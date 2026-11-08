@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
   // [Test 1] 畸形、破损、截断与非法二进制 DAT 文件防御测试
   // -------------------------------------------------------------------------
   std::cout << "\n[Test 1/6] 验证: 畸形、破损与截断 DAT 二进制文件容错防御...\n";
-  std::string temp_corrupt_dir = "/tmp/soeasy_corrupt_dict";
+  std::string temp_corrupt_dir = soeasy::test::GetTestTempPath("soeasy_corrupt_dict").string();
   std::filesystem::create_directories(temp_corrupt_dir);
 
   // 1.1 空文件 (0 字节)

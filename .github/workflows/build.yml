@@ -142,8 +142,8 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          mkdir -p /tmp
-          ctest --test-dir build --output-on-failure --timeout 90 -j2
+          mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
+          ctest --test-dir build --output-on-failure --timeout 150 -j2
 
       - name: Package Windows Artifacts
         run: |

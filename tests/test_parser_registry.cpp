@@ -54,7 +54,7 @@ void TestPrioritySortingAndChainDispatch() {
 
   // 1. Dispatch archive file -> should hit MockArchiveParser (Priority 25)
   soeasy::worker::ParseContext zip_ctx;
-  zip_ctx.file_path = "/tmp/test.zip";
+  zip_ctx.file_path = soeasy::test::GetTestTempPath("test.zip").string();
   zip_ctx.ext = "zip";
   soeasy::worker::ExtractedDocument zip_doc;
 
@@ -65,7 +65,7 @@ void TestPrioritySortingAndChainDispatch() {
   std::cout << "  • MockArchiveParser 命中并解析成功: " << zip_doc.utf8_text << std::endl;
 
   // 2. Dispatch plain text file -> should fallback to L1TextParser (Priority 10)
-  std::string tmp_txt = "/tmp/soeasy_registry_test.txt";
+  std::string tmp_txt = soeasy::test::GetTestTempPath("soeasy_registry_test.txt").string();
   {
     std::ofstream ofs(tmp_txt);
     ofs << "Hello SoEasy Registry Polymorphism!";
@@ -112,7 +112,7 @@ void TestDefaultRegistryFactory() {
 }  // namespace
 
 int main() {
-  soeasy::common::Logger::Init("/tmp/test_parser_registry.log", 10 * 1024 * 1024, 1, false);
+  soeasy::common::Logger::Init(soeasy::test::GetTestTempPath("test_parser_registry.log").string(), 10 * 1024 * 1024, 1, false);
   std::cout << "========================================================" << std::endl;
   std::cout << "   SoEasy Worker 解析器策略责任链单元测试 (Stage 1)     " << std::endl;
   std::cout << "========================================================" << std::endl;

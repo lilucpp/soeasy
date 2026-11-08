@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
   std::cout << "   (10,000 ~ 50,000 命中压测 | 滚动帧率 | 内存泄露与稳定性)\n";
   std::cout << "=================================================================\n\n";
 
-  const std::string db_path = "/tmp/soeasy_perf_test_storage.db";
+  const std::string db_path = soeasy::test::GetTestTempPath("soeasy_perf_test_storage.db").string();
   const std::string key = "PerfTestPassphrase2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
   std::remove(db_path.c_str());

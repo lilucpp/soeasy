@@ -39,9 +39,9 @@ int main(int argc, char *argv[]) {
   std::cout << "   - 全盘索引清空与增量重建验证\n";
   std::cout << "========================================================\n\n";
 
-  const std::string test_dir = "/tmp/soeasy_log_rebuild_test";
-  const std::string test_log = "/tmp/soeasy_log_rebuild_test/logs/test_rolling.log";
-  const std::string test_db = "/tmp/soeasy_log_rebuild_test/test_index.db";
+  const std::string test_dir = soeasy::test::GetTestTempPath("soeasy_log_rebuild_test").string();
+  const std::string test_log = (soeasy::test::GetTestTempPath("soeasy_log_rebuild_test") / "logs" / "test_rolling.log").string();
+  const std::string test_db = (soeasy::test::GetTestTempPath("soeasy_log_rebuild_test") / "test_index.db").string();
   const std::string passphrase = "SoEasy_Log_Test_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 
@@ -64,10 +64,7 @@ int main(int argc, char *argv[]) {
   }
 
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  std::string worker_bin = "./build/soeasy-worker";
-  if (!std::filesystem::exists(worker_bin)) {
-    worker_bin = "./soeasy-worker";
-  }
+  std::string worker_bin = soeasy::test::FindWorkerBin();
   if (!worker_guard->Init(worker_bin, 2, 1500)) {
     std::cerr << "[-] WorkerGuard failed to init\n";
     return 1;
