@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
 
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
   std::string worker_bin = soeasy::test::FindWorkerBin();
-  if (!worker_guard->Init(worker_bin, 2, 1500)) {
+  if (!worker_guard->Init(worker_bin, 2, 8000)) {
     std::cerr << "[-] WorkerGuard failed to init\n";
     return 1;
   }

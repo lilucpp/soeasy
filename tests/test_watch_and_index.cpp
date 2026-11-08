@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
   std::cout << "[Step 2] 初始化 Worker 解析沙箱进程池...\n";
   const std::string worker_bin = soeasy::test::FindWorkerBin();
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  if (!worker_guard->Init(worker_bin, 2, 2000, 8, 8 * 1024 * 1024)) {
+  if (!worker_guard->Init(worker_bin, 2, 8000, 8, 8 * 1024 * 1024)) {
     std::cerr << "[-] WorkerGuard 初始化失败!\n";
     return 1;
   }

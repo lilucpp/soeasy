@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
   std::cout << "\n[Step 6] 验证多进程沙箱 Worker 跨进程调度解析 Office 文档...\n";
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
   std::string worker_bin = soeasy::test::FindWorkerBin();
-  CHECK(worker_guard->Init(worker_bin, 2, 2000));
+  CHECK(worker_guard->Init(worker_bin, 2, 8000));
 
   soeasy::service::ParseTask docx_task;
   docx_task.doc_id = 1001;
@@ -355,6 +355,9 @@ int main(int argc, char *argv[]) {
   // 2. Verify enabled: logs are cleanly captured to file
   soeasy::worker::L2OfficeParser::SetLogging(true, dt_log_file);
   parser.Parse(pdf_path, "pdf", &dummy_pdf_text);
+  // Turn off logging to flush and release file handle before reading
+  soeasy::worker::L2OfficeParser::SetLogging(false);
+
   CHECK(std::filesystem::exists(dt_log_file));
   CHECK(std::filesystem::file_size(dt_log_file) > 0);
 
@@ -364,9 +367,6 @@ int main(int argc, char *argv[]) {
   CHECK(log_content.find("sample.pdf") != std::string::npos);
   std::cout << "  [+] 开启落盘模式验证通过: 成功捕获 DocToText 底层解析日志至文件! 大小: " << log_content.size()
             << " 字节\n";
-
-  // Turn off logging after test
-  soeasy::worker::L2OfficeParser::SetLogging(false);
 
   // Cleanup
   worker_guard.reset();

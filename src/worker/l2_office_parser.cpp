@@ -255,7 +255,7 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
           tmp_ifs.close();
           std::lock_guard<std::mutex> lock(g_dt_mutex);
           if (g_dt_file_stream && g_dt_file_stream->is_open()) {
-            *g_dt_file_stream << dt_logs;
+            *g_dt_file_stream << dt_logs << std::flush;
           }
         }
         std::error_code ec;

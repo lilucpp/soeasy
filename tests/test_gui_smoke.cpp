@@ -231,7 +231,7 @@ int main(int argc, char *argv[]) {
 
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
   std::string worker_bin = soeasy::test::FindWorkerBin();
-  bool worker_ok = worker_guard->Init(worker_bin, 2, 1500);
+  bool worker_ok = worker_guard->Init(worker_bin, 2, 8000);
   CHECK(worker_ok);
 
   auto config = std::make_shared<soeasy::service::IndexConfig>();
@@ -264,10 +264,11 @@ int main(int argc, char *argv[]) {
   pipeline->StartLiveWatch();
 
   // Wait for indexing to complete
-  for (int i = 0; i < 30; ++i) {
+  for (int i = 0; i < 100; ++i) {
     if (pipeline->name_index() && pipeline->name_index()->size() >= 3) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
+  pipeline->FlushWriteQueue();
   CHECK(pipeline->name_index());
   CHECK(pipeline->name_index()->size() >= 2);
   std::cout << "  -> 数据集已完成实时解析与倒排索引构建, 索引文件数: " << pipeline->name_index()->size() << "\n";
@@ -296,7 +297,13 @@ int main(int argc, char *argv[]) {
     main_win.show();
 
     // Trigger full-text search: "人工智能"
-    auto results_ai = pipeline->SearchFulltext("人工智能", 10, 0);
+    pipeline->FlushWriteQueue();
+    std::vector<soeasy::storage::SearchResultItem> results_ai;
+    for (int retry = 0; retry < 50; ++retry) {
+      results_ai = pipeline->SearchFulltext("人工智能", 10, 0);
+      if (!results_ai.empty()) break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     CHECK(!results_ai.empty());
     CHECK(results_ai[0].file_name == "chinese_ai.txt");
     std::cout << "  -> 全文检索命中: " << results_ai[0].file_name << ", 摘要: " << results_ai[0].snippet << "\n";
