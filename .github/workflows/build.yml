@@ -163,6 +163,10 @@ jobs:
             echo "================ CTest LastTest.log ================"
             cat build/Testing/Temporary/LastTest.log || true
             echo "===================================================="
+            if grep -q "test_office_parser" build/Testing/Temporary/LastTestsFailed.log 2>/dev/null; then
+              echo ">>> Diagnostic direct run of test_office_parser.exe:"
+              ./build/test_office_parser.exe || true
+            fi
             exit 1
           fi
 

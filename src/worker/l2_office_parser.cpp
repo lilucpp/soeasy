@@ -265,8 +265,17 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
     // Graceful fallback to secondary extractors
   }
 
-  // 2. Secondary / Fallback: If DocToText extraction was empty or failed, use internal extractors
-  if (out_utf8_text->empty()) {
+  bool has_meaningful_text = false;
+  for (char c : *out_utf8_text) {
+    if (!std::isspace(static_cast<unsigned char>(c))) {
+      has_meaningful_text = true;
+      break;
+    }
+  }
+
+  // 2. Secondary / Fallback: If DocToText extraction was empty or purely whitespace, use internal extractors
+  if (!has_meaningful_text) {
+    out_utf8_text->clear();
     if (lower == "docx") {
       ParseDocx(file_path, out_utf8_text);
     } else if (lower == "xlsx") {

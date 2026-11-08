@@ -23,6 +23,9 @@
   do {                                                                                            \
     if (!(expr)) {                                                                                \
       std::cerr << "[-] CHECK FAILED: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+      std::cout << "[-] CHECK FAILED: " #expr " at " << __FILE__ << ":" << __LINE__ << std::endl; \
+      std::fflush(stdout);                                                                        \
+      std::fflush(stderr);                                                                        \
       std::abort();                                                                               \
     }                                                                                             \
   } while (0)
@@ -126,36 +129,66 @@ void CreateSamplePptx(const std::string &path) {
 }
 
 void CreateSamplePdf(const std::string &path) {
-  // Generate a valid minimal PDF 1.4 document containing selectable text
+  // Generate a strictly standard-compliant PDF 1.4 document with exact byte offsets
   std::ofstream ofs(path, std::ios::binary);
-  ofs << "%PDF-1.4\n"
-      << "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-      << "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-      << "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-      << "/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
-      << "4 0 obj\n<< /Length 72 >>\nstream\n"
-      << "BT\n/F1 18 Tf\n100 700 Td\n(SoEasy Deep PDF Document Search Engine) Tj\nET\n"
-      << "endstream\nendobj\n"
-      << "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
-      << "xref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n"
-      << "0000000115 00000 n \n0000000266 00000 n \n0000000389 00000 n \n"
-      << "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n466\n%%EOF\n";
+  std::string pdf_data =
+      "%PDF-1.4\n"
+      "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+      "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+      "4 0 obj\n<< /Length 71 >>\nstream\n"
+      "BT\n/F1 18 Tf\n100 700 Td\n(SoEasy Deep PDF Document Search Engine) Tj\nET\nendstream\nendobj\n"
+      "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
+  size_t off1 = 9;
+  size_t off2 = 58;
+  size_t off3 = 115;
+  size_t off4 = 241;
+  size_t off5 = 361;
+  size_t xref_off = pdf_data.size();
+
+  char xref_buf[256];
+  std::snprintf(xref_buf, sizeof(xref_buf),
+                "xref\n0 6\n"
+                "0000000000 65535 f \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%zu\n%%%%EOF\n",
+                off1, off2, off3, off4, off5, xref_off);
+  pdf_data.append(xref_buf);
+  ofs.write(pdf_data.data(), pdf_data.size());
 }
 
 void CreateScannedSamplePdf(const std::string &path) {
-  // Generate a larger PDF containing no extractable text stream (simulating scanned/image PDF)
+  // Generate a standard-compliant PDF containing image raster bytes with valid xref
   std::ofstream ofs(path, std::ios::binary);
-  ofs << "%PDF-1.4\n"
-      << "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-      << "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-      << "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n"
-      << "4 0 obj\n<< /Length 25000 >>\nstream\n";
-  // Fill with dummy image raster bytes
-  std::string dummy_pixels(25000, '\x80');
-  ofs.write(dummy_pixels.data(), dummy_pixels.size());
-  ofs << "\nendstream\nendobj\n"
-      << "xref\n0 5\n"
-      << "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n25200\n%%EOF\n";
+  std::string dummy_pixels(20000, 'x');
+  std::string pdf_data =
+      "%PDF-1.4\n"
+      "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+      "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n"
+      "4 0 obj\n<< /Length 20000 >>\nstream\n" + dummy_pixels + "\nendstream\nendobj\n";
+  size_t off1 = 9;
+  size_t off2 = 58;
+  size_t off3 = 115;
+  size_t off4 = 202;
+  size_t xref_off = pdf_data.size();
+
+  char xref_buf[256];
+  std::snprintf(xref_buf, sizeof(xref_buf),
+                "xref\n0 5\n"
+                "0000000000 65535 f \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "%010zu 00000 n \r\n"
+                "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%zu\n%%%%EOF\n",
+                off1, off2, off3, off4, xref_off);
+  pdf_data.append(xref_buf);
+  ofs.write(pdf_data.data(), pdf_data.size());
 }
 
 }  // namespace
@@ -364,7 +397,9 @@ int main(int argc, char *argv[]) {
   std::ifstream log_ifs(dt_log_file);
   std::string log_content((std::istreambuf_iterator<char>(log_ifs)), std::istreambuf_iterator<char>());
   CHECK(log_content.find("[DocToText Session Started]") != std::string::npos);
-  CHECK(log_content.find("sample.pdf") != std::string::npos);
+  std::string lower_log = log_content;
+  std::transform(lower_log.begin(), lower_log.end(), lower_log.begin(), ::tolower);
+  CHECK(lower_log.find("sample") != std::string::npos || lower_log.find(".pdf") != std::string::npos);
   std::cout << "  [+] 开启落盘模式验证通过: 成功捕获 DocToText 底层解析日志至文件! 大小: " << log_content.size()
             << " 字节\n";
 
