@@ -141,25 +141,30 @@ void CreateSamplePdf(const std::string &path) {
       "4 0 obj\n<< /Length 71 >>\nstream\n"
       "BT\n/F1 18 Tf\n100 700 Td\n(SoEasy Deep PDF Document Search Engine) Tj\nET\nendstream\nendobj\n"
       "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
-  size_t off1 = 9;
-  size_t off2 = 58;
-  size_t off3 = 115;
-  size_t off4 = 241;
-  size_t off5 = 361;
+  size_t off1 = pdf_data.find("1 0 obj");
+  size_t off2 = pdf_data.find("2 0 obj");
+  size_t off3 = pdf_data.find("3 0 obj");
+  size_t off4 = pdf_data.find("4 0 obj");
+  size_t off5 = pdf_data.find("5 0 obj");
   size_t xref_off = pdf_data.size();
 
-  char xref_buf[256];
-  std::snprintf(xref_buf, sizeof(xref_buf),
-                "xref\n0 6\n"
-                "0000000000 65535 f \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%zu\n%%%%EOF\n",
-                off1, off2, off3, off4, off5, xref_off);
-  pdf_data.append(xref_buf);
+  auto format_xref_entry = [](size_t offset, bool in_use) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%010lu %05u %c \n", static_cast<unsigned long>(offset), in_use ? 0 : 65535,
+                  in_use ? 'n' : 'f');
+    return std::string(buf);
+  };
+
+  std::string xref = "xref\n0 6\n";
+  xref += format_xref_entry(0, false);
+  xref += format_xref_entry(off1, true);
+  xref += format_xref_entry(off2, true);
+  xref += format_xref_entry(off3, true);
+  xref += format_xref_entry(off4, true);
+  xref += format_xref_entry(off5, true);
+  xref += "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + std::to_string(xref_off) + "\n%%EOF\n";
+
+  pdf_data.append(xref);
   ofs.write(pdf_data.data(), pdf_data.size());
 }
 
@@ -173,23 +178,28 @@ void CreateScannedSamplePdf(const std::string &path) {
       "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
       "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n"
       "4 0 obj\n<< /Length 20000 >>\nstream\n" + dummy_pixels + "\nendstream\nendobj\n";
-  size_t off1 = 9;
-  size_t off2 = 58;
-  size_t off3 = 115;
-  size_t off4 = 202;
+  size_t off1 = pdf_data.find("1 0 obj");
+  size_t off2 = pdf_data.find("2 0 obj");
+  size_t off3 = pdf_data.find("3 0 obj");
+  size_t off4 = pdf_data.find("4 0 obj");
   size_t xref_off = pdf_data.size();
 
-  char xref_buf[256];
-  std::snprintf(xref_buf, sizeof(xref_buf),
-                "xref\n0 5\n"
-                "0000000000 65535 f \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "%010zu 00000 n \n"
-                "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%zu\n%%%%EOF\n",
-                off1, off2, off3, off4, xref_off);
-  pdf_data.append(xref_buf);
+  auto format_xref_entry = [](size_t offset, bool in_use) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%010lu %05u %c \n", static_cast<unsigned long>(offset), in_use ? 0 : 65535,
+                  in_use ? 'n' : 'f');
+    return std::string(buf);
+  };
+
+  std::string xref = "xref\n0 5\n";
+  xref += format_xref_entry(0, false);
+  xref += format_xref_entry(off1, true);
+  xref += format_xref_entry(off2, true);
+  xref += format_xref_entry(off3, true);
+  xref += format_xref_entry(off4, true);
+  xref += "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n" + std::to_string(xref_off) + "\n%%EOF\n";
+
+  pdf_data.append(xref);
   ofs.write(pdf_data.data(), pdf_data.size());
 }
 

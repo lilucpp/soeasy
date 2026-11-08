@@ -164,14 +164,18 @@ jobs:
               echo "================ CTest LastTest.log ================"
               cat build/Testing/Temporary/LastTest.log || true
               echo "===================================================="
-              grep -E "CHECK FAILED|FAILED|Exception|Assertion" build/Testing/Temporary/LastTest.log | while IFS= read -r l; do
-                echo "::error title=CTestLog::${l}"
-              done
+              python3 -c '
+with open("build/Testing/Temporary/LastTest.log", errors="ignore") as f:
+    for line in f:
+        if "test_office_parser" in line or "CHECK FAILED" in line:
+            print("::error title=OfficeFail::" + line.strip())
+' 2>/dev/null || true
             fi
             if grep -q "test_office_parser" build/Testing/Temporary/LastTestsFailed.log 2>/dev/null; then
               echo ">>> Diagnostic direct run of test_office_parser.exe:"
-              ./build/test_office_parser.exe 2>&1 | while IFS= read -r l; do
-                echo "::error title=OfficeParserDirect::${l}"
+              export PATH="$(pwd)/build:${PATH}"
+              (cd build && ./test_office_parser.exe 2>&1) | while IFS= read -r l; do
+                echo "::error title=OfficeDirect::${l}"
               done || true
             fi
             exit 1
