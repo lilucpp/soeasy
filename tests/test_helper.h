@@ -38,10 +38,15 @@ inline std::filesystem::path GetExecutableDir() {
 #endif
 
 inline std::filesystem::path GetTestTempPath(const std::string &sub_name = "") {
-  if (sub_name.empty()) {
-    return std::filesystem::temp_directory_path();
+  std::filesystem::path p = std::filesystem::temp_directory_path();
+  if (!sub_name.empty()) {
+    p /= sub_name;
   }
-  return std::filesystem::temp_directory_path() / sub_name;
+  std::string s = p.string();
+  for (char &c : s) {
+    if (c == '\\') c = '/';
+  }
+  return std::filesystem::path(s);
 }
 
 inline std::filesystem::path GetProjectRootDir() {

@@ -2,9 +2,21 @@
 import sys
 import os
 
-log_path = sys.argv[1] if len(sys.argv) > 1 else "build/Testing/Temporary/LastTest.log"
-if not os.path.exists(log_path):
-    print(f"::error::CTest log not found at {log_path}")
+candidates = [
+    sys.argv[1] if len(sys.argv) > 1 else "build/Testing/Temporary/LastTest.log",
+    "Testing/Temporary/LastTest.log",
+    "../build/Testing/Temporary/LastTest.log",
+    "build/Testing/Temporary/LastTest.log"
+]
+
+log_path = None
+for c in candidates:
+    if os.path.exists(c):
+        log_path = c
+        break
+
+if not log_path:
+    print(f"::error::CTest log not found in any candidate path: {candidates}")
     sys.exit(0)
 
 with open(log_path, "r", encoding="utf-8", errors="ignore") as f:

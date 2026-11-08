@@ -711,16 +711,21 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
 
   auto finish_time = std::chrono::steady_clock::now();
   out_result->elapsed_ms = std::chrono::duration<double, std::milli>(finish_time - start_time).count();
+  uint32_t effective_timeout = task.timeout_ms > 0 ? task.timeout_ms : timeout_ms_;
+  bool is_timeout = (!success_response && out_result->elapsed_ms >= effective_timeout);
 
   {
     std::unique_lock<std::mutex> lock(pool_mutex_);
     WorkerInstance &worker = workers_[assigned_worker_idx];
 
-    if (worker.state == WorkerState::kKilledByWatchdog) {
-      // Watchdog already cleaned up the slot and terminated the worker.
-      // Avoid double-free and mis-killing new workers.
+    if (worker.state == WorkerState::kKilledByWatchdog || is_timeout) {
       out_result->status = TaskStatus::kTimeout;
       out_result->error_message = "Task timed out or stalled (killed by watchdog)";
+      if (worker.state != WorkerState::kKilledByWatchdog) {
+        shm_pool_.ReleaseSlot(slot_id);
+        out_result->slot_id = 0;
+        KillWorker(assigned_worker_idx, TaskStatus::kTimeout, out_result->error_message);
+      }
       worker.state = WorkerState::kIdle;
       worker.idle_start_time = std::chrono::steady_clock::now();
     } else if (success_response) {

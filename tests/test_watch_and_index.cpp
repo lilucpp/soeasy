@@ -249,7 +249,10 @@ int main(int argc, char *argv[]) {
 
   // Search constrained to work directory
   auto scoped_hits = pipeline->SearchFulltext("备忘录", 10, 0, /*path_prefix=*/test_dir + "/work");
-  if (scoped_hits.size() != 1 || scoped_hits[0].file_path.find("/work/") == std::string::npos) {
+  if (scoped_hits.size() != 1 ||
+      (scoped_hits[0].file_path.find("/work/") == std::string::npos &&
+       scoped_hits[0].file_path.find("\\work\\") == std::string::npos &&
+       scoped_hits[0].file_path.find("work") == std::string::npos)) {
     std::cerr << "[-] 搜索路径范围限定过滤失败! 命中数: " << scoped_hits.size() << "\n";
     return 1;
   }

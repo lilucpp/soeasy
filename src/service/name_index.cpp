@@ -30,16 +30,20 @@ bool NameIndex::StartsWith(const std::string &str, const std::string &prefix) {
 }
 
 void NameIndex::Upsert(const NameRecord &record) {
+  NameRecord norm_rec = record;
+  for (char &c : norm_rec.file_path) {
+    if (c == '\\') c = '/';
+  }
   std::unique_lock<std::shared_mutex> lock(rw_mutex_);
 
   // If path already exists with a different ID, remove old mapping
-  auto it_path = id_by_path_.find(record.file_path);
-  if (it_path != id_by_path_.end() && it_path->second != record.doc_id) {
+  auto it_path = id_by_path_.find(norm_rec.file_path);
+  if (it_path != id_by_path_.end() && it_path->second != norm_rec.doc_id) {
     records_by_id_.erase(it_path->second);
   }
 
-  id_by_path_[record.file_path] = record.doc_id;
-  records_by_id_[record.doc_id] = record;
+  id_by_path_[norm_rec.file_path] = norm_rec.doc_id;
+  records_by_id_[norm_rec.doc_id] = std::move(norm_rec);
 }
 
 void NameIndex::Remove(int64_t doc_id) {
@@ -52,8 +56,12 @@ void NameIndex::Remove(int64_t doc_id) {
 }
 
 void NameIndex::RemoveByPath(const std::string &file_path) {
+  std::string norm_path = file_path;
+  for (char &c : norm_path) {
+    if (c == '\\') c = '/';
+  }
   std::unique_lock<std::shared_mutex> lock(rw_mutex_);
-  auto it = id_by_path_.find(file_path);
+  auto it = id_by_path_.find(norm_path);
   if (it != id_by_path_.end()) {
     records_by_id_.erase(it->second);
     id_by_path_.erase(it);
@@ -79,6 +87,9 @@ void NameIndex::RemoveDirectoryPrefix(const std::string &dir_prefix) {
     return;
   }
   std::string normalized = dir_prefix;
+  for (char &c : normalized) {
+    if (c == '\\') c = '/';
+  }
   while (normalized.size() > 1 && (normalized.back() == '/' || normalized.back() == '\\')) {
     normalized.pop_back();
   }
@@ -123,14 +134,18 @@ std::vector<NameMatchResult> NameIndex::Search(const std::string &query, int lim
   }
 
   std::string lower_query = ToLower(query);
+  std::string norm_prefix = path_prefix;
+  for (char &c : norm_prefix) {
+    if (c == '\\') c = '/';
+  }
   std::shared_lock<std::shared_mutex> lock(rw_mutex_);
 
   for (const auto &pair : records_by_id_) {
     const NameRecord &rec = pair.second;
 
     // Optional path scope constraint
-    if (!path_prefix.empty()) {
-      if (!StartsWith(rec.file_path, path_prefix)) {
+    if (!norm_prefix.empty()) {
+      if (!StartsWith(rec.file_path, norm_prefix)) {
         continue;
       }
     }

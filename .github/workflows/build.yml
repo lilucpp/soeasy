@@ -92,6 +92,7 @@ jobs:
             mingw-w64-x86_64-uchardet
             mingw-w64-x86_64-libiconv
             mingw-w64-x86_64-boost
+            mingw-w64-x86_64-python
             zip
           update: true
 
@@ -143,10 +144,14 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
-          ctest --test-dir build --output-on-failure --timeout 180 -j1 || {
-            python3 tools/report_ctest_failures.py build/Testing/Temporary/LastTest.log || true
+          if ! ctest --test-dir build --output-on-failure --timeout 180 -j1; then
+            echo "::error title=CTest Failed::Checking failed tests..."
+            python3 tools/report_ctest_failures.py build/Testing/Temporary/LastTest.log 2>/dev/null || true
+            while IFS= read -r line; do
+              echo "::error title=CTestFailure::${line}"
+            done < <(grep -E "\*\*\*Failed|\*\*\*Timeout|\*\*\*Exception" build/Testing/Temporary/LastTest.log 2>/dev/null || true)
             exit 1
-          }
+          fi
 
       - name: Upload Windows CTest Logs on Failure
         if: failure()

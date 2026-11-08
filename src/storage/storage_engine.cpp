@@ -620,7 +620,11 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_clear_bindings(stmt_files_insert_);
   sqlite3_bind_int64(stmt_files_insert_, 1, entry.doc_id);
   sqlite3_bind_text(stmt_files_insert_, 2, entry.file_name.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt_files_insert_, 3, entry.file_path.c_str(), -1, SQLITE_TRANSIENT);
+  std::string norm_file_path = entry.file_path;
+  for (char &c : norm_file_path) {
+    if (c == '\\') c = '/';
+  }
+  sqlite3_bind_text(stmt_files_insert_, 3, norm_file_path.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt_files_insert_, 4, entry.ext.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt_files_insert_, 5, static_cast<int64_t>(entry.file_size));
   sqlite3_bind_int64(stmt_files_insert_, 6, entry.mtime);
@@ -794,6 +798,9 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
   }
 
   std::string normalized = dir_path;
+  for (char &c : normalized) {
+    if (c == '\\') c = '/';
+  }
   while (normalized.size() > 1 && (normalized.back() == '/' || normalized.back() == '\\')) {
     normalized.pop_back();
   }
@@ -979,7 +986,11 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
   bool has_prefix = !path_prefix.empty();
   std::string prefix_pattern;
   if (has_prefix) {
-    prefix_pattern = EscapeLikePattern(path_prefix) + "%";
+    std::string norm_prefix = path_prefix;
+    for (char &c : norm_prefix) {
+      if (c == '\\') c = '/';
+    }
+    prefix_pattern = EscapeLikePattern(norm_prefix) + "%";
   }
 
   const char *search_sql = has_prefix ? R"SQL(
