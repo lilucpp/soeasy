@@ -131,9 +131,10 @@ target_compile_definitions(sqlite3mc PUBLIC
     SQLITE_ENABLE_DBSTAT_VTAB=1
 )
 if(MSVC)
-    target_compile_options(sqlite3mc PRIVATE /w)
+    target_compile_options(sqlite3mc PRIVATE /w /O2)
 else()
-    target_compile_options(sqlite3mc PRIVATE -w)
+    # SQLite official guideline: Use -O2 to avoid instruction cache bloat and massive compile-time penalty of -O3 on the 13MB amalgamation
+    target_compile_options(sqlite3mc PRIVATE -w -O2)
 endif()
 if(WIN32)
     target_link_libraries(sqlite3mc PRIVATE pthread)

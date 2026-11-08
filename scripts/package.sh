@@ -10,10 +10,16 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VERSION="${1:-${VERSION:-$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.2.1")}}"
 PLATFORM="linux-x86_64"
 DIST_NAME="soeasy-v${VERSION}-${PLATFORM}"
-BUILD_DIR="${PROJECT_ROOT}/build"
+BUILD_DIR="${PROJECT_ROOT}/build_package"
 DIST_DIR="${PROJECT_ROOT}/dist"
 STAGE_DIR="${DIST_DIR}/${DIST_NAME}"
 ZIP_FILE="${DIST_DIR}/${DIST_NAME}.zip"
+
+# 检测并自动优先使用高效的 Ninja 构建系统
+CMAKE_GEN_ARGS=()
+if command -v ninja >/dev/null 2>&1; then
+    CMAKE_GEN_ARGS=(-G "Ninja")
+fi
 
 echo "========================================================"
 echo "   SoEasy 桌面搜索引擎一键打包系统"
@@ -26,9 +32,9 @@ if [ ! -f "${PROJECT_ROOT}/third_party/zstd/build/cmake/CMakeLists.txt" ] || [ !
     git -C "${PROJECT_ROOT}" submodule update --init --recursive
 fi
 
-# 1. 编译 Release 版本二进制 (不编译或运行测试用例)
+# 1. 编译 Release 版本二进制 (不编译或运行测试用例，与开发测试 build 隔离增量缓存)
 echo "[1/6] 编译最新 Release 版本二进制..."
-cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
+cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" "${CMAKE_GEN_ARGS[@]}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
 cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker build_dat_dict -j$(nproc 2>/dev/null || echo 8)
 
 # 2. 准备打包目录结构
