@@ -29,6 +29,10 @@ struct SlotHeader {
 #pragma pack(pop)
 
 static_assert(sizeof(SlotHeader) == 64, "SlotHeader must be exactly 64 bytes");
+static_assert(std::atomic<uint32_t>::is_always_lock_free,
+              "SlotHeader uint32 atomics must be lock-free for IPC safe sharing");
+static_assert(std::atomic<uint64_t>::is_always_lock_free,
+              "SlotHeader uint64 atomics must be lock-free for IPC safe sharing");
 
 class ShmSlotPool {
  public:

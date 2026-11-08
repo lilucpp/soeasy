@@ -176,6 +176,8 @@ class WorkerGuard {
 
   std::atomic<bool> is_running_{false};
   std::thread watchdog_thread_;
+  std::mutex watchdog_mutex_;
+  std::condition_variable watchdog_cv_;
 #ifdef _WIN32
   HANDLE job_handle_ = nullptr;
 #endif

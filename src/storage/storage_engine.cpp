@@ -22,6 +22,13 @@
 namespace soeasy {
 namespace storage {
 
+namespace {
+inline std::string SafeColumnText(sqlite3_stmt *stmt, int col) {
+  const auto *text = sqlite3_column_text(stmt, col);
+  return text ? reinterpret_cast<const char *>(text) : "";
+}
+}  // namespace
+
 std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(const std::string &query) {
   std::vector<std::string> kws;
   std::istringstream iss(query);
@@ -50,7 +57,7 @@ std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(const std::stri
 StorageEngine::StorageEngine() = default;
 
 StorageEngine::~StorageEngine() {
-  Close();
+  CloseInternal();
 }
 
 void StorageEngine::FinalizeCachedStatements() {
@@ -76,9 +83,13 @@ void StorageEngine::FinalizeCachedStatements() {
   }
 }
 
-void StorageEngine::Close() {
+void StorageEngine::CloseInternal() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   CloseUnlocked();
+}
+
+void StorageEngine::Close() {
+  CloseInternal();
 }
 
 void StorageEngine::CloseUnlocked() {
@@ -915,9 +926,9 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     SearchResultItem item;
     item.doc_id = sqlite3_column_int64(stmt, 0);
-    item.file_name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-    item.file_path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-    item.ext = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+    item.file_name = SafeColumnText(stmt, 1);
+    item.file_path = SafeColumnText(stmt, 2);
+    item.ext = SafeColumnText(stmt, 3);
     item.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
     item.mtime = sqlite3_column_int64(stmt, 5);
     item.rank = sqlite3_column_double(stmt, 6);
@@ -1071,12 +1082,9 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     FileMetaRecord r;
     r.doc_id = sqlite3_column_int64(stmt, 0);
-    const unsigned char *name = sqlite3_column_text(stmt, 1);
-    if (name) r.file_name = reinterpret_cast<const char *>(name);
-    const unsigned char *path = sqlite3_column_text(stmt, 2);
-    if (path) r.file_path = reinterpret_cast<const char *>(path);
-    const unsigned char *ext = sqlite3_column_text(stmt, 3);
-    if (ext) r.ext = reinterpret_cast<const char *>(ext);
+    r.file_name = SafeColumnText(stmt, 1);
+    r.file_path = SafeColumnText(stmt, 2);
+    r.ext = SafeColumnText(stmt, 3);
     r.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
     r.mtime = sqlite3_column_int64(stmt, 5);
     r.parse_level = sqlite3_column_int(stmt, 6);

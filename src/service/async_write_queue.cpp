@@ -110,18 +110,28 @@ void AsyncWriteQueue::WorkerLoop() {
       cv_not_full_.notify_all();
     }
 
-    // Execute writes in StorageEngine within an outer transaction
+    // Execute writes in StorageEngine within an outer transaction guarded by RAII
     if (!batch.empty() && storage_engine_) {
-      storage_engine_->BeginTransaction();
+      storage::TransactionGuard tx(*storage_engine_);
+      bool all_success = true;
       for (const auto &op : batch) {
+        bool op_ok = false;
         if (op.type == WriteOpType::kIndex) {
-          storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                         op.parse_level, op.content);
+          op_ok = storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
+                                                 op.parse_level, op.content);
         } else if (op.type == WriteOpType::kDelete) {
-          storage_engine_->DeleteDocument(op.doc_id);
+          op_ok = storage_engine_->DeleteDocument(op.doc_id);
+        }
+        if (!op_ok) {
+          all_success = false;
         }
       }
-      storage_engine_->CommitTransaction();
+      if (all_success) {
+        tx.Commit();
+      } else {
+        LOG_WARN("[AsyncWriteQueue] Transaction rollback due to operation failure in batch size {}", batch.size());
+        tx.Rollback();
+      }
       last_commit_time = std::chrono::steady_clock::now();
       batch.clear();
     }
@@ -147,16 +157,26 @@ void AsyncWriteQueue::WorkerLoop() {
   }
 
   if (!remaining.empty() && storage_engine_) {
-    storage_engine_->BeginTransaction();
+    storage::TransactionGuard tx(*storage_engine_);
+    bool all_success = true;
     for (const auto &op : remaining) {
+      bool op_ok = false;
       if (op.type == WriteOpType::kIndex) {
-        storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                       op.parse_level, op.content);
+        op_ok = storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
+                                               op.parse_level, op.content);
       } else if (op.type == WriteOpType::kDelete) {
-        storage_engine_->DeleteDocument(op.doc_id);
+        op_ok = storage_engine_->DeleteDocument(op.doc_id);
+      }
+      if (!op_ok) {
+        all_success = false;
       }
     }
-    storage_engine_->CommitTransaction();
+    if (all_success) {
+      tx.Commit();
+    } else {
+      LOG_WARN("[AsyncWriteQueue] Shutdown transaction rollback due to operation failure in remaining batch");
+      tx.Rollback();
+    }
   }
 
   {

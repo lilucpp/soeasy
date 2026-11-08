@@ -545,9 +545,11 @@ void MainWindow::OnRebuildIndexRequested() {
     return;
   }
 
-  // Cancel any existing scan
+  // Cancel any existing scan cooperatively without blocking GUI thread
   if (is_indexing_.load()) {
     pipeline_->CancelScan();
+    pending_reindex_.store(true);
+    return;
   }
   if (background_index_thread_.joinable()) {
     background_index_thread_.join();
@@ -697,6 +699,10 @@ void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total, c
 }
 
 void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec) {
+  if (background_index_thread_.joinable()) {
+    background_index_thread_.join();
+  }
+
   status_progress_bar_->setVisible(false);
   status_file_label_->setVisible(false);
   status_cancel_btn_->setVisible(false);

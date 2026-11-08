@@ -233,6 +233,54 @@ class IStorageEngine {
   [[nodiscard]] virtual std::string GetLastError() const = 0;
 };
 
+/**
+ * @brief RAII transaction guard for IStorageEngine.
+ *
+ * Enforces transaction safety following SQLiteCpp conventions:
+ * - Begins transaction upon creation.
+ * - If Commit() is not explicitly invoked before destruction, RollbackTransaction() is executed.
+ */
+class TransactionGuard {
+ public:
+  explicit TransactionGuard(IStorageEngine &engine)
+      : engine_(engine), active_(false), committed_(false) {
+    active_ = engine_.BeginTransaction();
+  }
+
+  ~TransactionGuard() {
+    if (active_ && !committed_) {
+      engine_.RollbackTransaction();
+    }
+  }
+
+  TransactionGuard(const TransactionGuard &) = delete;
+  TransactionGuard &operator=(const TransactionGuard &) = delete;
+  TransactionGuard(TransactionGuard &&) = delete;
+  TransactionGuard &operator=(TransactionGuard &&) = delete;
+
+  [[nodiscard]] bool IsActive() const { return active_; }
+
+  bool Commit() {
+    if (active_ && !committed_) {
+      committed_ = engine_.CommitTransaction();
+      return committed_;
+    }
+    return false;
+  }
+
+  void Rollback() {
+    if (active_ && !committed_) {
+      engine_.RollbackTransaction();
+      active_ = false;
+    }
+  }
+
+ private:
+  IStorageEngine &engine_;
+  bool active_{false};
+  bool committed_{false};
+};
+
 }  // namespace storage
 }  // namespace soeasy
 

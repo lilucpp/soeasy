@@ -411,7 +411,15 @@ void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string 
 
 void WorkerGuard::WatchdogLoop() {
   while (is_running_.load(std::memory_order_acquire)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    {
+      std::unique_lock<std::mutex> cv_lock(watchdog_mutex_);
+      watchdog_cv_.wait_for(cv_lock, std::chrono::milliseconds(50), [this]() {
+        return !is_running_.load(std::memory_order_acquire);
+      });
+    }
+    if (!is_running_.load(std::memory_order_acquire)) {
+      break;
+    }
 
     std::unique_lock<std::mutex> lock(pool_mutex_);
     auto now = std::chrono::steady_clock::now();
@@ -742,6 +750,7 @@ void WorkerGuard::Shutdown() {
     return;
   }
 
+  watchdog_cv_.notify_all();
   worker_available_cv_.notify_all();
   if (watchdog_thread_.joinable()) {
     watchdog_thread_.join();

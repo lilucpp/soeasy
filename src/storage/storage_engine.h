@@ -173,6 +173,7 @@ class StorageEngine : public IStorageEngine {
   bool ExecutePragmas(sqlite3 *db, const std::string &key);
   bool InitTables();
   void FinalizeCachedStatements();
+  void CloseInternal();
 
   // Internal unlocked implementations on writer_db_ (writer_mutex_ already held by caller)
   void CloseUnlocked();
