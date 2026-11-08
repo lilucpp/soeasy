@@ -3,12 +3,14 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "storage/storage_engine.h"
+#include "tests/test_helper.h"
 
 namespace soeasy {
 namespace test {
@@ -16,26 +18,15 @@ namespace test {
 using storage::DocumentIndexEntry;
 using storage::StorageEngine;
 
-static std::string FindDictDir() {
-  std::vector<std::string> candidates = {
-      "third_party/cppjieba/dict",
-      "/home/peanut/project/soeasy/third_party/cppjieba/dict"
-  };
-  for (const auto &p : candidates) {
-    if (std::filesystem::exists(p + "/jieba.dict.utf8") ||
-        std::filesystem::exists(p + "/jieba_dat.bin")) {
-      return p;
-    }
-  }
-  return "third_party/cppjieba/dict";
-}
-
 class Fts5SyntaxTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    test_db_path_ = "/tmp/test_fts5_syntax_gtest.db";
+    test_db_path_ = (std::filesystem::temp_directory_path() /
+                     ("soeasy_fts5_syntax_" + std::to_string(getpid()) + "_" +
+                      std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + "_" +
+                      std::to_string(reinterpret_cast<uintptr_t>(this)) + ".db")).string();
     key_ = "Fts5_GTest_Secret_Key_2026!";
-    dict_dir_ = FindDictDir();
+    dict_dir_ = soeasy::test::FindDictDir();
 
     CleanUpFiles();
 

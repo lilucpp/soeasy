@@ -231,7 +231,9 @@ void TestL3ImageParser() {
   // Check supported extensions
   std::vector<std::string> exts = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"};
   for (const auto &e : exts) {
-    assert(parser.IsSupported(e));
+    bool supported = parser.IsSupported(e);
+    (void)supported;
+    assert(supported);
   }
   std::cout << "  Format support validated: png, jpg, jpeg, bmp, webp, tiff, tif, gif, svg.\n";
 
@@ -258,6 +260,7 @@ void TestL3ImageParser() {
     if (!std::filesystem::exists(path)) continue;
     std::string text;
     bool ok_parse = parser.Parse(path, ext, &text);
+    (void)ok_parse;
     std::cout << "  Parsed " << path << " -> " << text.size() << " bytes text\n";
     assert(ok_parse);
     assert(!text.empty());
@@ -266,6 +269,7 @@ void TestL3ImageParser() {
   if (!tested_any_image) {
     std::string text;
     bool ok_syn = parser.Parse(syn.doc_png_path, "png", &text);
+    (void)ok_syn;
     std::cout << "  Parsed synthetic doc PNG -> " << text.size() << " bytes text\n";
     assert(ok_syn);
     assert(!text.empty());
@@ -276,6 +280,7 @@ void TestL3ImageParser() {
   std::string noise_text;
   parser.set_min_effective_chars(4);
   bool ok_noise = parser.Parse(noise_bmp, "bmp", &noise_text);
+  (void)ok_noise;
   std::cout << "  Noise image check (" << noise_bmp << ") with min_chars=4: text length=" << noise_text.size()
             << " (Expected 0/skipped)\n";
   assert(ok_noise);
@@ -321,7 +326,9 @@ void TestStorageFts5ImageSearch() {
   std::cout << "[Test 4/4] End-to-End Image OCR + FTS5 Full-Text Search\n";
   std::cout << "======================================================\n";
 
-  std::string test_db = (std::filesystem::temp_directory_path() / "test_image_ocr_fts.db").string();
+  std::string test_db = (std::filesystem::temp_directory_path() /
+                         ("test_image_ocr_fts_" + std::to_string(getpid()) + "_" +
+                          std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + ".db")).string();
   std::filesystem::remove(test_db);
 
   const std::string dict_dir = soeasy::test::FindDictDir();

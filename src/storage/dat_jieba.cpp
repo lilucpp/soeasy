@@ -165,7 +165,7 @@ bool DatJieba::Init(const std::string &dict_dir) {
   min_weight_ = header->min_weight;
   ptr += sizeof(DatHeader);
 
-  da_.set_array(ptr);
+  da_.set_array(ptr, header->da_size / 4);
   ptr += header->da_size;
 
   weights_ = reinterpret_cast<const float *>(ptr);
@@ -223,7 +223,7 @@ bool DatJieba::HasWord(const std::string &word) const {
   }
 
   // 2. Check base Double-Array Trie dictionary
-  if (is_initialized_ && da_.total_size() > 0) {
+  if (is_initialized_ && da_.array() != nullptr) {
     int res = da_.exactMatchSearch<int>(word.c_str(), word.size());
     if (res >= 0) {
       return true;

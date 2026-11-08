@@ -30,6 +30,11 @@ inline std::filesystem::path GetExecutableDir() {
 #endif
 
 inline std::filesystem::path GetProjectRootDir() {
+#ifdef SOEASY_PROJECT_ROOT_DIR
+  if (std::filesystem::exists(std::filesystem::path(SOEASY_PROJECT_ROOT_DIR) / "CMakeLists.txt")) {
+    return std::filesystem::path(SOEASY_PROJECT_ROOT_DIR);
+  }
+#endif
   auto exe_dir = GetExecutableDir();
   // Typical CMake build layout: <project_root>/build/<test_executable>
   if (std::filesystem::exists(exe_dir.parent_path() / "CMakeLists.txt")) {
