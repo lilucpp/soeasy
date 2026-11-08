@@ -274,7 +274,7 @@ bool L1TextParser::ParseFile(const std::string &file_path, const std::string &ex
 
 bool L1TextParser::CanHandle(const ParseContext &ctx) const {
   // L1 text/code parser acts as the general fallback parser in the chain
-  return !ctx.file_path.empty();
+  return !ctx.file_path.empty() || !ctx.ext.empty();
 }
 
 bool L1TextParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {

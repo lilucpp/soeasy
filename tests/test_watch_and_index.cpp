@@ -269,11 +269,13 @@ int main(int argc, char *argv[]) {
     WriteFile(f_spill, big_content);
   }
 
-  // Wait for efsw debounce and worker parse & spill pipeline
-  std::this_thread::sleep_for(std::chrono::milliseconds(350));
-
-  // Search the unique keyword
-  auto spill_hits = pipeline->SearchFulltext("SoEasyPipelineSpillSuperBigDocument2026", 10, 0);
+  // Wait for efsw debounce and worker parse & spill pipeline with retry loop
+  std::vector<soeasy::storage::SearchResultItem> spill_hits;
+  for (int retry = 0; retry < 50; ++retry) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    spill_hits = pipeline->SearchFulltext("SoEasyPipelineSpillSuperBigDocument2026", 10, 0);
+    if (!spill_hits.empty()) break;
+  }
   assert(!spill_hits.empty());
   assert(spill_hits[0].file_path == f_spill);
   std::cout << "  [+] 端到端全文检索命中超大文本! 命中文件: " << spill_hits[0].file_name

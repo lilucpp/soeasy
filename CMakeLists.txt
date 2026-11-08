@@ -29,6 +29,12 @@ if(WIN32)
 endif()
 
 option(BUILD_TESTS "Build test suite" ON)
+option(ENABLE_SANITY "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+if(ENABLE_SANITY)
+    message(STATUS "Enabling AddressSanitizer and UndefinedBehaviorSanitizer (-fsanitize=address,undefined)")
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 # Configure portable transitive RPATH (using DT_RPATH instead of DT_RUNPATH for transitive dependency lookup)
 if(UNIX AND NOT APPLE)
@@ -334,6 +340,30 @@ endif()
 # 9. Test Targets
 # -------------------------------------------------------------
 if(BUILD_TESTS)
+  enable_testing()
+
+  # Fetch GoogleTest & GoogleMock 1.14.0
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.14.0
+  )
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  include(GoogleTest)
+
+  macro(add_soeasy_test target_name timeout_sec)
+    add_test(NAME ${target_name} COMMAND ${target_name})
+    set_tests_properties(${target_name} PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        TIMEOUT ${timeout_sec}
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+  endmacro()
+
   # Phase 1 Test: Storage & FTS5
   add_executable(test_storage_engine
       tests/test_storage_engine.cpp
@@ -341,6 +371,7 @@ if(BUILD_TESTS)
   target_link_libraries(test_storage_engine PRIVATE
       soeasy_storage
   )
+  add_soeasy_test(test_storage_engine 30)
 
   # Stage 2 Test: Reader Connection Pool & Concurrent Read/Write Under WAL
   add_executable(test_connection_pool
@@ -350,6 +381,7 @@ if(BUILD_TESTS)
       soeasy_storage
       soeasy_common
   )
+  add_soeasy_test(test_connection_pool 30)
 
   # Phase 2 Test: Sandbox & IPC
   add_executable(test_sandbox_ipc
@@ -360,6 +392,7 @@ if(BUILD_TESTS)
       soeasy_worker_lib
       soeasy_storage
   )
+  add_soeasy_test(test_sandbox_ipc 30)
 
   # Phase 3 Test: Watcher, Debouncer, NameIndex & Live Pipeline
   add_executable(test_watch_and_index
@@ -370,6 +403,7 @@ if(BUILD_TESTS)
       soeasy_storage
       soeasy_worker_lib
   )
+  add_soeasy_test(test_watch_and_index 30)
 endif()
 
 # -------------------------------------------------------------
@@ -417,6 +451,7 @@ if(BUILD_TESTS)
       Qt5::Gui
       Qt5::Core
   )
+  add_soeasy_test(test_gui_smoke 30)
 
   # Stage 4 Performance & Scale Test: 10,000+ Viewport Scroll, Snippet & Memory Stress
   add_executable(test_large_scale_perf
@@ -430,6 +465,7 @@ if(BUILD_TESTS)
       Qt5::Gui
       Qt5::Core
   )
+  add_soeasy_test(test_large_scale_perf 45)
 
   # Phase 5 Test: L2 Office Document Parser (OOXML, PDF, Sandbox & FTS5)
   add_executable(test_office_parser
@@ -444,6 +480,7 @@ if(BUILD_TESTS)
       soeasy_service
       soeasy_storage
   )
+  add_soeasy_test(test_office_parser 30)
 
   # Architecture Refactoring Test: Worker Parser Polymorphism & ParserRegistry (Stage 1)
   add_executable(test_parser_registry
@@ -457,6 +494,7 @@ if(BUILD_TESTS)
       soeasy_service
       soeasy_storage
   )
+  add_soeasy_test(test_parser_registry 30)
 
   # Architecture Refactoring Test: Mid-tier CQRS SearchCoordinator (Stage 3)
   add_executable(test_search_coordinator
@@ -470,6 +508,7 @@ if(BUILD_TESTS)
       soeasy_storage
       soeasy_common
   )
+  add_soeasy_test(test_search_coordinator 30)
 
   # Test: spdlog Logging & Index Rebuild Verification
   add_executable(test_logging_and_rebuild
@@ -481,6 +520,7 @@ if(BUILD_TESTS)
       soeasy_storage
       soeasy_common
   )
+  add_soeasy_test(test_logging_and_rebuild 30)
 
   # Test: L3 Image OCR Parser & Scientific Filtering
   add_executable(test_image_ocr
@@ -492,6 +532,7 @@ if(BUILD_TESTS)
       soeasy_storage
       soeasy_common
   )
+  add_soeasy_test(test_image_ocr 30)
 
   # Comprehensive Matrix Verification: Idle cycle, scaling, large/small files, crash recovery
   add_executable(test_comprehensive_matrix
@@ -503,6 +544,7 @@ if(BUILD_TESTS)
       soeasy_storage
       soeasy_common
   )
+  add_soeasy_test(test_comprehensive_matrix 45)
 
   # Test: DAT Jieba & Overlay User Dict Test Suite
   add_executable(test_dat_jieba
@@ -513,6 +555,7 @@ if(BUILD_TESTS)
       soeasy_common
       reproc++
   )
+  add_soeasy_test(test_dat_jieba 30)
 
   # Test: System Environment & Resource Limits Optimization
   add_executable(test_system_env
@@ -521,18 +564,40 @@ if(BUILD_TESTS)
   target_link_libraries(test_system_env PRIVATE
       soeasy_common
   )
-endif()
+  add_soeasy_test(test_system_env 15)
 
-# Test & Benchmark: Investigation of Log Printing Impact on Parser
-add_executable(test_log_impact
-    tests/test_log_impact.cpp
-)
-target_link_libraries(test_log_impact PRIVATE
-    soeasy_worker_lib
-    soeasy_service
-    soeasy_storage
-    soeasy_common
-)
+  # Test & Benchmark: Investigation of Log Printing Impact on Parser
+  add_executable(test_log_impact
+      tests/test_log_impact.cpp
+  )
+  target_link_libraries(test_log_impact PRIVATE
+      soeasy_worker_lib
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+  )
+  add_soeasy_test(test_log_impact 30)
+
+  # Stage 4 GoogleTest & GoogleMock Modern Test Suite: Storage Engine & Transaction RAII Safety
+  add_executable(test_storage_transaction_gtest
+      tests/test_storage_transaction_gtest.cpp
+  )
+  target_include_directories(test_storage_transaction_gtest PRIVATE
+      src
+  )
+  target_link_libraries(test_storage_transaction_gtest PRIVATE
+      soeasy_storage
+      soeasy_common
+      GTest::gtest
+      GTest::gtest_main
+      GTest::gmock
+  )
+  gtest_discover_tests(test_storage_transaction_gtest PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 30
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
+endif()
 
 # -------------------------------------------------------------
 # 11. Packaging Target (One-click Standalone Zip Generation)

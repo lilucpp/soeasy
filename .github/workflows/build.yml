@@ -36,6 +36,17 @@ jobs:
             libboost-nowide-dev \
             zip
 
+      - name: Build and Run Automated Test Suite (CTest Quality Gate)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          cmake -B build_test -S . -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTS=ON
+          cmake --build build_test -j$(nproc)
+          ./build_test/build_dat_dict "third_party/cppjieba/dict/jieba.dict.utf8" "third_party/cppjieba/dict/jieba_dat.bin"
+          ctest --test-dir build_test --output-on-failure --timeout 90 -j$(nproc)
+
       - name: Build and Package Linux Release
         run: |
           chmod +x scripts/package.sh

@@ -16,6 +16,7 @@
 
 #include "cppjieba/Jieba.hpp"
 #include "storage/dat_jieba.h"
+#include "tests/test_helper.h"
 
 namespace {
 
@@ -51,7 +52,7 @@ int main(int argc, char *argv[]) {
   std::cout << "   SoEasy DatJieba 底层库全方位边界、并发、容错与稳健性实证矩阵\n";
   std::cout << "========================================================================\n";
 
-  std::string dict_dir = "third_party/cppjieba/dict";
+  std::string dict_dir = soeasy::test::FindDictDir();
 
   // -------------------------------------------------------------------------
   // [Test 1] 畸形、破损、截断与非法二进制 DAT 文件防御测试

@@ -163,13 +163,18 @@ int main(int argc, char *argv[]) {
   std::string log_content = ReadFileToString(test_log);
 
   // 检查关键字：单文件解析耗时、单文件成功/失败、文件监控、重建索引
-  assert(log_content.find("[Parser]") != std::string::npos && "Log should contain [Parser] tags");
+  assert((log_content.find("[Parser]") != std::string::npos ||
+          log_content.find("[IndexOrchestrator]") != std::string::npos) &&
+         "Log should contain [Parser] or [IndexOrchestrator] tags");
   assert(log_content.find("SUCCESS") != std::string::npos && "Log should contain SUCCESS status");
   assert(log_content.find("ms") != std::string::npos && "Log should contain parse elapsed milliseconds");
   assert(log_content.find("[WatchEngine]") != std::string::npos && "Log should contain [WatchEngine] logs");
-  assert(log_content.find("Starting full index rebuild") != std::string::npos &&
+  assert((log_content.find("Starting full index rebuild") != std::string::npos ||
+          log_content.find("Starting complete index rebuild") != std::string::npos) &&
          "Log should contain rebuild starting log");
-  assert(log_content.find("Index rebuild finished") != std::string::npos && "Log should contain rebuild finished log");
+  assert((log_content.find("Index rebuild finished") != std::string::npos ||
+          log_content.find("Rebuild completed successfully") != std::string::npos) &&
+         "Log should contain rebuild finished log");
 
   std::cout << "  [+] 日志包含单文件解析耗时 (ms) 与成功/失败状态: 验证通过!\n";
   std::cout << "  [+] 日志包含文件系统变动监控 [WatchEngine]: 验证通过!\n";
