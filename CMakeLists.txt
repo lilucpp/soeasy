@@ -283,6 +283,8 @@ add_library(soeasy_service STATIC
     src/service/watch_engine.cpp
     src/service/name_index.cpp
     src/service/doc_prechecker.cpp
+    src/service/search_coordinator.cpp
+    src/service/index_orchestrator.cpp
     src/service/index_pipeline.cpp
     src/service/worker_guard.cpp
     src/service/async_write_queue.cpp
@@ -440,6 +442,19 @@ if(BUILD_TESTS)
       soeasy_worker_lib
       soeasy_service
       soeasy_storage
+  )
+
+  # Architecture Refactoring Test: Mid-tier CQRS SearchCoordinator (Stage 3)
+  add_executable(test_search_coordinator
+      tests/test_search_coordinator.cpp
+  )
+  target_include_directories(test_search_coordinator PRIVATE
+      src
+  )
+  target_link_libraries(test_search_coordinator PRIVATE
+      soeasy_service
+      soeasy_storage
+      soeasy_common
   )
 
   # Test: spdlog Logging & Index Rebuild Verification
