@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 /*
 * #define SQLITECPP_COMPILE_DLL to compile a DLL under Windows
 * #define SQLITECPP_EXPORT to export symbols when creating the DLL, otherwise it defaults to importing symbols

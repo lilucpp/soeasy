@@ -13,6 +13,7 @@
 #include <sqlite3.h>
 
 #include <iostream>
+#include <cstdint>
 
 namespace SQLite
 {

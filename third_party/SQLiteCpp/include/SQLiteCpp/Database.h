@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include <cstdint>
+
 #include <SQLiteCpp/SQLiteCppExport.h>
 #include <SQLiteCpp/Column.h>
 

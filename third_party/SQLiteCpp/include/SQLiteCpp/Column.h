@@ -16,6 +16,7 @@
 
 #include <string>
 #include <memory>
+#include <cstdint>
 
 // Forward declarations to avoid inclusion of <sqlite3.h> in a header
 struct sqlite3_stmt;
