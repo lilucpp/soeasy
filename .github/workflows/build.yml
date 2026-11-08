@@ -145,11 +145,22 @@ jobs:
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
           if ! ctest --test-dir build --output-on-failure --timeout 180 -j1; then
-            echo "::error title=CTest Failed::Checking failed tests..."
-            python3 tools/report_ctest_failures.py build/Testing/Temporary/LastTest.log 2>/dev/null || true
-            while IFS= read -r line; do
-              echo "::error title=CTestFailure::${line}"
-            done < <(grep -E "\*\*\*Failed|\*\*\*Timeout|\*\*\*Exception" build/Testing/Temporary/LastTest.log 2>/dev/null || true)
+            echo "### ❌ Windows CTest Failure Report" >> "${GITHUB_STEP_SUMMARY}"
+            if [ -f build/Testing/Temporary/LastTestsFailed.log ]; then
+              echo "#### Failed Test List:" >> "${GITHUB_STEP_SUMMARY}"
+              while IFS= read -r line; do
+                echo "- \`${line}\`" >> "${GITHUB_STEP_SUMMARY}"
+                echo "::error title=FailedTest::${line}"
+              done < build/Testing/Temporary/LastTestsFailed.log
+            fi
+            echo "#### LastTest.log Failure Details:" >> "${GITHUB_STEP_SUMMARY}"
+            echo '```text' >> "${GITHUB_STEP_SUMMARY}"
+            grep -B 5 -A 40 -E "Test Failed\.|Test Timeout\.|Completed \(Failed\)" build/Testing/Temporary/LastTest.log >> "${GITHUB_STEP_SUMMARY}" || true
+            echo '```' >> "${GITHUB_STEP_SUMMARY}"
+            echo "#### Last 100 lines of LastTest.log:" >> "${GITHUB_STEP_SUMMARY}"
+            echo '```text' >> "${GITHUB_STEP_SUMMARY}"
+            tail -n 100 build/Testing/Temporary/LastTest.log >> "${GITHUB_STEP_SUMMARY}" || true
+            echo '```' >> "${GITHUB_STEP_SUMMARY}"
             exit 1
           fi
 
@@ -158,7 +169,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-ctest-logs
-          path: build/Testing/Temporary/LastTest.log
+          path: build/Testing/Temporary/
 
       - name: Package Windows Artifacts
         run: |
