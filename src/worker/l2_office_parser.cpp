@@ -37,12 +37,6 @@
 namespace soeasy {
 namespace worker {
 
-#ifdef _WIN32
-static const char *kDevNull = "NUL";
-#else
-static const char *kDevNull = "/dev/null";
-#endif
-
 namespace {
 
 class NullStreamBuf : public std::streambuf {
@@ -223,8 +217,6 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
       if (enable_logging && !log_file_path.empty()) {
         tmp_log_path = log_file_path + ".dt.tmp";
         doctotext_extractor_params_set_log_file(params, tmp_log_path.c_str());
-      } else {
-        doctotext_extractor_params_set_log_file(params, kDevNull);
       }
       doctotext_extractor_params_set_parser_type(params, ptype);
       if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {

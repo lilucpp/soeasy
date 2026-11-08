@@ -134,6 +134,10 @@ jobs:
           if [ -n "${WINDEPLOYQT}" ]; then
             "${WINDEPLOYQT}" --release --no-translations build/soeasy-gui.exe || true
           fi
+          # Ensure headless offscreen platform plugin is also deployed for CI testing
+          mkdir -p build/platforms
+          cp -p ${MINGW_PREFIX}/share/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
 
       - name: Build DAT Dictionary
         run: |
@@ -142,25 +146,23 @@ jobs:
       - name: Run Automated Test Suite (Windows CTest Quality Gate)
         env:
           QT_QPA_PLATFORM: offscreen
+          QT_PLUGIN_PATH: ${{ github.workspace }}/build
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
+          export QT_PLUGIN_PATH="$(pwd)/build:${MINGW_PREFIX}/share/qt5/plugins:${MINGW_PREFIX}/lib/qt5/plugins:${QT_PLUGIN_PATH}"
           if ! ctest --test-dir build --output-on-failure --timeout 180 -j1; then
-            echo "### ❌ Windows CTest Failure Report" >> "${GITHUB_STEP_SUMMARY}"
+            STEP_SUMMARY_PATH=$(cygpath -u "${GITHUB_STEP_SUMMARY:-/tmp/step_summary.md}" 2>/dev/null || echo "${GITHUB_STEP_SUMMARY}")
+            echo "### ❌ Windows CTest Failure Report" >> "${STEP_SUMMARY_PATH}"
             if [ -f build/Testing/Temporary/LastTestsFailed.log ]; then
-              echo "#### Failed Test List:" >> "${GITHUB_STEP_SUMMARY}"
+              echo "#### Failed Test List:" >> "${STEP_SUMMARY_PATH}"
               while IFS= read -r line; do
-                echo "- \`${line}\`" >> "${GITHUB_STEP_SUMMARY}"
+                echo "- \`${line}\`" >> "${STEP_SUMMARY_PATH}"
                 echo "::error title=FailedTest::${line}"
               done < build/Testing/Temporary/LastTestsFailed.log
             fi
-            echo "#### LastTest.log Failure Details:" >> "${GITHUB_STEP_SUMMARY}"
-            echo '```text' >> "${GITHUB_STEP_SUMMARY}"
-            grep -B 5 -A 40 -E "Test Failed\.|Test Timeout\.|Completed \(Failed\)" build/Testing/Temporary/LastTest.log >> "${GITHUB_STEP_SUMMARY}" || true
-            echo '```' >> "${GITHUB_STEP_SUMMARY}"
-            echo "#### Last 100 lines of LastTest.log:" >> "${GITHUB_STEP_SUMMARY}"
-            echo '```text' >> "${GITHUB_STEP_SUMMARY}"
-            tail -n 100 build/Testing/Temporary/LastTest.log >> "${GITHUB_STEP_SUMMARY}" || true
-            echo '```' >> "${GITHUB_STEP_SUMMARY}"
+            echo "================ CTest LastTest.log ================"
+            cat build/Testing/Temporary/LastTest.log || true
+            echo "===================================================="
             exit 1
           fi
 
