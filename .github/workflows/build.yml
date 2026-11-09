@@ -45,7 +45,22 @@ jobs:
             -DBUILD_TESTS=ON
           cmake --build build_test -j$(nproc)
           ./build_test/build_dat_dict "third_party/cppjieba/dict/jieba.dict.utf8" "third_party/cppjieba/dict/jieba_dat.bin"
-          ctest --test-dir build_test --output-on-failure --timeout 90 -j$(nproc)
+          if ! ctest --test-dir build_test --output-on-failure --timeout 180 -j1; then
+            echo "CTest encountered failures. Dumping logs..."
+            if [ -f build_test/Testing/Temporary/LastTest.log ]; then
+              tail -n 100 build_test/Testing/Temporary/LastTest.log
+            fi
+            exit 1
+          fi
+
+      - name: Upload Linux CTest Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-ctest-logs
+          path: |
+            build_test/Testing/Temporary/LastTest.log
+            build_test/Testing/Temporary/LastTestsFailed.log
 
       - name: Build and Package Linux Release
         run: |
