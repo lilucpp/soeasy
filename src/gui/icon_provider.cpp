@@ -198,6 +198,18 @@ QIcon IconProvider::GetAppIcon() {
     return s_icon_cache["__app__"];
   }
 
+  // Prioritize embedded official application icon resource
+  if (QFile::exists(":/icons/app_icon.png")) {
+    QIcon icon(":/icons/app_icon.png");
+    s_icon_cache["__app__"] = icon;
+    return icon;
+  }
+  if (QFile::exists(":/icons/soeasy.png")) {
+    QIcon icon(":/icons/soeasy.png");
+    s_icon_cache["__app__"] = icon;
+    return icon;
+  }
+
   QIcon icon;
   for (int size : {16, 20, 24, 32, 48, 64, 128}) {
     QPixmap pix(size, size);

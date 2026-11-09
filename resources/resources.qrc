@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/app_icon.png</file>
+        <file>icons/soeasy.png</file>
+        <file>styles/theme_light.qss</file>
+    </qresource>
+</RCC>

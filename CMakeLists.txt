@@ -438,6 +438,7 @@ endif()
 # 10. GUI Subsystem (Qt5 Widgets Desktop Frontend)
 # -------------------------------------------------------------
 add_library(soeasy_gui STATIC
+    src/gui/theme_manager.cpp
     src/gui/i18n.cpp
     src/gui/icon_provider.cpp
     src/gui/hover_preview_popup.cpp
@@ -449,6 +450,7 @@ add_library(soeasy_gui STATIC
     src/gui/result_view.cpp
     src/gui/title_bar.cpp
     src/gui/main_window.cpp
+    resources/resources.qrc
 )
 target_include_directories(soeasy_gui PUBLIC
     src

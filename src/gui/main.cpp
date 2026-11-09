@@ -17,6 +17,7 @@
 #include "common/system_env.h"
 #include "gui/i18n.h"
 #include "gui/main_window.h"
+#include "gui/theme_manager.h"
 #include "service/index_config.h"
 #include "service/index_pipeline.h"
 #include "service/worker_guard.h"
@@ -60,6 +61,7 @@ int main(int argc, char *argv[]) {
 #endif
 
   QApplication app(argc, argv);
+  soeasy::gui::ThemeManager::Instance().Init(&app);
   app.setApplicationName("SoEasy");
   app.setApplicationDisplayName("SoEasy - 让电脑没有难搜的文件");
   app.setApplicationVersion("1.0.0");
