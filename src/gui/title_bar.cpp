@@ -7,98 +7,58 @@ namespace soeasy {
 namespace gui {
 
 TitleBar::TitleBar(QWidget *parent) : QWidget(parent) {
-  setFixedHeight(36);
+  setFixedHeight(48);
   SetupUi();
 }
 
 void TitleBar::SetupUi() {
   setObjectName("TitleBar");
-  setStyleSheet(
-      "#TitleBar {"
-      "  background-color: #FFFAFA;"
-      "  border: none;"
-      "}");
 
   auto *layout = new QHBoxLayout(this);
-  layout->setContentsMargins(12, 0, 0, 0);
-  layout->setSpacing(8);
+  layout->setContentsMargins(16, 0, 16, 0);
+  layout->setSpacing(10);
 
   icon_label_ = new QLabel(this);
-  icon_label_->setFixedSize(20, 20);
+  icon_label_->setObjectName("BrandLogo");
+  icon_label_->setFixedSize(24, 24);
   icon_label_->setAlignment(Qt::AlignCenter);
-  icon_label_->setPixmap(IconProvider::GetAppIcon().pixmap(18, 18));
-  icon_label_->setStyleSheet("border: none; background: transparent; padding: 0px;");
+  icon_label_->setPixmap(IconProvider::GetAppIcon().pixmap(24, 24));
 
-  title_label_ = new QLabel("SoEasy - 让电脑没有难搜的文件", this);
-  title_label_->setStyleSheet(
-      "QLabel {"
-      "  font-size: 13px;"
-      "  font-weight: bold;"
-      "  color: #1E293B;"
-      "  background: transparent;"
-      "  border: none;"
-      "}");
+  title_label_ = new QLabel("SoEasy", this);
+  title_label_->setObjectName("BrandTitle");
+
+  divider_ = new QFrame(this);
+  divider_->setObjectName("BrandDivider");
+  divider_->setFrameShape(QFrame::VLine);
+  divider_->setFrameShadow(QFrame::Plain);
+
+  slogan_label_ = new QLabel(this);
+  slogan_label_->setObjectName("BrandSlogan");
+  slogan_label_->setText("让电脑没有难搜的文件");
 
   btn_min_ = new QPushButton("—", this);
+  btn_min_->setObjectName("BtnMinimize");
+  btn_min_->setProperty("role", "win-control");
   btn_min_->setToolTip("最小化");
-  btn_min_->setFixedSize(40, 36);
-  btn_min_->setStyleSheet(
-      "QPushButton {"
-      "  border: none;"
-      "  background: transparent;"
-      "  color: #475569;"
-      "  font-size: 13px;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
-      "  border-radius: 4px;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #CBDCEF;"
-      "}");
+  btn_min_->setFixedSize(32, 28);
 
   btn_max_ = new QPushButton("□", this);
+  btn_max_->setObjectName("BtnMaximize");
+  btn_max_->setProperty("role", "win-control");
   btn_max_->setToolTip("最大化 / 还原");
-  btn_max_->setFixedSize(40, 36);
-  btn_max_->setStyleSheet(
-      "QPushButton {"
-      "  border: none;"
-      "  background: transparent;"
-      "  color: #475569;"
-      "  font-size: 13px;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #DCE8F5;"
-      "  color: #1E293B;"
-      "  border-radius: 4px;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #CBDCEF;"
-      "}");
+  btn_max_->setFixedSize(32, 28);
 
   btn_close_ = new QPushButton("✕", this);
+  btn_close_->setObjectName("BtnClose");
+  btn_close_->setProperty("role", "win-control");
+  btn_close_->setProperty("role", "win-close");
   btn_close_->setToolTip("关闭");
-  btn_close_->setFixedSize(44, 36);
-  btn_close_->setStyleSheet(
-      "QPushButton {"
-      "  border: none;"
-      "  background: transparent;"
-      "  color: #475569;"
-      "  font-size: 13px;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #EF4444;"
-      "  color: #FFFFFF;"
-      "  border-radius: 4px;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #DC2626;"
-      "  color: #FFFFFF;"
-      "}");
+  btn_close_->setFixedSize(34, 28);
 
   layout->addWidget(icon_label_);
   layout->addWidget(title_label_);
+  layout->addWidget(divider_);
+  layout->addWidget(slogan_label_);
   layout->addStretch(1);
   layout->addWidget(btn_min_);
   layout->addWidget(btn_max_);
@@ -111,9 +71,18 @@ void TitleBar::SetupUi() {
   RetranslateUi();
 }
 
+void TitleBar::SetSubtitle(const QString &subtitle) {
+  if (slogan_label_) {
+    slogan_label_->setText(subtitle);
+  }
+}
+
 void TitleBar::RetranslateUi() {
   if (title_label_) {
-    title_label_->setText(Tr("app_title"));
+    title_label_->setText("SoEasy");
+  }
+  if (slogan_label_ && slogan_label_->text().isEmpty()) {
+    slogan_label_->setText(Tr("app_title"));
   }
   if (btn_min_) {
     btn_min_->setToolTip(Tr("minimize"));

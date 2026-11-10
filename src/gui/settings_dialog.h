@@ -77,6 +77,7 @@ class SettingsDialog : public QDialog {
 
   std::shared_ptr<service::IndexConfig> config_;
 
+  QListWidget *nav_list_ = nullptr;
   QTabWidget *tab_widget_ = nullptr;
 
   // Tab 0: General & Language
@@ -123,7 +124,7 @@ class SettingsDialog : public QDialog {
   QLabel *user_dict_count_label_ = nullptr;
   std::unique_ptr<storage::DatJieba> jieba_;
 
-  // Tab: Performance & Scheduling
+  // Performance & Scheduling
   QLabel *label_debounce_ = nullptr;
   QSpinBox *debounce_spin_ = nullptr;
   QLabel *label_max_size_ = nullptr;
@@ -143,6 +144,11 @@ class SettingsDialog : public QDialog {
   QLabel *label_dt_path_ = nullptr;
   QLineEdit *doctotext_log_path_edit_ = nullptr;
   QPushButton *dt_browse_btn_ = nullptr;
+
+  // Danger Zone - Rebuild Index (Figma Spec: converged in Performance tab only)
+  QFrame *danger_card_ = nullptr;
+  QLabel *danger_title_label_ = nullptr;
+  QLabel *danger_desc_label_ = nullptr;
 
   // Dialog actions
   QPushButton *btn_rebuild_ = nullptr;

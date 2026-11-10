@@ -17,6 +17,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QTabBar>
@@ -39,8 +40,10 @@ namespace gui {
 
 SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent)
     : QDialog(parent), config_(std::move(config)) {
+  setObjectName("SettingsDialog");
   setWindowTitle("SoEasy - 索引配置与设置中心");
-  resize(800, 620);
+  setWindowIcon(QIcon(":/icons/app_icon.png"));
+  resize(880, 620);
   SetupUi();
   PopulateFromConfig();
 }
@@ -48,94 +51,39 @@ SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWi
 SettingsDialog::~SettingsDialog() = default;
 
 void SettingsDialog::SetupUi() {
-  setStyleSheet(
-      "QDialog {"
-      "  background-color: #FFFAFA;"
-      "  color: #1E293B;"
-      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
-      "'WenQuanYi Micro Hei', sans-serif;"
-      "}"
-      "QTabWidget::pane {"
-      "  border: 1px solid #E2E8F0;"
-      "  background-color: #FFFFFF;"
-      "  border-radius: 6px;"
-      "  top: -1px;"
-      "}"
-      "QTabBar::tab {"
-      "  background-color: #F1F5F9;"
-      "  color: #475569;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-bottom: none;"
-      "  padding: 6px 12px;"
-      "  min-width: 125px;"
-      "  border-top-left-radius: 6px;"
-      "  border-top-right-radius: 6px;"
-      "  margin-right: 3px;"
-      "  font-size: 12px;"
-      "}"
-      "QTabBar::tab:selected {"
-      "  background-color: #FFFFFF;"
-      "  color: #0284C7;"
-      "  border-color: #E2E8F0;"
-      "  border-bottom: 1px solid #FFFFFF;"
-      "}"
-      "QTabBar::tab:hover:!selected {"
-      "  background-color: #E2E8F0;"
-      "  color: #0F172A;"
-      "}"
-      "QTreeWidget, QListWidget, QLineEdit, QSpinBox, QComboBox {"
-      "  background-color: #FFFFFF;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
-      "  padding: 4px 6px;"
-      "  color: #1E293B;"
-      "}"
-      "QTreeWidget::item:selected, QListWidget::item:selected {"
-      "  background-color: #E0F2FE;"
-      "  color: #0369A1;"
-      "}"
-      "QTreeWidget::item:hover:!selected, QListWidget::item:hover:!selected {"
-      "  background-color: #F8FAFC;"
-      "}"
-      "QHeaderView::section {"
-      "  background-color: #F8FAFC;"
-      "  color: #475569;"
-      "  border: none;"
-      "  border-right: 1px solid #E2E8F0;"
-      "  border-bottom: 1px solid #E2E8F0;"
-      "  padding: 5px 8px;"
-      "}"
-      "QPushButton {"
-      "  background-color: #F8FAFC;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
-      "  padding: 6px 14px;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #F1F5F9;"
-      "  border-color: #94A3B8;"
-      "  color: #0F172A;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #E2E8F0;"
-      "}"
-      "QPushButton:default {"
-      "  background-color: #0284C7;"
-      "  border-color: #0369A1;"
-      "  color: #FFFFFF;"
-      "}"
-      "QPushButton:default:hover {"
-      "  background-color: #0369A1;"
-      "}");
-
   auto *main_layout = new QVBoxLayout(this);
-  tab_widget_ = new QTabWidget(this);
-  tab_widget_->setElideMode(Qt::ElideNone);
+  main_layout->setContentsMargins(0, 0, 0, 0);
+  main_layout->setSpacing(0);
+
+  // Body container: Left Navigation Sidebar + Right Content Area
+  auto *body_widget = new QWidget(this);
+  auto *body_layout = new QHBoxLayout(body_widget);
+  body_layout->setContentsMargins(0, 0, 0, 0);
+  body_layout->setSpacing(0);
+
+  // 1. Left Nav Sidebar
+  nav_list_ = new QListWidget(body_widget);
+  nav_list_->setObjectName("SettingsNavList");
+  nav_list_->setFixedWidth(190);
+  nav_list_->setFocusPolicy(Qt::NoFocus);
+
+  // Add 6 nav items
+  new QListWidgetItem("常规与语言", nav_list_);
+  new QListWidgetItem("索引目录", nav_list_);
+  new QListWidgetItem("排除目录规则", nav_list_);
+  new QListWidgetItem("文件格式与解析", nav_list_);
+  new QListWidgetItem("分词词库", nav_list_);
+  new QListWidgetItem("性能与日志", nav_list_);
+
+  body_layout->addWidget(nav_list_);
+
+  // 2. Right Content TabWidget
+  tab_widget_ = new QTabWidget(body_widget);
+  tab_widget_->setObjectName("SettingsTabWidget");
   if (tab_widget_->tabBar()) {
-    tab_widget_->tabBar()->setElideMode(Qt::ElideNone);
-    tab_widget_->tabBar()->setExpanding(false);
+    tab_widget_->tabBar()->hide();
   }
+  tab_widget_->setElideMode(Qt::ElideNone);
 
   tab_widget_->addTab(CreateGeneralTab(), "常规与语言");
   tab_widget_->addTab(CreateDirectoriesTab(), "索引目录");
@@ -144,27 +92,52 @@ void SettingsDialog::SetupUi() {
   tab_widget_->addTab(CreateUserDictTab(), "分词词库");
   tab_widget_->addTab(CreatePerformanceTab(), "性能与日志");
 
-  main_layout->addWidget(tab_widget_);
-  main_layout->addLayout(CreateBottomBar());
+  body_layout->addWidget(tab_widget_, 1);
+  main_layout->addWidget(body_widget, 1);
+
+  // Sync nav_list_ and tab_widget_
+  connect(nav_list_, &QListWidget::currentRowChanged, tab_widget_, &QTabWidget::setCurrentIndex);
+  connect(tab_widget_, &QTabWidget::currentChanged, this, [this](int index) {
+    if (nav_list_ && nav_list_->currentRow() != index) {
+      nav_list_->setCurrentRow(index);
+    }
+  });
+  nav_list_->setCurrentRow(0);
+
+  // 3. Bottom Action Bar
+  auto *bottom_frame = new QFrame(this);
+  bottom_frame->setObjectName("SettingsBottomBar");
+  auto *bottom_layout = CreateBottomBar();
+  bottom_frame->setLayout(bottom_layout);
+  main_layout->addWidget(bottom_frame);
 
   RetranslateUi();
 }
 
 QWidget *SettingsDialog::CreateGeneralTab() {
   auto *tab_gen = new QWidget();
-  auto *form_gen = new QFormLayout(tab_gen);
-  form_gen->setContentsMargins(16, 16, 16, 16);
-  form_gen->setSpacing(12);
+  auto *vbox = new QVBoxLayout(tab_gen);
+  vbox->setContentsMargins(24, 24, 24, 24);
+  vbox->setSpacing(16);
 
-  label_language_ = new QLabel("界面显示语言 (UI Language):", tab_gen);
-  language_combo_ = new QComboBox(tab_gen);
+  auto *card = new QFrame(tab_gen);
+  card->setProperty("surface", "card");
+  auto *form_gen = new QFormLayout(card);
+  form_gen->setContentsMargins(20, 20, 20, 20);
+  form_gen->setSpacing(14);
+
+  label_language_ = new QLabel("界面显示语言 (UI Language):", card);
+  language_combo_ = new QComboBox(card);
   language_combo_->addItem("简体中文 (Simplified Chinese)", "zh");
   language_combo_->addItem("English", "en");
   form_gen->addRow(label_language_, language_combo_);
 
-  label_lang_hint_ = new QLabel(tab_gen);
-  label_lang_hint_->setStyleSheet("color: #64748B; font-size: 12px; margin-top: 4px;");
+  label_lang_hint_ = new QLabel(card);
+  label_lang_hint_->setProperty("role", "hint-label");
   form_gen->addRow("", label_lang_hint_);
+
+  vbox->addWidget(card);
+  vbox->addStretch();
 
   connect(language_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
     std::string chosen_lang = language_combo_->currentData().toString().toStdString();
@@ -177,14 +150,24 @@ QWidget *SettingsDialog::CreateGeneralTab() {
 
 QWidget *SettingsDialog::CreateDirectoriesTab() {
   auto *tab_dirs = new QWidget();
-  auto *layout_dirs = new QVBoxLayout(tab_dirs);
+  auto *vbox = new QVBoxLayout(tab_dirs);
+  vbox->setContentsMargins(24, 24, 24, 24);
+  vbox->setSpacing(16);
 
-  label_dirs_ = new QLabel("系统将实时监控并自动为以下目录及其子文件夹建立索引：", tab_dirs);
-  dirs_list_ = new QListWidget(tab_dirs);
+  auto *card = new QFrame(tab_dirs);
+  card->setProperty("surface", "card");
+  auto *layout_dirs = new QVBoxLayout(card);
+  layout_dirs->setContentsMargins(20, 20, 20, 20);
+  layout_dirs->setSpacing(14);
+
+  label_dirs_ = new QLabel("系统将实时监控并自动为以下目录及其子文件夹建立索引：", card);
+  dirs_list_ = new QListWidget(card);
 
   auto *btn_layout_dirs = new QHBoxLayout();
-  btn_add_dir_ = new QPushButton("添加目录...", tab_dirs);
-  btn_rm_dir_ = new QPushButton("移除所选", tab_dirs);
+  btn_add_dir_ = new QPushButton("添加目录...", card);
+  btn_add_dir_->setProperty("role", "secondary");
+  btn_rm_dir_ = new QPushButton("移除所选", card);
+  btn_rm_dir_->setProperty("role", "secondary");
   btn_layout_dirs->addWidget(btn_add_dir_);
   btn_layout_dirs->addWidget(btn_rm_dir_);
   btn_layout_dirs->addStretch();
@@ -192,6 +175,8 @@ QWidget *SettingsDialog::CreateDirectoriesTab() {
   layout_dirs->addWidget(label_dirs_);
   layout_dirs->addWidget(dirs_list_);
   layout_dirs->addLayout(btn_layout_dirs);
+
+  vbox->addWidget(card);
 
   connect(btn_add_dir_, &QPushButton::clicked, this, &SettingsDialog::OnAddDirectory);
   connect(btn_rm_dir_, &QPushButton::clicked, this, &SettingsDialog::OnRemoveDirectory);
@@ -201,16 +186,26 @@ QWidget *SettingsDialog::CreateDirectoriesTab() {
 
 QWidget *SettingsDialog::CreatePatternsTab() {
   auto *tab_patterns = new QWidget();
-  auto *layout_patterns = new QVBoxLayout(tab_patterns);
+  auto *vbox = new QVBoxLayout(tab_patterns);
+  vbox->setContentsMargins(24, 24, 24, 24);
+  vbox->setSpacing(16);
 
-  label_patterns_ = new QLabel("匹配以下路径规则的目录将被自动忽略（不建立倒排索引）：", tab_patterns);
-  patterns_list_ = new QListWidget(tab_patterns);
+  auto *card = new QFrame(tab_patterns);
+  card->setProperty("surface", "card");
+  auto *layout_patterns = new QVBoxLayout(card);
+  layout_patterns->setContentsMargins(20, 20, 20, 20);
+  layout_patterns->setSpacing(14);
+
+  label_patterns_ = new QLabel("匹配以下路径规则的目录将被自动忽略（不建立倒排索引）：", card);
+  patterns_list_ = new QListWidget(card);
 
   auto *add_pattern_layout = new QHBoxLayout();
-  new_pattern_edit_ = new QLineEdit(tab_patterns);
+  new_pattern_edit_ = new QLineEdit(card);
   new_pattern_edit_->setPlaceholderText("例如: /.git/ 或 /node_modules/");
-  btn_add_pattern_ = new QPushButton("添加规则", tab_patterns);
-  btn_rm_pattern_ = new QPushButton("移除所选", tab_patterns);
+  btn_add_pattern_ = new QPushButton("添加规则", card);
+  btn_add_pattern_->setProperty("role", "secondary");
+  btn_rm_pattern_ = new QPushButton("移除所选", card);
+  btn_rm_pattern_->setProperty("role", "secondary");
   add_pattern_layout->addWidget(new_pattern_edit_);
   add_pattern_layout->addWidget(btn_add_pattern_);
   add_pattern_layout->addWidget(btn_rm_pattern_);
@@ -218,6 +213,8 @@ QWidget *SettingsDialog::CreatePatternsTab() {
   layout_patterns->addWidget(label_patterns_);
   layout_patterns->addWidget(patterns_list_);
   layout_patterns->addLayout(add_pattern_layout);
+
+  vbox->addWidget(card);
 
   connect(btn_add_pattern_, &QPushButton::clicked, this, &SettingsDialog::OnAddPattern);
   connect(btn_rm_pattern_, &QPushButton::clicked, this, &SettingsDialog::OnRemovePattern);
@@ -237,7 +234,7 @@ QWidget *SettingsDialog::CreateExtensionsTab() {
       "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n"
       "    不勾选可获得极致解析性能（纯文本毫秒级完成索引）。",
       group_ocr_);
-  label_ocr_tip_->setStyleSheet("color: #666; font-size: 12px; margin-left: 20px;");
+  label_ocr_tip_->setProperty("role", "hint-label");
   layout_ocr->addWidget(embedded_image_ocr_check_);
   layout_ocr->addWidget(label_ocr_tip_);
   layout_exts->addWidget(group_ocr_);
@@ -314,7 +311,9 @@ QWidget *SettingsDialog::CreateExtensionsTab() {
   new_custom_ext_edit_ = new QLineEdit(tab_exts);
   new_custom_ext_edit_->setPlaceholderText("例如: vue 或 proto (无需加点)");
   btn_add_custom_ext_ = new QPushButton("添加格式", tab_exts);
+  btn_add_custom_ext_->setProperty("role", "secondary");
   btn_rm_custom_ext_ = new QPushButton("移除所选自定义", tab_exts);
+  btn_rm_custom_ext_->setProperty("role", "secondary");
 
   add_custom_layout->addWidget(label_custom_);
   add_custom_layout->addWidget(new_custom_ext_edit_);
@@ -325,10 +324,13 @@ QWidget *SettingsDialog::CreateExtensionsTab() {
   // Bottom action bar
   auto *bottom_exts_layout = new QHBoxLayout();
   btn_select_all_ = new QPushButton("全选", tab_exts);
+  btn_select_all_->setProperty("role", "secondary");
   btn_deselect_all_ = new QPushButton("全不选", tab_exts);
+  btn_deselect_all_->setProperty("role", "secondary");
   btn_reset_exts_ = new QPushButton("恢复推荐默认", tab_exts);
+  btn_reset_exts_->setProperty("role", "secondary");
   exts_count_label_ = new QLabel("已启用: 0 种文件格式", tab_exts);
-  exts_count_label_->setStyleSheet("color: #1976D2;");
+  exts_count_label_->setProperty("role", "count-label");
 
   bottom_exts_layout->addWidget(btn_select_all_);
   bottom_exts_layout->addWidget(btn_deselect_all_);
@@ -372,7 +374,9 @@ QWidget *SettingsDialog::CreateUserDictTab() {
   user_word_input_->setPlaceholderText(Tr("word_ph"));
 
   btn_add_user_word_ = new QPushButton(tab_dict);
+  btn_add_user_word_->setProperty("role", "secondary");
   btn_rm_user_word_ = new QPushButton(tab_dict);
+  btn_rm_user_word_->setProperty("role", "secondary");
 
   input_layout->addWidget(user_word_input_, 1);
   input_layout->addWidget(btn_add_user_word_);
@@ -381,7 +385,7 @@ QWidget *SettingsDialog::CreateUserDictTab() {
 
   auto *bottom_layout = new QHBoxLayout();
   user_dict_count_label_ = new QLabel(tab_dict);
-  user_dict_count_label_->setStyleSheet("color: #64748B; font-size: 12px;");
+  user_dict_count_label_->setProperty("role", "hint-label");
   bottom_layout->addStretch();
   bottom_layout->addWidget(user_dict_count_label_);
   layout_dict->addLayout(bottom_layout);
@@ -557,85 +561,134 @@ void SettingsDialog::OnRemoveUserWord() {
 
 QWidget *SettingsDialog::CreatePerformanceTab() {
   auto *tab_perf = new QWidget();
-  auto *form_perf = new QFormLayout(tab_perf);
+  auto *main_vbox = new QVBoxLayout(tab_perf);
+  main_vbox->setContentsMargins(0, 0, 0, 0);
 
-  debounce_spin_ = new QSpinBox(tab_perf);
+  auto *scroll = new QScrollArea(tab_perf);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+
+  auto *content_widget = new QWidget(scroll);
+  auto *vbox = new QVBoxLayout(content_widget);
+  vbox->setContentsMargins(24, 24, 24, 24);
+  vbox->setSpacing(16);
+
+  // 1. Performance & Logging Options Card
+  auto *card = new QFrame(content_widget);
+  card->setProperty("surface", "card");
+  auto *form_perf = new QFormLayout(card);
+  form_perf->setContentsMargins(20, 20, 20, 20);
+  form_perf->setSpacing(14);
+
+  debounce_spin_ = new QSpinBox(card);
   debounce_spin_->setRange(50, 5000);
   debounce_spin_->setSingleStep(50);
   debounce_spin_->setSuffix(" 毫秒");
-  label_debounce_ = new QLabel("文件变动去抖动等待延迟:", tab_perf);
+  label_debounce_ = new QLabel("文件变动去抖动等待延迟:", card);
   form_perf->addRow(label_debounce_, debounce_spin_);
 
-  max_size_spin_ = new QSpinBox(tab_perf);
+  max_size_spin_ = new QSpinBox(card);
   max_size_spin_->setRange(1, 1024);
   max_size_spin_->setSingleStep(10);
   max_size_spin_->setSuffix(" MB");
-  label_max_size_ = new QLabel("单文件最大全文索引上限:", tab_perf);
+  label_max_size_ = new QLabel("单文件最大全文索引上限:", card);
   form_perf->addRow(label_max_size_, max_size_spin_);
 
-  worker_count_spin_ = new QSpinBox(tab_perf);
+  worker_count_spin_ = new QSpinBox(card);
   worker_count_spin_->setRange(1, 8);
   worker_count_spin_->setSingleStep(1);
   worker_count_spin_->setSuffix(" 个进程");
-  label_worker_count_ = new QLabel("并发解析 Worker 进程数:", tab_perf);
+  label_worker_count_ = new QLabel("并发解析 Worker 进程数:", card);
   form_perf->addRow(label_worker_count_, worker_count_spin_);
 
-  min_img_chars_spin_ = new QSpinBox(tab_perf);
+  min_img_chars_spin_ = new QSpinBox(card);
   min_img_chars_spin_->setRange(0, 50);
   min_img_chars_spin_->setSingleStep(1);
   min_img_chars_spin_->setSuffix(" 个字 (0为不限制)");
-  label_min_img_chars_ = new QLabel("图片最少有效文字数（过滤表情/图标）:", tab_perf);
+  label_min_img_chars_ = new QLabel("图片最少有效文字数（过滤表情/图标）:", card);
   form_perf->addRow(label_min_img_chars_, min_img_chars_spin_);
 
-  filter_thumbs_check_ = new QCheckBox("自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)", tab_perf);
+  filter_thumbs_check_ = new QCheckBox("自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)", card);
   form_perf->addRow("", filter_thumbs_check_);
 
-  log_level_combo_ = new QComboBox(tab_perf);
+  log_level_combo_ = new QComboBox(card);
   log_level_combo_->addItem("DEBUG (详细调试与耗时跟踪)", "debug");
   log_level_combo_->addItem("INFO  (标准运行信息，默认)", "info");
   log_level_combo_->addItem("WARN  (生产精简模式，仅警告/错误)", "warn");
   log_level_combo_->addItem("ERROR (仅严重故障记录)", "error");
-  label_log_level_ = new QLabel("运行日志详细级别:", tab_perf);
+  label_log_level_ = new QLabel("运行日志详细级别:", card);
   form_perf->addRow(label_log_level_, log_level_combo_);
 
-  log_console_check_ = new QCheckBox("输出控制台实时镜像 (Console stdout，用于终端调试)", tab_perf);
+  log_console_check_ = new QCheckBox("输出控制台实时镜像 (Console stdout，用于终端调试)", card);
   form_perf->addRow("终端输出调试:", log_console_check_);
 
-  log_sync_check_ = new QCheckBox("同步即时落盘模式 (Sync Flush，每条日志即刻刷盘，排查异常卡死)", tab_perf);
+  log_sync_check_ = new QCheckBox("同步即时落盘模式 (Sync Flush，每条日志即刻刷盘，排查异常卡死)", card);
   form_perf->addRow("落盘同步模式:", log_sync_check_);
 
   doctotext_log_check_ =
-      new QCheckBox("启用 DocToText 详细文档解析日志 (默认关闭，用于排查 Office/PDF 解析问题)", tab_perf);
+      new QCheckBox("启用 DocToText 详细文档解析日志 (默认关闭，用于排查 Office/PDF 解析问题)", card);
   form_perf->addRow("DocToText 日志:", doctotext_log_check_);
 
   auto *dt_path_layout = new QHBoxLayout();
-  doctotext_log_path_edit_ = new QLineEdit(tab_perf);
+  doctotext_log_path_edit_ = new QLineEdit(card);
   doctotext_log_path_edit_->setPlaceholderText("留空则默认输出至 logs/doctotext.log");
-  dt_browse_btn_ = new QPushButton("浏览...", tab_perf);
-  dt_browse_btn_->setFixedWidth(70);
+  dt_browse_btn_ = new QPushButton("浏览...", card);
+  dt_browse_btn_->setProperty("role", "secondary");
+  dt_browse_btn_->setFixedWidth(80);
   dt_path_layout->addWidget(doctotext_log_path_edit_);
   dt_path_layout->addWidget(dt_browse_btn_);
-  label_dt_path_ = new QLabel("日志输出文件路径:", tab_perf);
+  label_dt_path_ = new QLabel("日志输出文件路径:", card);
   form_perf->addRow(label_dt_path_, dt_path_layout);
 
+  vbox->addWidget(card);
+
+  // 2. Danger Zone Card (Index Maintenance - Rebuild Index converged here)
+  danger_card_ = new QFrame(content_widget);
+  danger_card_->setProperty("surface", "danger-card");
+  auto *danger_layout = new QVBoxLayout(danger_card_);
+  danger_layout->setContentsMargins(18, 16, 18, 16);
+  danger_layout->setSpacing(10);
+
+  danger_title_label_ = new QLabel(Tr("danger_zone_title"), danger_card_);
+  danger_title_label_->setProperty("role", "danger-title");
+  danger_layout->addWidget(danger_title_label_);
+
+  danger_desc_label_ = new QLabel(Tr("danger_zone_desc"), danger_card_);
+  danger_desc_label_->setProperty("role", "danger-desc");
+  danger_desc_label_->setWordWrap(true);
+  danger_layout->addWidget(danger_desc_label_);
+
+  btn_rebuild_ = new QPushButton("清空并重建索引...", danger_card_);
+  btn_rebuild_->setProperty("role", "danger");
+  btn_rebuild_->setFixedWidth(160);
+  danger_layout->addWidget(btn_rebuild_, 0, Qt::AlignLeft);
+
+  vbox->addWidget(danger_card_);
+  vbox->addStretch();
+
+  scroll->setWidget(content_widget);
+  main_vbox->addWidget(scroll);
+
   connect(dt_browse_btn_, &QPushButton::clicked, this, &SettingsDialog::OnBrowseDocToTextLogPath);
+  connect(btn_rebuild_, &QPushButton::clicked, this, &SettingsDialog::OnRebuildIndex);
 
   return tab_perf;
 }
 
 QHBoxLayout *SettingsDialog::CreateBottomBar() {
   auto *bottom_layout = new QHBoxLayout();
-  btn_rebuild_ = new QPushButton("清空并重建索引...", this);
-  btn_rebuild_->setStyleSheet("QPushButton { color: #D32F2F; }");
-  bottom_layout->addWidget(btn_rebuild_);
+  bottom_layout->setContentsMargins(20, 10, 20, 10);
+  bottom_layout->setSpacing(12);
+
   bottom_layout->addStretch();
   btn_save_ = new QPushButton("保存并应用", this);
+  btn_save_->setProperty("role", "primary");
   btn_save_->setDefault(true);
   btn_cancel_ = new QPushButton("取消", this);
+  btn_cancel_->setProperty("role", "secondary");
   bottom_layout->addWidget(btn_save_);
   bottom_layout->addWidget(btn_cancel_);
 
-  connect(btn_rebuild_, &QPushButton::clicked, this, &SettingsDialog::OnRebuildIndex);
   connect(btn_save_, &QPushButton::clicked, this, &SettingsDialog::OnSaveAndApply);
   connect(btn_cancel_, &QPushButton::clicked, this, [this]() {
     if (config_) {
@@ -649,6 +702,14 @@ QHBoxLayout *SettingsDialog::CreateBottomBar() {
 
 void SettingsDialog::RetranslateUi() {
   setWindowTitle(Tr("settings_title"));
+  if (nav_list_) {
+    if (nav_list_->count() > 0) nav_list_->item(0)->setText(Tr("tab_general"));
+    if (nav_list_->count() > 1) nav_list_->item(1)->setText(Tr("tab_dirs"));
+    if (nav_list_->count() > 2) nav_list_->item(2)->setText(Tr("tab_patterns"));
+    if (nav_list_->count() > 3) nav_list_->item(3)->setText(Tr("tab_exts"));
+    if (nav_list_->count() > 4) nav_list_->item(4)->setText(Tr("tab_user_dict"));
+    if (nav_list_->count() > 5) nav_list_->item(5)->setText(Tr("tab_perf"));
+  }
   if (tab_widget_) {
     tab_widget_->setTabText(0, Tr("tab_general"));
     tab_widget_->setTabText(1, Tr("tab_dirs"));
@@ -657,6 +718,8 @@ void SettingsDialog::RetranslateUi() {
     tab_widget_->setTabText(4, Tr("tab_user_dict"));
     tab_widget_->setTabText(5, Tr("tab_perf"));
   }
+  if (danger_title_label_) danger_title_label_->setText(Tr("danger_zone_title"));
+  if (danger_desc_label_) danger_desc_label_->setText(Tr("danger_zone_desc"));
 
   // Tab 0
   if (label_language_) label_language_->setText(Tr("label_language"));

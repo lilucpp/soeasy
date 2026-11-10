@@ -31,6 +31,7 @@ class SearchBar : public QWidget {
   void SetQuery(const QString &query);
   void SetMode(SearchMode mode);
   void SetPathScope(const QString &path);
+  void SetPreviewActive(bool active);
   void RetranslateUi();
 
  signals:
@@ -43,12 +44,18 @@ class SearchBar : public QWidget {
   void OnClearScope();
   void OnQueryTextChanged();
   void OnQueryImmediate();
+  void OnModeFulltextClicked();
+  void OnModeFilenameClicked();
 
  private:
   void SetupUi();
+  void UpdateSegmentedButtons();
 
   QLineEdit *query_edit_ = nullptr;
-  QComboBox *mode_combo_ = nullptr;
+  QPushButton *btn_mode_fulltext_ = nullptr;
+  QPushButton *btn_mode_filename_ = nullptr;
+  SearchMode current_mode_ = kModeFulltext;
+
   QLineEdit *scope_edit_ = nullptr;
   QLabel *label_scope_ = nullptr;
   QPushButton *btn_scope_browse_ = nullptr;

@@ -1,10 +1,15 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Use of this source code is governed by an Apache-2.0 license.
+
 #include "gui/search_bar.h"
 
 #include <QAction>
 #include <QDir>
 #include <QFileDialog>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QStyle>
 #include <QVBoxLayout>
 
 #include "gui/i18n.h"
@@ -18,215 +23,172 @@ SearchBar::SearchBar(QWidget *parent) : QWidget(parent) {
 }
 
 void SearchBar::SetupUi() {
+  setObjectName("SearchControlPanel");
+
   auto *main_layout = new QVBoxLayout(this);
   main_layout->setContentsMargins(0, 0, 0, 0);
-  main_layout->setSpacing(8);
+  main_layout->setSpacing(12);
 
-  // Row 1: Query Input + Mode Selector + Settings Button
-  auto *query_layout = new QHBoxLayout();
-  query_layout->setSpacing(8);
+  // Row 1: Search Input (with Ctrl K) + Mode Segmented Control + Preview Toggle + Settings
+  auto *row1_layout = new QHBoxLayout();
+  row1_layout->setSpacing(10);
 
-  query_edit_ = new QLineEdit(this);
-  query_edit_->setPlaceholderText("输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, \"精确词组\", 前缀*）...");
+  // Input Wrap
+  auto *input_wrap = new QFrame(this);
+  input_wrap->setObjectName("SearchInputWrap");
+  auto *input_layout = new QHBoxLayout(input_wrap);
+  input_layout->setContentsMargins(8, 0, 8, 0);
+  input_layout->setSpacing(8);
+
+  query_edit_ = new QLineEdit(input_wrap);
+  query_edit_->setObjectName("SearchInput");
+  query_edit_->setPlaceholderText("键入关键词，毫秒级检索全文或文件名...");
   query_edit_->addAction(IconProvider::GetSearchIcon(), QLineEdit::LeadingPosition);
   query_edit_->setClearButtonEnabled(true);
-  query_edit_->setStyleSheet(
-      "QLineEdit {"
-      "  font-size: 13px;"
-      "  padding: 6px 10px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #FFFFFF;"
-      "  color: #1E293B;"
-      "}"
-      "QLineEdit:focus {"
-      "  border: 1.5px solid #0284C7;"
-      "}");
 
-  mode_combo_ = new QComboBox(this);
-  mode_combo_->addItem("全文倒排 (FTS5)", kModeFulltext);
-  mode_combo_->addItem("文件名秒搜", kModeFilename);
-  QString arrow_path = IconProvider::GetDownArrowImagePath();
-  mode_combo_->setStyleSheet(QString("QComboBox {"
-                                     "  font-size: 13px;"
-                                     "  padding: 5px 28px 5px 12px;"
-                                     "  border: 1px solid #CBD5E1;"
-                                     "  border-radius: 6px;"
-                                     "  background-color: #FFFFFF;"
-                                     "  color: #1E293B;"
-                                     "}"
-                                     "QComboBox:hover {"
-                                     "  border-color: #94A3B8;"
-                                     "}"
-                                     "QComboBox:focus {"
-                                     "  border: 1.5px solid #0284C7;"
-                                     "}"
-                                     "QComboBox::drop-down {"
-                                     "  subcontrol-origin: padding;"
-                                     "  subcontrol-position: top right;"
-                                     "  width: 24px;"
-                                     "  border-left: none;"
-                                     "}"
-                                     "QComboBox::down-arrow {"
-                                     "  image: url(%1);"
-                                     "  width: 12px;"
-                                     "  height: 8px;"
-                                     "  margin-right: 8px;"
-                                     "}"
-                                     "QComboBox QAbstractItemView {"
-                                     "  border: 1px solid #CBD5E1;"
-                                     "  border-radius: 6px;"
-                                     "  background-color: #FFFFFF;"
-                                     "  selection-background-color: #BDDDF8;"
-                                     "  selection-color: #0F172A;"
-                                     "  outline: none;"
-                                     "  padding: 4px;"
-                                     "}")
-                                 .arg(arrow_path));
+  auto *kbd_hint = new QLabel("Ctrl K", input_wrap);
+  kbd_hint->setProperty("role", "kbd-badge");
 
-  btn_toggle_preview_ = new QPushButton("◨ 预览", this);
+  input_layout->addWidget(query_edit_, 1);
+  input_layout->addWidget(kbd_hint);
+
+  // Segmented Mode Controls
+  auto *seg_wrap = new QFrame(this);
+  seg_wrap->setProperty("role", "segmented-group");
+  auto *seg_layout = new QHBoxLayout(seg_wrap);
+  seg_layout->setContentsMargins(2, 2, 2, 2);
+  seg_layout->setSpacing(2);
+
+  btn_mode_fulltext_ = new QPushButton("全文检索", seg_wrap);
+  btn_mode_fulltext_->setProperty("role", "segment-btn");
+
+  btn_mode_filename_ = new QPushButton("文件名", seg_wrap);
+  btn_mode_filename_->setProperty("role", "segment-btn");
+
+  seg_layout->addWidget(btn_mode_fulltext_);
+  seg_layout->addWidget(btn_mode_filename_);
+
+  // Preview Toggle Action
+  btn_toggle_preview_ = new QPushButton("◨ 预览已开启", this);
+  btn_toggle_preview_->setObjectName("BtnTogglePreview");
+  btn_toggle_preview_->setProperty("role", "action-toggle");
+  btn_toggle_preview_->setProperty("active", true);
   btn_toggle_preview_->setToolTip("切换右侧即时正文预览面板 (Ctrl+P)");
-  btn_toggle_preview_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 13px;"
-      "  padding: 5px 12px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #F8FAFC;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #F1F5F9;"
-      "  border-color: #94A3B8;"
-      "  color: #0F172A;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #E2E8F0;"
-      "}");
 
+  // Settings Action
   btn_settings_ = new QPushButton("⚙ 设置中心", this);
-  btn_settings_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 13px;"
-      "  padding: 5px 14px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #F8FAFC;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #F1F5F9;"
-      "  border-color: #94A3B8;"
-      "  color: #0F172A;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #E2E8F0;"
-      "}");
+  btn_settings_->setObjectName("BtnSettings");
+  btn_settings_->setProperty("role", "action-toggle");
+  btn_settings_->setToolTip("打开系统配置与偏好设置");
 
-  query_layout->addWidget(query_edit_, 1);
-  query_layout->addWidget(mode_combo_);
-  query_layout->addWidget(btn_toggle_preview_);
-  query_layout->addWidget(btn_settings_);
-  main_layout->addLayout(query_layout);
+  row1_layout->addWidget(input_wrap, 1);
+  row1_layout->addWidget(seg_wrap);
+  row1_layout->addWidget(btn_toggle_preview_);
+  row1_layout->addWidget(btn_settings_);
+  main_layout->addLayout(row1_layout);
 
-  // Row 2: Search Path Scope constraint
-  auto *scope_layout = new QHBoxLayout();
-  scope_layout->setSpacing(6);
+  // Row 2: Path Filter Scope Bar
+  auto *row2_layout = new QHBoxLayout();
+  row2_layout->setSpacing(10);
 
-  label_scope_ = new QLabel("限定搜索路径:", this);
-  label_scope_->setStyleSheet("font-size: 12px; color: #475569;");
+  label_scope_ = new QLabel("限定路径", this);
+  label_scope_->setObjectName("LabelScope");
 
-  scope_edit_ = new QLineEdit(this);
-  scope_edit_->setPlaceholderText("留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索...");
-  scope_edit_->setStyleSheet(
-      "QLineEdit {"
-      "  font-size: 12px;"
-      "  padding: 5px 8px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #FFFFFF;"
-      "  color: #1E293B;"
-      "}"
-      "QLineEdit:focus {"
-      "  border: 1.5px solid #0284C7;"
-      "}");
+  auto *path_wrap = new QFrame(this);
+  path_wrap->setObjectName("PathInputWrap");
+  auto *path_layout = new QHBoxLayout(path_wrap);
+  path_layout->setContentsMargins(8, 0, 8, 0);
+  path_layout->setSpacing(8);
 
-  btn_scope_browse_ = new QPushButton("浏览...", this);
-  btn_scope_browse_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 12px;"
-      "  padding: 5px 14px;"
-      "  border: 1px solid #BAE6FD;"
-      "  border-radius: 6px;"
-      "  background-color: #E0F2FE;"
-      "  color: #0369A1;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #BAE6FD;"
-      "  color: #0284C7;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #7DD3FC;"
-      "}");
+  scope_edit_ = new QLineEdit(path_wrap);
+  scope_edit_->setObjectName("PathInput");
+  scope_edit_->setPlaceholderText("留空搜索全部索引文件；输入目录以搜索其子目录");
+  scope_edit_->setClearButtonEnabled(true);
+  path_layout->addWidget(scope_edit_);
+
+  btn_scope_browse_ = new QPushButton("浏览目录...", this);
+  btn_scope_browse_->setObjectName("BtnScopeBrowse");
+  btn_scope_browse_->setProperty("role", "secondary");
 
   btn_scope_clear_ = new QPushButton("清除范围", this);
-  btn_scope_clear_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 12px;"
-      "  padding: 5px 12px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #F8FAFC;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover {"
-      "  background-color: #F1F5F9;"
-      "  border-color: #94A3B8;"
-      "  color: #0F172A;"
-      "}"
-      "QPushButton:pressed {"
-      "  background-color: #E2E8F0;"
-      "}");
+  btn_scope_clear_->setObjectName("BtnScopeClear");
+  btn_scope_clear_->setProperty("role", "secondary");
 
-  scope_layout->addWidget(label_scope_);
-  scope_layout->addWidget(scope_edit_, 1);
-  scope_layout->addWidget(btn_scope_browse_);
-  scope_layout->addWidget(btn_scope_clear_);
-  main_layout->addLayout(scope_layout);
+  row2_layout->addWidget(label_scope_);
+  row2_layout->addWidget(path_wrap, 1);
+  row2_layout->addWidget(btn_scope_browse_);
+  row2_layout->addWidget(btn_scope_clear_);
+  main_layout->addLayout(row2_layout);
 
   debounce_timer_ = new QTimer(this);
   debounce_timer_->setSingleShot(true);
-  debounce_timer_->setInterval(180);  // 180ms smooth debounce window
+  debounce_timer_->setInterval(180);
   connect(debounce_timer_, &QTimer::timeout, this, &SearchBar::OnQueryImmediate);
 
   connect(query_edit_, &QLineEdit::textChanged, this, &SearchBar::OnQueryTextChanged);
   connect(query_edit_, &QLineEdit::returnPressed, this, &SearchBar::OnQueryImmediate);
-  connect(mode_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &SearchBar::OnQueryImmediate);
   connect(scope_edit_, &QLineEdit::textChanged, this, &SearchBar::OnQueryTextChanged);
   connect(scope_edit_, &QLineEdit::returnPressed, this, &SearchBar::OnQueryImmediate);
+
+  connect(btn_mode_fulltext_, &QPushButton::clicked, this, &SearchBar::OnModeFulltextClicked);
+  connect(btn_mode_filename_, &QPushButton::clicked, this, &SearchBar::OnModeFilenameClicked);
 
   connect(btn_scope_browse_, &QPushButton::clicked, this, &SearchBar::OnBrowseScope);
   connect(btn_scope_clear_, &QPushButton::clicked, this, &SearchBar::OnClearScope);
   connect(btn_settings_, &QPushButton::clicked, this, &SearchBar::SettingsRequested);
   connect(btn_toggle_preview_, &QPushButton::clicked, this, &SearchBar::PreviewToggleRequested);
 
+  UpdateSegmentedButtons();
   RetranslateUi();
+}
+
+void SearchBar::OnModeFulltextClicked() {
+  if (current_mode_ != kModeFulltext) {
+    current_mode_ = kModeFulltext;
+    UpdateSegmentedButtons();
+    OnQueryImmediate();
+  }
+}
+
+void SearchBar::OnModeFilenameClicked() {
+  if (current_mode_ != kModeFilename) {
+    current_mode_ = kModeFilename;
+    UpdateSegmentedButtons();
+    OnQueryImmediate();
+  }
+}
+
+void SearchBar::UpdateSegmentedButtons() {
+  if (btn_mode_fulltext_) {
+    btn_mode_fulltext_->setProperty("active", current_mode_ == kModeFulltext);
+    btn_mode_fulltext_->style()->unpolish(btn_mode_fulltext_);
+    btn_mode_fulltext_->style()->polish(btn_mode_fulltext_);
+  }
+  if (btn_mode_filename_) {
+    btn_mode_filename_->setProperty("active", current_mode_ == kModeFilename);
+    btn_mode_filename_->style()->unpolish(btn_mode_filename_);
+    btn_mode_filename_->style()->polish(btn_mode_filename_);
+  }
+}
+
+void SearchBar::SetPreviewActive(bool active) {
+  if (btn_toggle_preview_) {
+    btn_toggle_preview_->setProperty("active", active);
+    btn_toggle_preview_->setText(Tr("btn_preview"));
+    btn_toggle_preview_->style()->unpolish(btn_toggle_preview_);
+    btn_toggle_preview_->style()->polish(btn_toggle_preview_);
+  }
 }
 
 void SearchBar::RetranslateUi() {
   if (query_edit_) {
     query_edit_->setPlaceholderText(Tr("search_placeholder"));
   }
-  if (mode_combo_) {
-    int current_idx = mode_combo_->currentIndex();
-    mode_combo_->blockSignals(true);
-    mode_combo_->clear();
-    mode_combo_->addItem(Tr("mode_fulltext"), kModeFulltext);
-    mode_combo_->addItem(Tr("mode_filename"), kModeFilename);
-    if (current_idx >= 0 && current_idx < mode_combo_->count()) {
-      mode_combo_->setCurrentIndex(current_idx);
-    }
-    mode_combo_->blockSignals(false);
+  if (btn_mode_fulltext_) {
+    btn_mode_fulltext_->setText(Tr("mode_fulltext"));
+  }
+  if (btn_mode_filename_) {
+    btn_mode_filename_->setText(Tr("mode_filename"));
   }
   if (btn_toggle_preview_) {
     btn_toggle_preview_->setText(Tr("btn_preview"));
@@ -250,57 +212,62 @@ void SearchBar::RetranslateUi() {
 }
 
 QString SearchBar::query() const {
-  return query_edit_->text().trimmed();
+  return query_edit_ ? query_edit_->text().trimmed() : QString();
 }
 
 SearchMode SearchBar::mode() const {
-  return static_cast<SearchMode>(mode_combo_->currentData().toInt());
+  return current_mode_;
 }
 
 QString SearchBar::path_scope() const {
-  return scope_edit_->text().trimmed();
+  return scope_edit_ ? scope_edit_->text().trimmed() : QString();
 }
 
 void SearchBar::SetQuery(const QString &query) {
-  query_edit_->setText(query);
-  OnQueryImmediate();
-}
-
-void SearchBar::SetMode(SearchMode mode) {
-  int idx = mode_combo_->findData(static_cast<int>(mode));
-  if (idx >= 0) {
-    mode_combo_->setCurrentIndex(idx);
+  if (query_edit_) {
+    query_edit_->setText(query);
+    OnQueryImmediate();
   }
 }
 
+void SearchBar::SetMode(SearchMode mode) {
+  current_mode_ = mode;
+  UpdateSegmentedButtons();
+  OnQueryImmediate();
+}
+
 void SearchBar::SetPathScope(const QString &path) {
-  scope_edit_->setText(path);
+  if (scope_edit_) {
+    scope_edit_->setText(path);
+    OnQueryImmediate();
+  }
 }
 
 void SearchBar::OnBrowseScope() {
-  QString dir = QFileDialog::getExistingDirectory(
-      this, Tr("dlg_select_scope"), scope_edit_->text().isEmpty() ? QDir::homePath() : scope_edit_->text(),
-      QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+  QString initial_dir = scope_edit_->text().trimmed();
+  if (initial_dir.isEmpty() || !QDir(initial_dir).exists()) {
+    initial_dir = QDir::homePath();
+  }
+  QString dir = QFileDialog::getExistingDirectory(this, "选择搜索范围目录", initial_dir,
+                                                  QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
   if (!dir.isEmpty()) {
     scope_edit_->setText(dir);
+    OnQueryImmediate();
   }
 }
 
 void SearchBar::OnClearScope() {
   scope_edit_->clear();
+  OnQueryImmediate();
 }
 
 void SearchBar::OnQueryTextChanged() {
-  if (debounce_timer_) {
-    debounce_timer_->start(180);
-  }
+  debounce_timer_->start();
 }
 
 void SearchBar::OnQueryImmediate() {
-  if (debounce_timer_) {
-    debounce_timer_->stop();
-  }
-  emit SearchTriggered(query(), mode(), path_scope());
+  debounce_timer_->stop();
+  emit SearchTriggered(query(), static_cast<int>(current_mode_), path_scope());
 }
 
 }  // namespace gui

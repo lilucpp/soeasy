@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
     // Test SettingsDialog rendering in Chinese on Tab 3
     {
       soeasy::gui::SettingsDialog dlg_zh(config);
-      dlg_zh.resize(800, 600);
+      dlg_zh.resize(880, 620);
       dlg_zh.show();
       auto *tab_widget = dlg_zh.findChild<QTabWidget *>();
       if (tab_widget) {
@@ -200,6 +200,14 @@ int main(int argc, char *argv[]) {
       app.processEvents();
       QPixmap pix = dlg_zh.grab();
       pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_zh.png").string()));
+
+      // Also capture Tab 5 (Performance & Danger Zone Rebuild Index)
+      if (tab_widget) {
+        tab_widget->setCurrentIndex(5);
+      }
+      app.processEvents();
+      QPixmap pix_perf = dlg_zh.grab();
+      pix_perf.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_perf_zh.png").string()));
     }
 
     std::cout << "  -> 中英双语即时翻译、文件格式说明、配置持久化与切换验证完全通过!\n";

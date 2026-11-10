@@ -58,7 +58,7 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget
   setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
   setWindowTitle(Tr("app_title"));
   setWindowIcon(IconProvider::GetAppIcon());
-  resize(1280, 750);
+  resize(1360, 900);
   SetupUi();
 
   connect(this, &MainWindow::IndexProgressUpdated, this, &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
@@ -98,26 +98,7 @@ void MainWindow::showEvent(QShowEvent *event) {
 }
 
 void MainWindow::SetupUi() {
-  setStyleSheet(
-      "QMainWindow {"
-      "  background-color: #FFFAFA;"
-      "  border: 1px solid #CBD5E1;"
-      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
-      "'WenQuanYi Micro Hei', sans-serif;"
-      "}"
-      "#centralWidget {"
-      "  background-color: #FFFAFA;"
-      "}"
-      "QStatusBar {"
-      "  background-color: #FFFAFA;"
-      "  border-top: 1px solid #CBD5E1;"
-      "  color: #334155;"
-      "  font-size: 12px;"
-      "  padding: 2px 8px;"
-      "}"
-      "QStatusBar::item {"
-      "  border: none;"
-      "}");
+  setObjectName("MainWindow");
 
   auto *central_widget = new QWidget(this);
   central_widget->setObjectName("centralWidget");
@@ -143,17 +124,7 @@ void MainWindow::SetupUi() {
   // Splitter: Result Table (Left) + Master-Detail Preview Panel (Right)
   splitter_ = new QSplitter(Qt::Horizontal, content_widget);
   splitter_->setHandleWidth(6);
-  splitter_->setStyleSheet(
-      "QSplitter::handle {"
-      "  background-color: transparent;"
-      "}"
-      "QSplitter::handle:hover {"
-      "  background-color: #38BDF8;"
-      "  border-radius: 3px;"
-      "}"
-      "QSplitter::handle:pressed {"
-      "  background-color: #0284C7;"
-      "}");
+  splitter_->setObjectName("WorkspaceSplitter");
 
   result_view_ = new ResultView(splitter_);
   preview_panel_ = new PreviewPanel(splitter_);
@@ -178,7 +149,7 @@ void MainWindow::SetupUi() {
   // Status Bar
   status_stats_label_ = new QLabel(this);
   status_stats_label_->setTextFormat(Qt::RichText);
-  status_stats_label_->setStyleSheet("color: #334155; font-size: 12px;");
+
 
   status_progress_bar_ = new QProgressBar(this);
   status_progress_bar_->setRange(0, 100);
@@ -186,42 +157,14 @@ void MainWindow::SetupUi() {
   status_progress_bar_->setTextVisible(true);
   status_progress_bar_->setFixedHeight(14);
   status_progress_bar_->setFixedWidth(140);
-  status_progress_bar_->setStyleSheet(
-      "QProgressBar {"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
-      "  background-color: #E2E8F0;"
-      "  text-align: center;"
-      "  font-size: 10px;"
-      "  color: #0F172A;"
-      "}"
-      "QProgressBar::chunk {"
-      "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0EA5E9, stop:1 #38BDF8);"
-      "  border-radius: 3px;"
-      "}");
+  status_progress_bar_->setObjectName("StatusProgressBar");
   status_progress_bar_->setVisible(false);
 
   status_cancel_btn_ = new QPushButton("✕ 取消", this);
   status_cancel_btn_->setObjectName("statusCancelBtn");
   status_cancel_btn_->setToolTip("取消当前正在进行的索引任务");
   status_cancel_btn_->setCursor(Qt::PointingHandCursor);
-  status_cancel_btn_->setStyleSheet(
-      "QPushButton#statusCancelBtn {"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 3px;"
-      "  background-color: #FFFFFF;"
-      "  color: #64748B;"
-      "  font-size: 11px;"
-      "  padding: 1px 7px;"
-      "}"
-      "QPushButton#statusCancelBtn:hover {"
-      "  background-color: #FEE2E2;"
-      "  color: #DC2626;"
-      "  border-color: #FCA5A5;"
-      "}"
-      "QPushButton#statusCancelBtn:pressed {"
-      "  background-color: #FECACA;"
-      "}");
+  status_cancel_btn_->setProperty("role", "secondary");
   status_cancel_btn_->setVisible(false);
   connect(status_cancel_btn_, &QPushButton::clicked, this, [this]() {
     if (pipeline_) {
@@ -232,11 +175,11 @@ void MainWindow::SetupUi() {
   });
 
   status_file_label_ = new QLabel(this);
-  status_file_label_->setStyleSheet("color: #64748B; font-size: 11px;");
+
   status_file_label_->setVisible(false);
 
   status_latency_label_ = new QLabel(this);
-  status_latency_label_->setStyleSheet("color: #334155; font-size: 12px;");
+
   status_latency_label_->setTextFormat(Qt::RichText);
 
   statusBar()->addWidget(status_stats_label_);

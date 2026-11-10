@@ -20,6 +20,7 @@ class TitleBar : public QWidget {
 
   void UpdateMaximizeButton(bool is_maximized);
   void RetranslateUi();
+  void SetSubtitle(const QString &subtitle);
 
  protected:
   void mousePressEvent(QMouseEvent *event) override;
@@ -36,6 +37,8 @@ class TitleBar : public QWidget {
 
   QLabel *icon_label_ = nullptr;
   QLabel *title_label_ = nullptr;
+  QFrame *divider_ = nullptr;
+  QLabel *slogan_label_ = nullptr;
   QPushButton *btn_min_ = nullptr;
   QPushButton *btn_max_ = nullptr;
   QPushButton *btn_close_ = nullptr;

@@ -36,27 +36,23 @@ ContentPreviewDialog::ContentPreviewDialog(int64_t doc_id, const QString &file_n
 }
 
 void ContentPreviewDialog::SetupUi() {
-  setStyleSheet(
-      "QDialog {"
-      "  background-color: #FFFFFF;"
-      "  color: #1E293B;"
-      "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
-      "'WenQuanYi Micro Hei', sans-serif;"
-      "}");
+  setObjectName("ContentPreviewDialog");
+  setWindowIcon(QIcon(":/icons/app_icon.png"));
 
   auto *main_layout = new QVBoxLayout(this);
-  main_layout->setSpacing(8);
+  main_layout->setSpacing(10);
+  main_layout->setContentsMargins(16, 16, 16, 16);
 
   // Top header row: File path and actions
   auto *top_layout = new QHBoxLayout();
   path_label_ = new QLabel(file_path_, this);
-  path_label_->setStyleSheet("font-size: 12px; color: #546E7A; font-family: monospace;");
+  path_label_->setProperty("role", "hint-label");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
   auto *btn_open_folder = new QPushButton(Tr("btn_open_folder_sys"), this);
+  btn_open_folder->setProperty("role", "secondary");
   auto *btn_open_app = new QPushButton(Tr("btn_open_app_sys"), this);
-  btn_open_folder->setStyleSheet("padding: 4px 10px;");
-  btn_open_app->setStyleSheet("padding: 4px 10px;");
+  btn_open_app->setProperty("role", "secondary");
 
   top_layout->addWidget(path_label_, 1);
   top_layout->addWidget(btn_open_folder);
@@ -77,9 +73,11 @@ void ContentPreviewDialog::SetupUi() {
   in_doc_search_edit_->setMaximumWidth(200);
 
   auto *btn_prev = new QPushButton(Tr("btn_prev"), this);
+  btn_prev->setProperty("role", "secondary");
   auto *btn_next = new QPushButton(Tr("btn_next"), this);
+  btn_next->setProperty("role", "secondary");
   match_count_label_ = new QLabel(Tr("match_count").arg(0).arg(0), this);
-  match_count_label_->setStyleSheet("color: #78909C;");
+  match_count_label_->setProperty("role", "hint-label");
 
   nav_layout->addWidget(label_search);
   nav_layout->addWidget(in_doc_search_edit_);
@@ -103,16 +101,7 @@ void ContentPreviewDialog::SetupUi() {
   // Text browser for full document view
   text_viewer_ = new QTextBrowser(this);
   text_viewer_->setReadOnly(true);
-  text_viewer_->setStyleSheet(
-      "QTextBrowser {"
-      "  font-family: 'Consolas', 'Courier New', 'Noto Sans CJK SC', monospace;"
-      "  font-size: 13px;"
-      "  line-height: 1.5;"
-      "  background-color: #FAFAFA;"
-      "  border: 1px solid #CFD8DC;"
-      "  border-radius: 4px;"
-      "  padding: 8px;"
-      "}");
+  text_viewer_->setObjectName("SourceCodeViewer");
   main_layout->addWidget(text_viewer_, 1);
 }
 

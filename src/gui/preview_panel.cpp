@@ -48,12 +48,7 @@ void PreviewPanel::SetupUi() {
   // 1. Header Card: File Info & Quick Actions
   auto *header_card = new QWidget(this);
   header_card->setObjectName("PreviewHeaderCard");
-  header_card->setStyleSheet(
-      "#PreviewHeaderCard {"
-      "  background-color: #FFFFFF;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "}");
+  header_card->setProperty("surface", "card");
   auto *header_layout = new QVBoxLayout(header_card);
   header_layout->setContentsMargins(10, 8, 10, 8);
   header_layout->setSpacing(4);
@@ -64,45 +59,23 @@ void PreviewPanel::SetupUi() {
   icon_label_ = new QLabel(header_card);
   icon_label_->setFixedSize(24, 24);
   icon_label_->setAlignment(Qt::AlignCenter);
-  icon_label_->setStyleSheet("border: none; background: transparent; padding: 0px;");
+
 
   title_label_ = new QLabel("未选中文件", header_card);
-  title_label_->setStyleSheet("font-size: 13px; font-weight: bold; color: #1E293B; border: none;");
+  title_label_->setObjectName("PreviewFileTitle");
 
   btn_open_file_ = new QPushButton("打开文件", header_card);
-  btn_open_file_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 11px;"
-      "  padding: 4px 10px;"
-      "  border: 1px solid #BAE6FD;"
-      "  border-radius: 4px;"
-      "  background-color: #E0F2FE;"
-      "  color: #0369A1;"
-      "}"
-      "QPushButton:hover { background-color: #BAE6FD; color: #0284C7; }"
-      "QPushButton:pressed { background-color: #7DD3FC; }");
-
-  btn_open_folder_ = new QPushButton("所在目录", header_card);
-  btn_open_folder_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 11px;"
-      "  padding: 4px 10px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
-      "  background-color: #F8FAFC;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
-      "QPushButton:pressed { background-color: #E2E8F0; }");
-
-  title_row->addWidget(icon_label_);
+  btn_open_file_->setProperty("role", "primary");
+btn_open_folder_ = new QPushButton("所在目录", header_card);
+  btn_open_folder_->setProperty("role", "secondary");
+title_row->addWidget(icon_label_);
   title_row->addWidget(title_label_, 1);
   title_row->addWidget(btn_open_file_);
   title_row->addWidget(btn_open_folder_);
   header_layout->addLayout(title_row);
 
   path_label_ = new QLabel(header_card);
-  path_label_->setStyleSheet("font-size: 11px; color: #64748B; border: none; font-family: monospace;");
+  path_label_->setObjectName("PreviewFilePath");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
   path_label_->setWordWrap(true);
   header_layout->addWidget(path_label_);
@@ -114,48 +87,17 @@ void PreviewPanel::SetupUi() {
   nav_layout->setSpacing(6);
 
   label_jump_ = new QLabel("关键词跳转:", this);
-  label_jump_->setStyleSheet("font-size: 12px; color: #475569;");
+
 
   in_doc_search_edit_ = new QLineEdit(this);
   in_doc_search_edit_->setPlaceholderText("在正文中查找...");
-  in_doc_search_edit_->setStyleSheet(
-      "QLineEdit {"
-      "  font-size: 12px;"
-      "  padding: 4px 8px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #FFFFFF;"
-      "  color: #1E293B;"
-      "}"
-      "QLineEdit:focus { border: 1.5px solid #0284C7; }");
-
-  btn_prev_ = new QPushButton("▲ 上一个", this);
-  btn_prev_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 11px;"
-      "  padding: 3px 8px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
-      "  background-color: #F8FAFC;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
-      "QPushButton:pressed { background-color: #E2E8F0; }");
-  btn_next_ = new QPushButton("▼ 下一个", this);
-  btn_next_->setStyleSheet(
-      "QPushButton {"
-      "  font-size: 11px;"
-      "  padding: 3px 8px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
-      "  background-color: #F8FAFC;"
-      "  color: #334155;"
-      "}"
-      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
-      "QPushButton:pressed { background-color: #E2E8F0; }");
-
-  match_count_label_ = new QLabel("匹配: 0 / 0", this);
-  match_count_label_->setStyleSheet("font-size: 11px; color: #64748B;");
+  in_doc_search_edit_->setObjectName("InDocSearchEdit");
+btn_prev_ = new QPushButton("▲ 上一个", this);
+  btn_prev_->setProperty("role", "secondary");
+btn_next_ = new QPushButton("▼ 下一个", this);
+  btn_next_->setProperty("role", "secondary");
+match_count_label_ = new QLabel("匹配: 0 / 0", this);
+  match_count_label_->setObjectName("MatchCountLabel");
 
   nav_layout->addWidget(label_jump_);
   nav_layout->addWidget(in_doc_search_edit_, 1);
@@ -167,43 +109,12 @@ void PreviewPanel::SetupUi() {
   // 3. Document Content Viewer
   text_viewer_ = new QTextBrowser(this);
   text_viewer_->setReadOnly(true);
-  text_viewer_->setStyleSheet(
-      "QTextBrowser {"
-      "  font-family: 'Consolas', 'Courier New', 'Noto Sans CJK SC', monospace;"
-      "  font-size: 12px;"
-      "  line-height: 1.5;"
-      "  background-color: #FFFFFF;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  padding: 8px;"
-      "  color: #1E293B;"
-      "}"
-      "QScrollBar:vertical {"
-      "  width: 6px;"
-      "  background: transparent;"
-      "  margin: 0px;"
-      "  padding: 0px;"
-      "}"
-      "QScrollBar::handle:vertical {"
-      "  background: #CBD5E1;"
-      "  min-height: 24px;"
-      "  border-radius: 3px;"
-      "}"
-      "QScrollBar::handle:vertical:hover {"
-      "  background: #94A3B8;"
-      "}"
-      "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
-      "  height: 0px;"
-      "  background: transparent;"
-      "}"
-      "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
-      "  background: transparent;"
-      "}");
+  text_viewer_->setObjectName("SourceCodeViewer");
   main_layout->addWidget(text_viewer_, 1);
 
   // 4. Meta Status Label
   meta_label_ = new QLabel(this);
-  meta_label_->setStyleSheet("font-size: 11px; color: #64748B; padding: 0 4px;");
+  meta_label_->setObjectName("PreviewMetaLabel");
   main_layout->addWidget(meta_label_);
 
   // Connections

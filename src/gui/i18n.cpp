@@ -211,6 +211,8 @@ void I18n::InitDictionary() {
 
       // Rebuild & Actions
       {"btn_rebuild", "清空并重建索引..."},
+      {"danger_zone_title", "索引维护与高危操作"},
+      {"danger_zone_desc", "清空并重建索引将彻底清空本地全部倒排索引与缓存数据，重新全盘扫描监控目录，耗时较长，请谨慎操作。"},
       {"rebuild_confirm_title", "确认重建索引"},
       {"rebuild_confirm_text",
        "此操作将彻底清空当前所有的全文倒排索引与密态缓存，\n并对所有配置的监控目录从头进行全量重新解析与构建。\n\n确定"
@@ -402,6 +404,8 @@ void I18n::InitDictionary() {
 
       // Rebuild & Actions
       {"btn_rebuild", "Rebuild Index..."},
+      {"danger_zone_title", "Index Maintenance & Danger Zone"},
+      {"danger_zone_desc", "Rebuilding index will purge all local inverted indices and completely rescans directories from scratch. This may take some time."},
       {"rebuild_confirm_title", "Confirm Index Rebuild"},
       {"rebuild_confirm_text",
        "This will clear all inverted indices and encrypted caches,\nand completely rebuild indices from scratch for "
