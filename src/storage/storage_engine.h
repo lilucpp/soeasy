@@ -4,13 +4,14 @@
 #ifndef SOEASY_SRC_STORAGE_STORAGE_ENGINE_H_
 #define SOEASY_SRC_STORAGE_STORAGE_ENGINE_H_
 
+#include <SQLiteCpp/SQLiteCpp.h>
+
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include <SQLiteCpp/SQLiteCpp.h>
 #include "sqlite3mc_amalgamation.h"
 #include "storage/istorage_engine.h"
 #include "storage/reader_connection_pool.h"
@@ -91,6 +92,11 @@ class StorageEngine : public IStorageEngine {
   bool CheckpointWal() override;
 
   /**
+   * @brief Atomically rekey the encrypted database with a new encryption key.
+   */
+  bool Rekey(const std::string &new_key) override;
+
+  /**
    * @brief Query current database page metrics, freelist count, and fragmentation ratio.
    */
   bool GetFragmentation(StorageFragmentation *out_frag) override;
@@ -131,8 +137,7 @@ class StorageEngine : public IStorageEngine {
    * @brief Perform full-text search against fts_docs (Read channel via ReaderConnectionPool).
    */
   std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
-                                       const std::string &path_prefix = "",
-                                       int *out_total_count = nullptr) override;
+                                       const std::string &path_prefix = "", int *out_total_count = nullptr) override;
 
   /**
    * @brief Decompress and fetch original UTF-8 content from doc_contents (Read channel).

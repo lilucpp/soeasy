@@ -14,6 +14,7 @@
 #include <string>
 
 #include "common/logger.h"
+#include "common/machine_key_provider.h"
 #include "common/system_env.h"
 #include "gui/i18n.h"
 #include "gui/main_window.h"
@@ -268,10 +269,34 @@ int main(int argc, char *argv[]) {
 
   // 1. Initialize Storage Engine (SQLite3MC with AES-128 page encryption)
   auto storage_engine = std::make_shared<soeasy::storage::StorageEngine>();
-  const std::string kEncryptionKey = "soeasy_master_page_key_2026";
-  if (!storage_engine->Open(db_path.toStdString(), kEncryptionKey, dict_dir.toStdString())) {
-    QMessageBox::critical(nullptr, "SoEasy - 启动错误",
-                          QString("无法打开加密索引数据库:\n%1\n请检查权限或磁盘空间。").arg(db_path));
+  auto key_result = soeasy::common::MachineKeyProvider::GetOrCreateDatabaseKey(app_data_dir.toStdString());
+  if (!key_result.success) {
+    QMessageBox::critical(nullptr, soeasy::gui::Tr("err_key_title"),
+                          soeasy::gui::Tr("err_key_msg").arg(QString::fromStdString(key_result.error_message)));
+    return 1;
+  }
+
+  const std::string machine_key = key_result.encryption_key;
+  bool db_opened = storage_engine->Open(db_path.toStdString(), machine_key, dict_dir.toStdString());
+
+  // Check for legacy migration: if failed to open with machine_key, but database file exists
+  if (!db_opened && QFileInfo::exists(db_path) && QFileInfo(db_path).size() > 0) {
+    LOG_INFO("[Startup] Database exists but cannot be decrypted with machine key. Attempting legacy migration...");
+    const std::string legacy_key = soeasy::common::MachineKeyProvider::kDefaultLegacyKey;
+    if (storage_engine->Open(db_path.toStdString(), legacy_key, dict_dir.toStdString())) {
+      LOG_INFO("[Startup] Successfully opened legacy database. Performing atomic migration to machine-bound key...");
+      if (storage_engine->Rekey(machine_key)) {
+        LOG_INFO("[Startup] Legacy database successfully migrated to machine-bound key!");
+        db_opened = true;
+      } else {
+        LOG_ERROR("[Startup] Failed to rekey legacy database: {}", storage_engine->GetLastError());
+      }
+    }
+  }
+
+  if (!db_opened) {
+    QMessageBox::critical(nullptr, soeasy::gui::Tr("err_startup_title"),
+                          soeasy::gui::Tr("err_db_open_msg").arg(db_path));
     return 1;
   }
 
@@ -289,7 +314,7 @@ int main(int argc, char *argv[]) {
   // 4. Initialize Index Pipeline
   auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(config, worker_guard, storage_engine);
   if (!pipeline->Init()) {
-    QMessageBox::critical(nullptr, "SoEasy - 启动错误", "初始化索引流水线与文件监视引擎失败。");
+    QMessageBox::critical(nullptr, soeasy::gui::Tr("err_startup_title"), soeasy::gui::Tr("err_pipeline_init_msg"));
     return 1;
   }
 

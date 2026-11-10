@@ -276,6 +276,44 @@ bool StorageEngine::CheckpointWalUnlocked() {
   return true;
 }
 
+bool StorageEngine::Rekey(const std::string &new_key) {
+  std::lock_guard<std::mutex> lock(writer_mutex_);
+  if (!writer_db_) {
+    last_error_ = "Database not open";
+    return false;
+  }
+  if (IsInTransactionUnlocked()) {
+    last_error_ = "Cannot rekey while in active transaction";
+    return false;
+  }
+  if (!CheckpointWalUnlocked()) {
+    last_error_ = "Checkpoint failed before rekey: " + last_error_;
+    return false;
+  }
+
+  // Drain and close read connection pool before rekey
+  reader_pool_.Close();
+
+  LOG_INFO("[StorageEngine] Executing atomic database rekey with SQLite3MC...");
+  int rc = sqlite3_rekey(writer_db_, new_key.c_str(), static_cast<int>(new_key.size()));
+  if (rc != SQLITE_OK) {
+    last_error_ = sqlite3_errmsg(writer_db_);
+    LOG_ERROR("[StorageEngine] sqlite3_rekey failed: {}", last_error_);
+    // Fallback: restore reader pool with old key
+    reader_pool_.Init(db_path_, key_, dict_dir_, 4);
+    return false;
+  }
+
+  // Update current key and re-initialize reader connection pool with new key
+  key_ = new_key;
+  if (!reader_pool_.Init(db_path_, new_key, dict_dir_, 4)) {
+    LOG_WARN("[StorageEngine] ReaderConnectionPool failed to re-init with new key: {}", reader_pool_.GetLastError());
+  }
+
+  LOG_INFO("[StorageEngine] Database successfully rekeyed to new key.");
+  return true;
+}
+
 bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
   if (!out_frag) {
     return false;
@@ -571,7 +609,8 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   size_t max_compressed_size = ZSTD_compressBound(raw_size);
   std::vector<uint8_t> compressed(max_compressed_size);
 
-  size_t compressed_size = ZSTD_compress(compressed.data(), max_compressed_size, entry.utf8_content.data(), raw_size, 3);
+  size_t compressed_size =
+      ZSTD_compress(compressed.data(), max_compressed_size, entry.utf8_content.data(), raw_size, 3);
   if (ZSTD_isError(compressed_size)) {
     last_error_ = "Zstd compression error: " + std::string(ZSTD_getErrorName(compressed_size));
     return false;
@@ -810,7 +849,8 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
 
   // 1. Query all matching doc_ids and extensions with ESCAPE clause
   const char *query_sql =
-      "SELECT doc_id, ext FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE '^';";
+      "SELECT doc_id, ext FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE "
+      "'^';";
   SqliteStmtScope stmt_select;
   int rc = sqlite3_prepare_v2(writer_db_, query_sql, -1, stmt_select.address(), nullptr);
   if (rc != SQLITE_OK) {
@@ -849,7 +889,8 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
 
   SqliteStmtScope stmt_del_content;
   SqliteStmtScope stmt_del_fts;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(), nullptr);
+  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(),
+                     nullptr);
   sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(), nullptr);
 
   for (int64_t id : doc_ids) {
@@ -1013,9 +1054,10 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
   auto execute_search = [&](const std::string &q, bool is_retry) -> bool {
     // 1. Calculate total matched count if requested
     if (out_total_count) {
-      const char *count_sql = has_prefix ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid "
-                                           "WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2 ESCAPE '^';"
-                                         : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
+      const char *count_sql = has_prefix
+                                  ? "SELECT count(*) FROM fts_docs AS fts JOIN files AS f ON f.doc_id = fts.rowid "
+                                    "WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?2 ESCAPE '^';"
+                                  : "SELECT count(*) FROM fts_docs WHERE fts_docs MATCH ?1;";
       SqliteStmtScope count_stmt;
       if (sqlite3_prepare_v2(target_db, count_sql, -1, count_stmt.address(), nullptr) == SQLITE_OK) {
         sqlite3_bind_text(count_stmt, 1, q.c_str(), -1, SQLITE_TRANSIENT);
@@ -1215,8 +1257,7 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
     return results;
   }
 
-  const char *sql =
-      "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat FROM files;";
+  const char *sql = "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat FROM files;";
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
     last_error_ = sqlite3_errmsg(target_db);

@@ -188,6 +188,7 @@ add_library(soeasy_common STATIC
     src/common/encoding_utils.cpp
     src/common/system_env.cpp
     src/common/snippet_highlighter.cpp
+    src/common/machine_key_provider.cpp
 )
 target_include_directories(soeasy_common PUBLIC
     src
@@ -691,6 +692,33 @@ if(BUILD_TESTS)
       GTest::gtest_main
   )
   gtest_discover_tests(test_sqlitecpp_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 20
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
+
+  # Modern Unit Test Suite: Machine-Bound Encryption & Zero-Friction Lifecycle Key Provider
+  add_executable(test_machine_key_provider_gtest
+      tests/test_machine_key_provider_gtest.cpp
+  )
+  target_include_directories(test_machine_key_provider_gtest PRIVATE
+      src
+      third_party/sqlite3mc
+      third_party/SQLiteCpp/include
+      third_party/utfcpp/source
+      third_party/spdlog/include
+  )
+  target_link_libraries(test_machine_key_provider_gtest PRIVATE
+      soeasy_storage
+      soeasy_common
+      SQLiteCpp
+      sqlite3mc
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_machine_key_provider_gtest
       DISCOVERY_MODE PRE_TEST
       PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"

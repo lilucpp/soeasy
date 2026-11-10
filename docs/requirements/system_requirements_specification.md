@@ -90,7 +90,7 @@ flowchart TD
   1. 在内存哈希树（NameIndex）中执行微秒级文件名匹配；
   2. 在 FTS5 倒排索引表中执行基于 BM25 算法的全文相关度检索。
 - **FR-STR-005**: 针对检索召回的文档记录，**系统应**在 5 毫秒内完成 Zstd 正文解压缩，提取匹配关键词周围的 120 字符上下文摘要，并将关键词添加样式高亮标签。
-- **FR-STR-006**: 当用户在设置面板中请求修改加密主口令时，**系统应**首先校验旧口令一致性；校验通过后，**系统应**在单个数据库事务内调用底层 SQLite3MultipleCiphers 重加密接口完成全库物理重加密；若重加密过程中断，**系统应**保障原数据库文件回滚至初始状态，无破坏损坏。
+- **FR-STR-006**: 系统初始化启动连接 SQLite 数据库时，**系统应**通过 MachineKeyProvider 采用信封加密模型（DEK + KEK）自动获取或生成本机专属加密主密钥，KEK 强绑定至操作系统生命周期级硬件标识（Linux: `/etc/machine-id`, Windows: DPAPI），并将密钥信封以仅当前用户私有权限（`chmod 0600`）持久化；若探测到由旧版默认口令加密的历史数据库，**系统应**自动在单个数据库事务内调用底层 SQLite3MultipleCiphers 重加密接口完成静默无缝原子升级。
 
 ### 3.4 系统环境自适应与降级自愈模块 (FR-SYS)
 
@@ -123,7 +123,7 @@ flowchart TD
 | **FR-STR-003** | BR-01 纯本地极轻量 | - | MET-MEM-01 | `dat_jieba.cpp` | `test_dat_jieba.cpp` |
 | **FR-STR-004** | BR-03 秒级密态检索 | - | MET-LAT-01 | `storage_engine.cpp` | `test_storage_engine.cpp` |
 | **FR-STR-005** | BR-03 秒级密态检索 | - | MET-LAT-02 | `storage_engine.cpp` | `test_storage_engine.cpp` |
-| **FR-STR-006** | BR-03 秒级密态检索 | `BR-STR-001` | - | `storage_engine.cpp` | `test_storage_engine.cpp` |
+| **FR-STR-006** | BR-03 秒级密态检索 | `BR-STR-001` | - | `machine_key_provider.cpp`, `storage_engine.cpp` | `test_machine_key_provider_gtest.cpp` |
 | **FR-SYS-001** | BR-02 进程崩溃自愈 | `BR-SYS-001` | MET-RES-01 | `system_env.cpp` | `test_system_env.cpp` |
 | **FR-SYS-002** | BR-02 进程崩溃自愈 | `BR-SYS-002` | MET-RES-01 | `system_env.cpp` | `test_system_env.cpp` |
 | **FR-GUI-001** | BR-01 纯本地极轻量 | - | - | `main_window.cpp` | `test_gui_smoke.cpp` |

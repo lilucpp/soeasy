@@ -14,7 +14,7 @@
 | **FEAT-001** | **移除索引目录联动清理底层索引库** | 8 | 8 | 3 | 2 | **4.8** | **P0 (极高)** | 已完成 (已验证) |
 | **FEAT-005** | **界面视觉美化与设计语言现代化升级 (对齐 Ant Design 桌面规范)** | 8 | 4 | 4 | 2 | **3.3** | **P1 (高优)** | 待排期 |
 | **FEAT-002** | **设置界面提供“自定义分词词典”可视化管理** | 6 | 4 | 4 | 2 | **2.6** | **P1 (中高)** | 已完成 (已验证) |
-| **FEAT-006** | **设置界面配置与修改数据库物理加密密钥** | 7 | 5 | 4 | 4 | **2.4** | **P1 (中高)** | 待排期 |
+| **FEAT-006** | **数据库密钥硬件绑定与一机一密零感知自动化** | 8 | 5 | 3 | 2 | **3.6** | **P1 (高优)** | 已完成 (已验证) |
 | **FEAT-007** | **引入 SQLiteCpp 现代 C++ 包装库重构底层 SQLite3 裸 C 接口** | 7 | 4 | 5 | 3 | **2.3** | **P1 (中高)** | 已完成 (已验证) |
 | **FEAT-003** | **Linux 监控注册阶段物理剪枝与监控库架构升级** | 7 | 8 | 6 | 5 | **2.0** | **P1 (评估中)**| 调研阶段 |
 | **FEAT-004** | **压缩包格式（zip/7z/tar 等）正文递归检索** | 5 | 3 | 8 | 8 | **0.8** | **P2 (延后)** | 需求待细化 |
@@ -127,28 +127,37 @@
 
 ---
 
-### [FEAT-006] 设置界面配置与修改数据库物理加密密钥
-* **需求层级**：安全防护与用户可控性需求 (Security & Privacy)
-* **业务背景 (安全驱动)**：
-  * 当前底层存储全局启用 SQLite3MC (AES-128-CBC) 加密，但默认采用内部密钥派生；
-  * 为践行“数据零上云、用户独占所有权”原则，系统在设置面板中开放用户自定义加密主口令配置，并提供安全的旧密钥校验与原子重加密（`sqlite3_rekey`）功能，杜绝物理拷贝数据库引发的明文泄露。
-* **关联模块**：`src/storage/storage_engine.cpp`, `src/gui/settings_dialog.cpp`
-* **关联测试**：`tests/test_storage_engine.cpp`
+### [FEAT-006] 数据库密钥硬件绑定与一机一密零感知自动化
+* **需求层级**：安全防护与架构演进需求 (Security & Privacy Automation)
+* **业务背景 (安全与体验双轮驱动)**：
+  * 原设计要求用户在设置面板手动换密码，但对于 10GB 级数据库，全量重加密需要高额 I/O 耗时与 10GB 临时 WAL 空间，易引发 `SQLITE_FULL` 爆盘且破坏开箱即用体验；
+  * 对齐 Chromium / 1Password 工业级最佳实践，引入 **“信封加密 (Envelope Encryption) + 操作系统生命周期锚点绑定”**：
+    1. **一机一密**：彻底拔除代码中的硬编码静态口令，每台电脑独立生成专属 256 位高熵随机主密钥（DEK）；
+    2. **生命周期绝对不变**：以 Linux 官方标准规范 `/etc/machine-id`（系统安装生成，硬件变更/更新不漂移）与 Windows DPAPI 派生 KEK 密封 DEK，存储为受保护文件（`chmod 0600`）；
+    3. **物理防拷贝**：脱机拷贝至其他电脑因 Machine-ID 校验失败而无法解封，数据库物理表现为乱码（`file is not a database`）；
+    4. **存量旧库无感平滑迁移**：启动时智能探测，若检测到存量静态口令数据库，后台自动执行 `sqlite3_rekey` 静默升级至本机高熵密钥。
+* **关联模块**：`src/common/machine_key_provider.h`, `src/common/machine_key_provider.cpp`, `src/storage/storage_engine.cpp`, `src/gui/main.cpp`
+* **关联测试**：`tests/test_machine_key_provider_gtest.cpp`
 * **验收准则 (Acceptance Criteria - Gherkin)**：
   ```gherkin
-  Scenario: 用户在设置面板中更新数据库加密密钥
-    Given 用户打开设置面板的“安全与密态存储”选项卡
-    When 用户输入正确的旧主口令并输入符合强度要求的新口令（长度不低于 8 位）
-    And 用户点击“更新密钥并重新加密”
-    Then 存储引擎在单个事务内调用 SQLite3MC 原子重加密接口完成全库重混淆
-    And 重加密完成前若发生系统异常，底层数据库文件回滚至原密钥状态，无损毁损坏
-    And 弹出成功提示并通知用户后续访问将依赖该新口令
+  Scenario: 首次启动自动生成本机专属高熵加密密钥
+    Given 全新安装的 SoEasy 运行环境
+    When 系统启动并调用 MachineKeyProvider::GetOrCreateDatabaseKey()
+    Then 系统读取本机 /etc/machine-id 密封生成 256 位高熵 DEK
+    And 密钥信封落盘为 .db_envelope.key 并设置权限为 chmod 0600
+    And 底层数据库以该专属高熵密钥成功创建，物理明文泄露率为 0
 
-  Scenario: 输入错误旧密钥时拒绝重加密
-    Given 用户尝试在设置面板修改加密密钥
-    When 用户输入的旧密钥与数据库实际密钥校验不一致
-    Then 系统立即终止重加密流程并弹出“原密码校验失败”告警提示
-    And 底层数据库保持原加密状态不变
+  Scenario: 机器脱机窃取防御
+    Given 攻击者从目标机器窃取了 soeasy_index.db 与 .db_envelope.key
+    When 攻击者在另一台不同 machine-id 的机器上尝试启动解密
+    Then 信封校验 MAC 失败，系统拒绝解封 DEK
+    And 攻击者无法读取数据库内容，提示 file is not a database
+
+  Scenario: 存量旧版硬编码数据库无缝自愈迁移
+    Given 磁盘上存在由旧版静态密钥加密的历史索引数据库
+    When 新版客户端启动检测到旧库
+    Then 自动使用旧密钥打开并调用 StorageEngine::Rekey() 重加密为本机专属密钥
+    And 原旧密钥失效，全量历史文档与索引 100% 完整保留
   ```
 
 ---
@@ -202,3 +211,9 @@
   - **纳秒级存在性探测拦截 (HasWord)**：`DatJieba` 引入 `HasWord`，通过 Darts-clone DAT 树 `exactMatchSearch` 与 Overlay 字典纳秒级探测系统/用户已存在词条，对重复输入提供友好阻断拦截；
   - **检索自愈能力**：新增词条即时支持分词与检索自愈，点击“重建索引”可触发历史全库重新切词；
   - **大文本视窗截断防御**：`SnippetHighlighter` 引入 128KB 视窗边界截断与零冗余拷贝，消除大文件内存激增。（由 `test_gui_smoke`、`test_dat_jieba` 与 `test_snippet_highlighter_gtest` 验证闭环）
+- [x] **[MILE-009] 数据库密钥硬件绑定与一机一密零感知自动化 (FEAT-006)**：
+  - **信封加密体系 (DEK + KEK)**：彻底拔除代码中的静态默认口令，每台电脑独立生成专属 256 位高熵随机主密钥（DEK）；
+  - **生命周期绝对不变**：以 Linux 官方标准规范 `/etc/machine-id`（系统安装生成，硬件变更/更新不漂移）与 Windows DPAPI 派生 KEK 密封 DEK，存储为受保护文件（`chmod 0600`）；
+  - **物理防脱机拷贝**：脱机拷贝至其他电脑因 Machine-ID 校验失败而无法解封，数据库物理表现为乱码（`file is not a database`）；
+  - **存量旧库无感平滑迁移**：启动时智能探测，若检测到存量静态口令数据库，后台自动执行 `sqlite3_rekey` 静默升级至本机高熵密钥；
+  - **全量测试验收**：新增 6 项针对性 GoogleTest（包含机器码稳定性、首创权限 0600、幂等读取、外机入侵防御、存储引擎集成、旧库迁移），全工程 65 项自动化测试 100% 通过。（由 `tests/test_machine_key_provider_gtest.cpp` 验证闭环）

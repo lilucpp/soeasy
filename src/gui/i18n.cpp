@@ -77,6 +77,11 @@ void I18n::InitDictionary() {
       {"msg_tip", "提示"},
       {"save_apply", "保存并应用"},
       {"cancel", "取消"},
+      {"err_key_title", "SoEasy - 密钥错误"},
+      {"err_key_msg", "获取本机数据库加密密钥失败:\n%1\n请检查设备权限或环境。"},
+      {"err_startup_title", "SoEasy - 启动错误"},
+      {"err_db_open_msg", "无法打开加密索引数据库:\n%1\n请检查权限或磁盘空间。"},
+      {"err_pipeline_init_msg", "初始化索引流水线与文件监视引擎失败。"},
 
       // Search Bar
       {"search_placeholder", "输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, \"精确词组\", 前缀*）..."},
@@ -268,6 +273,12 @@ void I18n::InitDictionary() {
       {"msg_tip", "Notice"},
       {"save_apply", "Save && Apply"},
       {"cancel", "Cancel"},
+      {"err_key_title", "SoEasy - Key Error"},
+      {"err_key_msg",
+       "Failed to retrieve local database encryption key:\n%1\nPlease check device permissions or environment."},
+      {"err_startup_title", "SoEasy - Startup Error"},
+      {"err_db_open_msg", "Failed to open encrypted index database:\n%1\nPlease check permissions or disk space."},
+      {"err_pipeline_init_msg", "Failed to initialize index pipeline and file watching engine."},
 
       // Search Bar
       {"search_placeholder", "Enter search keywords (Supports FTS5: AND, OR, NOT, \"exact phrase\", prefix*)..."},
@@ -322,7 +333,8 @@ void I18n::InitDictionary() {
       {"tab_perf", "Performance && Logs"},
 
       // Settings - User Dict Tab
-      {"label_user_dict_hint", "Custom keywords with instant search self-healing. Click 'Rebuild Index' to re-index historical files:"},
+      {"label_user_dict_hint",
+       "Custom keywords with instant search self-healing. Click 'Rebuild Index' to re-index historical files:"},
       {"col_user_dict_word", "Custom Keyword"},
       {"col_user_dict_freq", "Weight"},
       {"btn_add_word", "Add Keyword"},
@@ -331,7 +343,8 @@ void I18n::InitDictionary() {
       {"label_word_count", "Total custom keywords: %1"},
       {"tip_word_exists", "Keyword already exists!"},
       {"tip_word_exists_in_custom", "Keyword already exists in the custom list!"},
-      {"tip_word_exists_in_system", "Keyword already exists in system base dictionary; tokenization is naturally supported."},
+      {"tip_word_exists_in_system",
+       "Keyword already exists in system base dictionary; tokenization is naturally supported."},
 
       // Settings - General Tab
       {"label_language", "Interface Language (UI Language):"},

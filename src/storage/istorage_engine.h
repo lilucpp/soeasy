@@ -71,8 +71,7 @@ class ScopedReadConnection {
   using Releaser = std::function<void(sqlite3 *)>;
 
   ScopedReadConnection() = default;
-  ScopedReadConnection(sqlite3 *db, Releaser releaser)
-      : db_(db), releaser_(std::move(releaser)) {}
+  ScopedReadConnection(sqlite3 *db, Releaser releaser) : db_(db), releaser_(std::move(releaser)) {}
 
   ~ScopedReadConnection() {
     if (db_ && releaser_) {
@@ -84,8 +83,7 @@ class ScopedReadConnection {
   ScopedReadConnection(const ScopedReadConnection &) = delete;
   ScopedReadConnection &operator=(const ScopedReadConnection &) = delete;
 
-  ScopedReadConnection(ScopedReadConnection &&other) noexcept
-      : db_(other.db_), releaser_(std::move(other.releaser_)) {
+  ScopedReadConnection(ScopedReadConnection &&other) noexcept : db_(other.db_), releaser_(std::move(other.releaser_)) {
     other.db_ = nullptr;
   }
 
@@ -221,8 +219,7 @@ class IStorageEngine {
   /**
    * @brief Cascade delete all files under a directory prefix (Write channel).
    */
-  virtual int64_t DeleteDirectory(const std::string &dir_path,
-                                  std::vector<int64_t> *out_deleted_doc_ids = nullptr) = 0;
+  virtual int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) = 0;
 
   /**
    * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild (Write channel).
@@ -233,8 +230,7 @@ class IStorageEngine {
    * @brief Perform full-text search against fts_docs (Read channel via ReaderConnectionPool).
    */
   virtual std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
-                                               const std::string &path_prefix = "",
-                                               int *out_total_count = nullptr) = 0;
+                                               const std::string &path_prefix = "", int *out_total_count = nullptr) = 0;
 
   /**
    * @brief Decompress and fetch original UTF-8 content from doc_contents (Read channel).
@@ -258,6 +254,14 @@ class IStorageEngine {
   virtual ScopedReadConnection AcquireReadConnection() = 0;
 
   /**
+   * @brief Atomically rekey the database to a new encryption key using SQLite3MC.
+   *
+   * @param new_key New encryption key to apply
+   * @return true on success, false on failure (reverts to previous key)
+   */
+  virtual bool Rekey(const std::string &new_key) = 0;
+
+  /**
    * @brief Get low-level error message from SQLite.
    */
   [[nodiscard]] virtual std::string GetLastError() const = 0;
@@ -272,8 +276,7 @@ class IStorageEngine {
  */
 class TransactionGuard {
  public:
-  explicit TransactionGuard(IStorageEngine &engine)
-      : engine_(engine), active_(false), committed_(false) {
+  explicit TransactionGuard(IStorageEngine &engine) : engine_(engine), active_(false), committed_(false) {
     active_ = engine_.BeginTransaction();
   }
 
