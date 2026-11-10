@@ -174,7 +174,7 @@ void SearchBar::UpdateSegmentedButtons() {
 void SearchBar::SetPreviewActive(bool active) {
   if (btn_toggle_preview_) {
     btn_toggle_preview_->setProperty("active", active);
-    btn_toggle_preview_->setText(Tr("btn_preview"));
+    btn_toggle_preview_->setText(active ? Tr("btn_preview") : Tr("btn_preview_off"));
     btn_toggle_preview_->style()->unpolish(btn_toggle_preview_);
     btn_toggle_preview_->style()->polish(btn_toggle_preview_);
   }

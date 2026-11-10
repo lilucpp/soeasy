@@ -35,6 +35,7 @@ class PreviewPanel : public QWidget {
   void OnFindPrev();
   void OnOpenFolder();
   void OnOpenWithDefaultApp();
+  void OnCopyPath();
 
  private:
   void SetupUi();
@@ -51,10 +52,12 @@ class PreviewPanel : public QWidget {
   QLabel *icon_label_ = nullptr;
   QLabel *title_label_ = nullptr;
   QLabel *path_label_ = nullptr;
+  QPushButton *btn_copy_path_ = nullptr;
   QPushButton *btn_open_file_ = nullptr;
   QPushButton *btn_open_folder_ = nullptr;
 
   QLabel *label_jump_ = nullptr;
+  QLabel *keyword_pill_ = nullptr;
   QLineEdit *in_doc_search_edit_ = nullptr;
   QPushButton *btn_prev_ = nullptr;
   QPushButton *btn_next_ = nullptr;

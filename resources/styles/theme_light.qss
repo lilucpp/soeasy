@@ -8,15 +8,38 @@
 QWidget {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     font-size: 13px;
-    color: #202B3C;
+    color: #1E293B;
+    selection-background-color: #EFF6FF;
+    selection-color: #2563EB;
+}
+
+/* Master Background Surfaces (Never Transparent to avoid X11 black buffer artifacts) */
+QMainWindow,
+QWidget#centralWidget,
+QWidget#WorkspaceStack,
+QWidget#SearchWorkspace {
+    background-color: #F8FAFC;
+}
+
+/* Master Splitter: Subtle spacing between left & right cards */
+QSplitter#WorkspaceSplitter {
     background-color: transparent;
-    selection-background-color: #E6EEFC;
-    selection-color: #2765D5;
+}
+QSplitter#WorkspaceSplitter::handle {
+    background-color: transparent;
+    width: 12px;
+}
+
+/* Master-Detail Independent White Floating Cards */
+QWidget#LeftResultsPane {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
 }
 
 /* Global Tooltip */
 QToolTip {
-    background-color: #202B3C;
+    background-color: #1E293B;
     color: #FFFFFF;
     border: none;
     border-radius: 4px;
@@ -67,8 +90,8 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 
 /* --- 2. Window TitleBar (#TitleBar) --- */
 #TitleBar {
-    background-color: #F6F7F9;
-    border-bottom: 1px solid #E4E8EE;
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #E2E8F0;
     min-height: 48px;
     max-height: 48px;
 }
@@ -76,11 +99,11 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 #TitleBar #BrandTitle {
     font-size: 14px;
     font-weight: 700;
-    color: #202B3C;
+    color: #0F172A;
 }
 
 #TitleBar #BrandDivider {
-    background-color: #E4E8EE;
+    background-color: #E2E8F0;
     max-width: 1px;
     min-width: 1px;
     max-height: 14px;
@@ -89,7 +112,7 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 
 #TitleBar #BrandSlogan {
     font-size: 12px;
-    color: #687589;
+    color: #64748B;
 }
 
 /* TitleBar Window Action Buttons */
@@ -101,32 +124,34 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     max-width: 32px;
     min-height: 28px;
     max-height: 28px;
-    color: #687589;
+    color: #64748B;
 }
 #TitleBar QPushButton[role="win-control"]:hover {
-    background-color: #E4E8EE;
-    color: #202B3C;
+    background-color: #F1F5F9;
+    color: #0F172A;
 }
 #TitleBar QPushButton[role="win-close"]:hover {
-    background-color: #E11D48;
+    background-color: #EF4444;
     color: #FFFFFF;
 }
 
 /* --- 3. Search Control Panel (#SearchControlPanel) --- */
 #SearchControlPanel {
-    background-color: #FFFFFF;
-    border-bottom: 1px solid #E4E8EE;
-    padding: 16px 20px 14px 20px;
+    background-color: transparent;
+    padding: 0;
 }
 
 /* Search Input Box */
 #SearchInputWrap {
     background-color: #FFFFFF;
-    border: 1.6px solid #2765D5;
+    border: 1.5px solid #CBD5E1;
     border-radius: 6px;
-    padding: 0 10px;
-    min-height: 40px;
-    max-height: 40px;
+    padding: 0 12px;
+    min-height: 42px;
+    max-height: 42px;
+}
+#SearchInputWrap:focus-within {
+    border: 1.5px solid #2563EB;
 }
 
 #SearchInput {
@@ -134,7 +159,7 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: transparent;
     font-size: 14px;
     font-weight: 500;
-    color: #202B3C;
+    color: #0F172A;
     padding: 0;
 }
 #SearchInput:focus {
@@ -143,9 +168,9 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 
 /* Keyboard hint badge */
 QLabel[role="kbd-badge"] {
-    background-color: #F6F7F9;
-    color: #8C97A6;
-    border: 1px solid #E4E8EE;
+    background-color: #F1F5F9;
+    color: #64748B;
+    border: 1px solid #E2E8F0;
     border-radius: 4px;
     padding: 2px 6px;
     font-size: 11px;
@@ -155,11 +180,14 @@ QLabel[role="kbd-badge"] {
 /* Path Filter Scope Bar */
 #PathInputWrap {
     background-color: #FFFFFF;
-    border: 1px solid #C8D0DC;
+    border: 1px solid #E2E8F0;
     border-radius: 6px;
     padding: 0 10px;
     min-height: 32px;
     max-height: 32px;
+}
+#PathInputWrap:focus-within {
+    border: 1px solid #2563EB;
 }
 
 #PathInput {
@@ -270,53 +298,116 @@ QPushButton[role="action-toggle"][active="true"] {
     font-weight: 600;
 }
 
-/* --- 5. Search Results TableView (#ResultView) --- */
+/* --- 5. Search Results TableView (#ResultView) & Summary Bar --- */
+#ResultSummaryBar {
+    background-color: #FFFFFF;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom: 1px solid #F1F5F9;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0 16px;
+}
+#ResultSummaryLabel {
+    font-size: 13px;
+    color: #1E293B;
+}
+#SortComboBox {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 3px 12px;
+    font-size: 12px;
+    color: #64748B;
+    min-height: 28px;
+}
+#SortComboBox::drop-down {
+    border: none;
+    width: 16px;
+}
+
 #ResultView {
     background-color: #FFFFFF;
     border: none;
-    border-right: 1px solid #E4E8EE;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
     outline: none;
     font-size: 13px;
 }
 #ResultView::item {
-    border-bottom: 1px solid #F0F3F7;
-    padding: 6px 12px;
+    border-bottom: 1px solid #F1F5F9;
+    padding: 4px 12px;
 }
 #ResultView::item:hover {
-    background-color: #F6F7F9;
+    background-color: #F8FAFC;
 }
 #ResultView::item:selected {
-    background-color: #E6EEFC;
-    color: #202B3C;
+    background-color: #EFF6FF;
+    color: #1E293B;
 }
 
 QHeaderView::section {
-    background-color: #F6F7F9;
-    color: #8C97A6;
+    background-color: #FFFFFF;
+    color: #64748B;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     border: none;
-    border-bottom: 1px solid #E4E8EE;
+    border-bottom: 1px solid #F1F5F9;
     padding: 6px 12px;
 }
 
 /* --- 6. Content Preview Panel (#PreviewPanel) --- */
 #PreviewPanel {
     background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
 }
 
 #PreviewHeaderBar {
     background-color: #FFFFFF;
-    border-bottom: 1px solid #E4E8EE;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom: 1px solid #E2E8F0;
     padding: 14px 20px;
 }
 
+#PreviewFileTitle {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0F172A;
+}
+
+#PreviewFilePath {
+    font-size: 11px;
+    color: #64748B;
+}
+
+#BtnCopyPath {
+    background: transparent;
+    border: none;
+    color: #64748B;
+    font-size: 13px;
+    padding: 0 4px;
+}
+#BtnCopyPath:hover {
+    color: #2563EB;
+}
+
 #KeywordNavBar {
-    background-color: #F6F7F9;
-    border-bottom: 1px solid #E4E8EE;
-    min-height: 38px;
-    max-height: 38px;
+    background-color: #F8FAFC;
+    border-bottom: 1px solid #E2E8F0;
+    min-height: 40px;
+    max-height: 40px;
     padding: 0 20px;
+}
+
+#KeywordPill {
+    background-color: #FEF08A;
+    color: #854D0E;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+    padding: 2px 8px;
 }
 
 #SourceCodeViewer {
@@ -325,28 +416,30 @@ QHeaderView::section {
     font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
     font-size: 12px;
     line-height: 20px;
-    color: #202B3C;
+    color: #1E293B;
 }
 
 #PreviewFooterBar {
-    background-color: #F6F7F9;
-    border-top: 1px solid #E4E8EE;
+    background-color: #F8FAFC;
+    border-top: 1px solid #E2E8F0;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
     min-height: 32px;
     max-height: 32px;
     padding: 0 20px;
     font-size: 11px;
-    color: #8C97A6;
+    color: #64748B;
 }
 
 /* --- 7. Global StatusBar (#GlobalStatusBar) --- */
-#GlobalStatusBar {
-    background-color: #F6F7F9;
-    border-top: 1px solid #E4E8EE;
-    min-height: 34px;
-    max-height: 34px;
-    padding: 0 20px;
+#GlobalStatusBar, QStatusBar {
+    background-color: #FFFFFF;
+    border-top: 1px solid #E2E8F0;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0 16px;
     font-size: 11px;
-    color: #687589;
+    color: #64748B;
 }
 
 /* Status Indicator Dot */
@@ -384,12 +477,45 @@ QLabel[role="privacy-label"] {
 }
 
 /* --- 9. Settings Workspace (#SettingsWorkspace) --- */
+#SettingsDialog,
+#SettingsBodyWidget,
+#SettingsTabWidget,
+#SettingsTabWidget::pane,
+#SettingsTabPage,
+#SettingsScrollArea,
+QTabWidget::pane {
+    background-color: #FAFBFC;
+    border: none;
+}
+
+QScrollArea,
+QScrollArea > QWidget,
+QScrollArea > QWidget > QWidget {
+    background-color: #FAFBFC;
+    border: none;
+}
+
 #SettingsSidebar {
     background-color: #F6F7F9;
     border-right: 1px solid #E4E8EE;
-    min-width: 220px;
-    max-width: 220px;
+    min-width: 210px;
+    max-width: 210px;
     padding: 16px 12px;
+}
+
+#SettingsBackButton {
+    background: transparent;
+    border: 1px solid #E4E8EE;
+    border-radius: 6px;
+    color: #687589;
+    font-size: 13px;
+    min-height: 32px;
+    padding: 0 10px;
+}
+#SettingsBackButton:hover {
+    background-color: #FFFFFF;
+    color: #2765D5;
+    border-color: #BCD0F6;
 }
 
 QPushButton[role="nav-item"] {
@@ -415,7 +541,7 @@ QPushButton[role="nav-item"][active="true"] {
 
 /* Settings Content Surface */
 #SettingsContentArea {
-    background-color: #FFFFFF;
+    background-color: #FAFBFC;
     padding: 28px 36px;
 }
 
@@ -427,16 +553,27 @@ QFrame[surface="card"] {
     padding: 18px 20px;
 }
 
+QGroupBox {
+    background-color: #FFFFFF;
+    border: 1px solid #E4E8EE;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #202B3C;
+}
+
 /* Danger Zone Card */
 QFrame[surface="danger-card"] {
-    background-color: #FFF8F8;
-    border: 1px solid #F1DEDE;
+    background-color: #FEF2F2;
+    border: 1px solid #FECACA;
     border-radius: 8px;
     padding: 16px 20px;
 }
 
 QLabel[role="danger-title"] {
-    color: #BE4545;
+    color: #DC2626;
     font-size: 13px;
     font-weight: 600;
 }

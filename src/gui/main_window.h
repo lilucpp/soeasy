@@ -6,6 +6,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <atomic>
 #include <chrono>
@@ -50,6 +51,7 @@ class MainWindow : public QMainWindow {
  protected:
   void changeEvent(QEvent *event) override;
   void showEvent(QShowEvent *event) override;
+  void paintEvent(QPaintEvent *event) override;
 
  private slots:
   void OnSearchTriggered(const QString &query, int mode, const QString &path_scope);
@@ -72,8 +74,14 @@ class MainWindow : public QMainWindow {
   std::shared_ptr<service::IndexPipeline> pipeline_;
 
   TitleBar *title_bar_ = nullptr;
+  QStackedWidget *workspace_stack_ = nullptr;
+  QWidget *search_workspace_widget_ = nullptr;
+  SettingsDialog *settings_workspace_ = nullptr;
   SearchBar *search_bar_ = nullptr;
   QSplitter *splitter_ = nullptr;
+  QFrame *result_summary_bar_ = nullptr;
+  QLabel *summary_label_ = nullptr;
+  QComboBox *sort_combo_ = nullptr;
   ResultView *result_view_ = nullptr;
   PreviewPanel *preview_panel_ = nullptr;
 

@@ -36,9 +36,12 @@ class SettingsDialog : public QDialog {
   explicit SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent = nullptr);
   ~SettingsDialog() override;
 
+  void SetEmbeddedMode(bool embedded);
+
  signals:
   void SettingsApplied();
   void RebuildIndexRequested();
+  void BackRequested();
 
  private slots:
   void OnAddDirectory();
@@ -77,6 +80,7 @@ class SettingsDialog : public QDialog {
 
   std::shared_ptr<service::IndexConfig> config_;
 
+  QPushButton *btn_back_ = nullptr;
   QListWidget *nav_list_ = nullptr;
   QTabWidget *tab_widget_ = nullptr;
 

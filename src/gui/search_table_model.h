@@ -55,6 +55,7 @@ class SearchTableModel : public QAbstractTableModel {
   void SetResults(const std::vector<DisplayResultItem> &items);
   void AppendResults(const std::vector<DisplayResultItem> &items);
   void ClearResults();
+  void SortResults(int type);
   void RetranslateUi();
 
   [[nodiscard]] const DisplayResultItem *GetItem(int row) const;

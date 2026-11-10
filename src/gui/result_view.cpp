@@ -7,6 +7,8 @@
 #include <QItemSelectionModel>
 #include <QScrollBar>
 
+#include "gui/result_item_delegate.h"
+
 namespace soeasy {
 namespace gui {
 
@@ -23,25 +25,37 @@ ResultView::ResultView(QWidget *parent) : QTableView(parent) {
 }
 
 void ResultView::SetupTable() {
-  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColIndex, QHeaderView::Fixed);
-  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColFileName, QHeaderView::Interactive);
-  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColPath, QHeaderView::Stretch);
-  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColSize, QHeaderView::ResizeToContents);
-  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColMtime, QHeaderView::ResizeToContents);
-  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColScore, QHeaderView::ResizeToContents);
+  delegate_ = new ResultItemDelegate(this);
+  setItemDelegate(delegate_);
 
-  setColumnWidth(SearchTableModel::kColIndex, 52);
-  setColumnWidth(SearchTableModel::kColFileName, 260);
   verticalHeader()->setVisible(false);
-  verticalHeader()->setDefaultSectionSize(34);
-  setIconSize(QSize(18, 18));
+  verticalHeader()->setDefaultSectionSize(54);
+  setIconSize(QSize(24, 24));
   setShowGrid(false);
+
+  // Align with Figma design:
+  // Hide pure index, path and score columns from visual header (path is rendered within card delegate)
+  setColumnHidden(SearchTableModel::kColIndex, true);
+  setColumnHidden(SearchTableModel::kColPath, true);
+  setColumnHidden(SearchTableModel::kColScore, true);
+
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColFileName, QHeaderView::Stretch);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColSize, QHeaderView::Fixed);
+  horizontalHeader()->setSectionResizeMode(SearchTableModel::kColMtime, QHeaderView::Fixed);
+
+  setColumnWidth(SearchTableModel::kColSize, 85);
+  setColumnWidth(SearchTableModel::kColMtime, 135);
 
   setSelectionBehavior(QAbstractItemView::SelectRows);
   setSelectionMode(QAbstractItemView::SingleSelection);
   setEditTriggers(QAbstractItemView::NoEditTriggers);
-  setAlternatingRowColors(true);
+  setAlternatingRowColors(false);
   setMouseTracking(true);
+  setAutoFillBackground(true);
+  QPalette pal = palette();
+  pal.setColor(QPalette::Base, QColor("#FFFFFF"));
+  pal.setColor(QPalette::Window, QColor("#FFFFFF"));
+  setPalette(pal);
 
   setObjectName("ResultView");
 
@@ -96,6 +110,10 @@ void ResultView::SetCurrentQuery(const QString &query) {
   if (current_query_ != query) {
     current_query_ = query;
     snippet_lru_cache_.clear();
+    if (delegate_) {
+      delegate_->SetCurrentQuery(query);
+    }
+    viewport()->update();
   }
 }
 
@@ -108,6 +126,15 @@ void ResultView::ClearResults() {
   hover_row_ = -1;
   if (model_) {
     model_->ClearResults();
+  }
+}
+
+void ResultView::SortResults(int type) {
+  if (model_) {
+    model_->SortResults(type);
+    if (model_->rowCount() > 0) {
+      selectRow(0);
+    }
   }
 }
 

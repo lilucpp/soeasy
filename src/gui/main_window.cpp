@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPainter>
 #include <QStatusBar>
 #include <QTimer>
 #include <QUrl>
@@ -97,11 +98,22 @@ void MainWindow::showEvent(QShowEvent *event) {
   }
 }
 
+void MainWindow::paintEvent(QPaintEvent *event) {
+  Q_UNUSED(event);
+  QPainter painter(this);
+  painter.fillRect(rect(), QColor("#F8FAFC"));
+}
+
 void MainWindow::SetupUi() {
   setObjectName("MainWindow");
+  setAttribute(Qt::WA_OpaquePaintEvent, true);
 
   auto *central_widget = new QWidget(this);
   central_widget->setObjectName("centralWidget");
+  central_widget->setAutoFillBackground(true);
+  QPalette central_pal = central_widget->palette();
+  central_pal.setColor(QPalette::Window, QColor("#F8FAFC"));
+  central_widget->setPalette(central_pal);
 
   auto *root_layout = new QVBoxLayout(central_widget);
   root_layout->setContentsMargins(0, 0, 0, 0);
@@ -111,29 +123,76 @@ void MainWindow::SetupUi() {
   title_bar_ = new TitleBar(this);
   root_layout->addWidget(title_bar_);
 
-  // 2. Main Content Container
-  auto *content_widget = new QWidget(central_widget);
-  auto *content_layout = new QVBoxLayout(content_widget);
-  content_layout->setContentsMargins(12, 6, 12, 6);
-  content_layout->setSpacing(8);
+  // 2. Main Workspace Stack (Index 0: Search Workspace, Index 1: Settings Workspace)
+  workspace_stack_ = new QStackedWidget(central_widget);
+  workspace_stack_->setObjectName("WorkspaceStack");
+  workspace_stack_->setAutoFillBackground(true);
+  workspace_stack_->setPalette(central_pal);
+
+  // --- Page 0: Search Workspace ---
+  search_workspace_widget_ = new QWidget(workspace_stack_);
+  search_workspace_widget_->setObjectName("SearchWorkspace");
+  search_workspace_widget_->setAutoFillBackground(true);
+  search_workspace_widget_->setPalette(central_pal);
+  auto *content_layout = new QVBoxLayout(search_workspace_widget_);
+  content_layout->setContentsMargins(16, 12, 16, 12);
+  content_layout->setSpacing(12);
 
   // Search Bar
-  search_bar_ = new SearchBar(content_widget);
+  search_bar_ = new SearchBar(search_workspace_widget_);
   content_layout->addWidget(search_bar_);
 
   // Splitter: Result Table (Left) + Master-Detail Preview Panel (Right)
-  splitter_ = new QSplitter(Qt::Horizontal, content_widget);
-  splitter_->setHandleWidth(6);
+  splitter_ = new QSplitter(Qt::Horizontal, search_workspace_widget_);
+  splitter_->setHandleWidth(12);
+  splitter_->setChildrenCollapsible(false);
   splitter_->setObjectName("WorkspaceSplitter");
 
-  result_view_ = new ResultView(splitter_);
-  preview_panel_ = new PreviewPanel(splitter_);
+  auto *left_pane = new QWidget(splitter_);
+  left_pane->setObjectName("LeftResultsPane");
+  left_pane->setAutoFillBackground(true);
+  QPalette card_pal = left_pane->palette();
+  card_pal.setColor(QPalette::Window, QColor("#FFFFFF"));
+  left_pane->setPalette(card_pal);
+  auto *left_layout = new QVBoxLayout(left_pane);
+  left_layout->setContentsMargins(0, 0, 0, 0);
+  left_layout->setSpacing(0);
+
+  result_summary_bar_ = new QFrame(left_pane);
+  result_summary_bar_->setObjectName("ResultSummaryBar");
+  result_summary_bar_->setFixedHeight(40);
+  auto *summary_layout = new QHBoxLayout(result_summary_bar_);
+  summary_layout->setContentsMargins(16, 0, 16, 0);
+
+  summary_label_ = new QLabel(result_summary_bar_);
+  summary_label_->setObjectName("ResultSummaryLabel");
+  summary_label_->setTextFormat(Qt::RichText);
+  summary_label_->setText(Tr("result_summary_empty_fmt").arg(0));
+  summary_layout->addWidget(summary_label_);
+  summary_layout->addStretch(1);
+
+  sort_combo_ = new QComboBox(result_summary_bar_);
+  sort_combo_->setObjectName("SortComboBox");
+  sort_combo_->addItem(Tr("sort_relevance"), 0);
+  sort_combo_->addItem(Tr("sort_mtime"), 1);
+  sort_combo_->addItem(Tr("sort_size"), 2);
+  sort_combo_->addItem(Tr("sort_filename"), 3);
+  summary_layout->addWidget(sort_combo_);
+
+  left_layout->addWidget(result_summary_bar_);
+
+  result_view_ = new ResultView(left_pane);
   if (pipeline_) {
     result_view_->SetStorageEngine(pipeline_->storage_engine());
+  }
+  left_layout->addWidget(result_view_, 1);
+
+  preview_panel_ = new PreviewPanel(splitter_);
+  if (pipeline_) {
     preview_panel_->SetStorageEngine(pipeline_->storage_engine());
   }
 
-  splitter_->addWidget(result_view_);
+  splitter_->addWidget(left_pane);
   splitter_->addWidget(preview_panel_);
   splitter_->setCollapsible(0, false);
   splitter_->setCollapsible(1, true);
@@ -141,8 +200,34 @@ void MainWindow::SetupUi() {
   splitter_->setStretchFactor(1, 4);
   splitter_->setSizes({768, 512});
 
+  connect(sort_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+    if (result_view_) {
+      result_view_->SortResults(idx);
+    }
+  });
+
   content_layout->addWidget(splitter_, 1);
-  root_layout->addWidget(content_widget, 1);
+  workspace_stack_->addWidget(search_workspace_widget_);
+
+  // --- Page 1: Settings Center Fullscreen Workspace ---
+  if (pipeline_ && pipeline_->config()) {
+    settings_workspace_ = new SettingsDialog(pipeline_->config(), workspace_stack_);
+    settings_workspace_->SetEmbeddedMode(true);
+    workspace_stack_->addWidget(settings_workspace_);
+
+    connect(settings_workspace_, &SettingsDialog::SettingsApplied, this, &MainWindow::OnSettingsApplied);
+    connect(settings_workspace_, &SettingsDialog::RebuildIndexRequested, this, &MainWindow::OnRebuildIndexRequested);
+    connect(settings_workspace_, &SettingsDialog::BackRequested, this, [this]() {
+      if (workspace_stack_) {
+        workspace_stack_->setCurrentIndex(0);
+        if (title_bar_) {
+          title_bar_->SetSubtitle(Tr("app_slogan"));
+        }
+      }
+    });
+  }
+
+  root_layout->addWidget(workspace_stack_, 1);
 
   setCentralWidget(central_widget);
 
@@ -179,8 +264,13 @@ void MainWindow::SetupUi() {
   status_file_label_->setVisible(false);
 
   status_latency_label_ = new QLabel(this);
-
   status_latency_label_->setTextFormat(Qt::RichText);
+
+  statusBar()->setObjectName("GlobalStatusBar");
+  statusBar()->setAutoFillBackground(true);
+  QPalette status_pal = statusBar()->palette();
+  status_pal.setColor(QPalette::Window, QColor("#FFFFFF"));
+  statusBar()->setPalette(status_pal);
 
   statusBar()->addWidget(status_stats_label_);
   statusBar()->addWidget(status_progress_bar_);
@@ -217,6 +307,19 @@ void MainWindow::RetranslateUi() {
     status_cancel_btn_->setText(Tr("btn_cancel_index"));
     status_cancel_btn_->setToolTip(Tr("tip_cancel_index"));
   }
+  if (sort_combo_) {
+    sort_combo_->setItemText(0, Tr("sort_relevance"));
+    sort_combo_->setItemText(1, Tr("sort_mtime"));
+    sort_combo_->setItemText(2, Tr("sort_size"));
+    sort_combo_->setItemText(3, Tr("sort_filename"));
+  }
+  if (summary_label_) {
+    if (current_query_.trimmed().isEmpty()) {
+      summary_label_->setText(Tr("result_summary_empty_fmt").arg(total_matched_count_));
+    } else {
+      summary_label_->setText(Tr("result_summary_fmt").arg(total_matched_count_).arg(current_query_));
+    }
+  }
   UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
 }
 
@@ -226,13 +329,12 @@ void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
     indexed_files = pipeline_->name_index()->size();
   }
 
-  status_stats_label_->setText(Tr("status_stats").arg(indexed_files).arg(total_matches));
-
+  QString left_text = Tr("status_stats").arg(indexed_files);
   if (cost_ms > 0.0) {
-    status_latency_label_->setText(Tr("status_latency").arg(QString::number(cost_ms, 'f', 2)));
-  } else {
-    status_latency_label_->setText(Tr("status_ready"));
+    left_text += QString("    ") + Tr("status_latency").arg(QString::number(cost_ms, 'f', 2));
   }
+  status_stats_label_->setText(left_text);
+  status_latency_label_->setText(Tr("status_shortcuts_privacy"));
 }
 
 void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString &path_scope) {
@@ -249,6 +351,9 @@ void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString
     result_view_->ClearResults();
     if (preview_panel_) {
       preview_panel_->ClearPreview();
+    }
+    if (summary_label_) {
+      summary_label_->setText(Tr("result_summary_empty_fmt").arg(0));
     }
     UpdateStatusBar(0, 0.0);
     return;
@@ -329,6 +434,13 @@ void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString
   last_search_cost_ms_ = cost_ms;
   current_search_offset_ = static_cast<int>(display_items.size());
   result_view_->SetResults(display_items);
+  if (summary_label_) {
+    if (query.trimmed().isEmpty()) {
+      summary_label_->setText(Tr("result_summary_empty_fmt").arg(total_matched_count_));
+    } else {
+      summary_label_->setText(Tr("result_summary_fmt").arg(total_matched_count_).arg(query));
+    }
+  }
   if (!display_items.empty()) {
     result_view_->selectRow(0);
   } else if (preview_panel_) {
@@ -447,17 +559,27 @@ void MainWindow::OnFileOpenRequested(int64_t doc_id, const QString &file_name, c
 }
 
 void MainWindow::OnOpenSettings() {
-  if (!pipeline_ || !pipeline_->config()) {
-    return;
+  if (workspace_stack_ && settings_workspace_) {
+    workspace_stack_->setCurrentWidget(settings_workspace_);
+    if (title_bar_) {
+      title_bar_->SetSubtitle(Tr("settings_title"));
+    }
+  } else if (pipeline_ && pipeline_->config()) {
+    SettingsDialog dlg(pipeline_->config(), this);
+    connect(&dlg, &SettingsDialog::SettingsApplied, this, &MainWindow::OnSettingsApplied);
+    connect(&dlg, &SettingsDialog::RebuildIndexRequested, this, &MainWindow::OnRebuildIndexRequested);
+    dlg.exec();
   }
-  SettingsDialog dlg(pipeline_->config(), this);
-  connect(&dlg, &SettingsDialog::SettingsApplied, this, &MainWindow::OnSettingsApplied);
-  connect(&dlg, &SettingsDialog::RebuildIndexRequested, this, &MainWindow::OnRebuildIndexRequested);
-  dlg.exec();
 }
 
 void MainWindow::OnSettingsApplied() {
   RetranslateUi();
+  if (workspace_stack_) {
+    workspace_stack_->setCurrentIndex(0);
+    if (title_bar_) {
+      title_bar_->SetSubtitle(Tr("app_slogan"));
+    }
+  }
 
   if (pipeline_ && pipeline_->config()) {
     common::Logger::SetLevel(pipeline_->config()->log_level());

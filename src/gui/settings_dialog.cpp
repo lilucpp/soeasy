@@ -61,10 +61,27 @@ void SettingsDialog::SetupUi() {
   body_layout->setContentsMargins(0, 0, 0, 0);
   body_layout->setSpacing(0);
 
-  // 1. Left Nav Sidebar
-  nav_list_ = new QListWidget(body_widget);
+  // 1. Left Nav Sidebar (Figma aligned with Back button & brand logo)
+  auto *sidebar_widget = new QWidget(body_widget);
+  sidebar_widget->setObjectName("SettingsSidebar");
+  sidebar_widget->setFixedWidth(210);
+  auto *sidebar_layout = new QVBoxLayout(sidebar_widget);
+  sidebar_layout->setContentsMargins(12, 16, 12, 16);
+  sidebar_layout->setSpacing(8);
+
+  btn_back_ = new QPushButton("←  返回搜索", sidebar_widget);
+  btn_back_->setObjectName("SettingsBackButton");
+  btn_back_->setProperty("role", "secondary");
+  btn_back_->setVisible(false);  // Shown only in embedded workspace mode
+  connect(btn_back_, &QPushButton::clicked, this, &SettingsDialog::BackRequested);
+  sidebar_layout->addWidget(btn_back_);
+
+  auto *label_pref_title = new QLabel("偏好设置", sidebar_widget);
+  label_pref_title->setProperty("role", "hint-label");
+  sidebar_layout->addWidget(label_pref_title);
+
+  nav_list_ = new QListWidget(sidebar_widget);
   nav_list_->setObjectName("SettingsNavList");
-  nav_list_->setFixedWidth(190);
   nav_list_->setFocusPolicy(Qt::NoFocus);
 
   // Add 6 nav items
@@ -75,7 +92,8 @@ void SettingsDialog::SetupUi() {
   new QListWidgetItem("分词词库", nav_list_);
   new QListWidgetItem("性能与日志", nav_list_);
 
-  body_layout->addWidget(nav_list_);
+  sidebar_layout->addWidget(nav_list_, 1);
+  body_layout->addWidget(sidebar_widget);
 
   // 2. Right Content TabWidget
   tab_widget_ = new QTabWidget(body_widget);
@@ -116,6 +134,8 @@ void SettingsDialog::SetupUi() {
 
 QWidget *SettingsDialog::CreateGeneralTab() {
   auto *tab_gen = new QWidget();
+  tab_gen->setObjectName("SettingsTabPage");
+  tab_gen->setAutoFillBackground(true);
   auto *vbox = new QVBoxLayout(tab_gen);
   vbox->setContentsMargins(24, 24, 24, 24);
   vbox->setSpacing(16);
@@ -150,6 +170,8 @@ QWidget *SettingsDialog::CreateGeneralTab() {
 
 QWidget *SettingsDialog::CreateDirectoriesTab() {
   auto *tab_dirs = new QWidget();
+  tab_dirs->setObjectName("SettingsTabPage");
+  tab_dirs->setAutoFillBackground(true);
   auto *vbox = new QVBoxLayout(tab_dirs);
   vbox->setContentsMargins(24, 24, 24, 24);
   vbox->setSpacing(16);
@@ -186,6 +208,8 @@ QWidget *SettingsDialog::CreateDirectoriesTab() {
 
 QWidget *SettingsDialog::CreatePatternsTab() {
   auto *tab_patterns = new QWidget();
+  tab_patterns->setObjectName("SettingsTabPage");
+  tab_patterns->setAutoFillBackground(true);
   auto *vbox = new QVBoxLayout(tab_patterns);
   vbox->setContentsMargins(24, 24, 24, 24);
   vbox->setSpacing(16);
@@ -224,6 +248,8 @@ QWidget *SettingsDialog::CreatePatternsTab() {
 
 QWidget *SettingsDialog::CreateExtensionsTab() {
   auto *tab_exts = new QWidget();
+  tab_exts->setObjectName("SettingsTabPage");
+  tab_exts->setAutoFillBackground(true);
   auto *layout_exts = new QVBoxLayout(tab_exts);
 
   // Group 1: 嵌入图片解析选项
@@ -351,6 +377,8 @@ QWidget *SettingsDialog::CreateExtensionsTab() {
 
 QWidget *SettingsDialog::CreateUserDictTab() {
   auto *tab_dict = new QWidget();
+  tab_dict->setObjectName("SettingsTabPage");
+  tab_dict->setAutoFillBackground(true);
   auto *layout_dict = new QVBoxLayout(tab_dict);
   layout_dict->setContentsMargins(16, 16, 16, 16);
   layout_dict->setSpacing(12);
@@ -561,14 +589,19 @@ void SettingsDialog::OnRemoveUserWord() {
 
 QWidget *SettingsDialog::CreatePerformanceTab() {
   auto *tab_perf = new QWidget();
+  tab_perf->setObjectName("SettingsTabPage");
+  tab_perf->setAutoFillBackground(true);
   auto *main_vbox = new QVBoxLayout(tab_perf);
   main_vbox->setContentsMargins(0, 0, 0, 0);
 
   auto *scroll = new QScrollArea(tab_perf);
   scroll->setWidgetResizable(true);
   scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setObjectName("SettingsScrollArea");
 
   auto *content_widget = new QWidget(scroll);
+  content_widget->setObjectName("SettingsTabPage");
+  content_widget->setAutoFillBackground(true);
   auto *vbox = new QVBoxLayout(content_widget);
   vbox->setContentsMargins(24, 24, 24, 24);
   vbox->setSpacing(16);
@@ -694,6 +727,7 @@ QHBoxLayout *SettingsDialog::CreateBottomBar() {
     if (config_) {
       I18n::Instance().SetLanguage(config_->ui_language());
     }
+    emit BackRequested();
     reject();
   });
 
@@ -1120,6 +1154,12 @@ void SettingsDialog::OnBrowseDocToTextLogPath() {
   }
 }
 
+void SettingsDialog::SetEmbeddedMode(bool embedded) {
+  if (btn_back_) {
+    btn_back_->setVisible(embedded);
+  }
+}
+
 void SettingsDialog::OnSaveAndApply() {
   if (!config_) {
     accept();
@@ -1199,6 +1239,7 @@ void SettingsDialog::OnSaveAndApply() {
   SaveUserDict();
 
   emit SettingsApplied();
+  emit BackRequested();
   accept();
 }
 

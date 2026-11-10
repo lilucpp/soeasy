@@ -110,7 +110,9 @@ QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation, 
         case kColIndex:
           return Tr("th_id");
         case kColFileName:
-          return Tr("th_filename");
+          return Tr("th_filename_path").isEmpty() || Tr("th_filename_path") == "th_filename_path"
+                     ? "文件名 / 所在路径"
+                     : Tr("th_filename_path");
         case kColPath:
           return Tr("th_path");
         case kColSize:
@@ -159,6 +161,29 @@ void SearchTableModel::AppendResults(const std::vector<DisplayResultItem> &items
 void SearchTableModel::ClearResults() {
   beginResetModel();
   items_.clear();
+  endResetModel();
+}
+
+void SearchTableModel::SortResults(int type) {
+  if (items_.size() <= 1) return;
+  beginResetModel();
+  if (type == 1) {  // Modified time descending
+    std::sort(items_.begin(), items_.end(), [](const DisplayResultItem &a, const DisplayResultItem &b) {
+      return a.mtime > b.mtime;
+    });
+  } else if (type == 2) {  // File size descending
+    std::sort(items_.begin(), items_.end(), [](const DisplayResultItem &a, const DisplayResultItem &b) {
+      return a.file_size > b.file_size;
+    });
+  } else if (type == 3) {  // File name ascending
+    std::sort(items_.begin(), items_.end(), [](const DisplayResultItem &a, const DisplayResultItem &b) {
+      return a.file_name.compare(b.file_name, Qt::CaseInsensitive) < 0;
+    });
+  } else {  // Score descending
+    std::sort(items_.begin(), items_.end(), [](const DisplayResultItem &a, const DisplayResultItem &b) {
+      return a.score > b.score;
+    });
+  }
   endResetModel();
 }
 

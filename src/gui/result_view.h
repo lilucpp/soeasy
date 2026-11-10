@@ -37,6 +37,7 @@ class ResultView : public QTableView {
   void SetResults(const std::vector<DisplayResultItem> &items);
   void AppendResults(const std::vector<DisplayResultItem> &items);
   void ClearResults();
+  void SortResults(int type);
   void RetranslateUi();
 
   void EnsureSnippetForRows(int start_row, int end_row);
@@ -72,6 +73,7 @@ class ResultView : public QTableView {
   void SetupTable();
 
   SearchTableModel *model_ = nullptr;
+  class ResultItemDelegate *delegate_ = nullptr;
   HoverPreviewPopup *hover_popup_ = nullptr;
   QTimer *hover_timer_ = nullptr;
   QTimer *scroll_timer_ = nullptr;

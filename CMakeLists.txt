@@ -447,6 +447,7 @@ add_library(soeasy_gui STATIC
     src/gui/settings_dialog.cpp
     src/gui/search_bar.cpp
     src/gui/search_table_model.cpp
+    src/gui/result_item_delegate.cpp
     src/gui/result_view.cpp
     src/gui/title_bar.cpp
     src/gui/main_window.cpp
@@ -482,6 +483,18 @@ if(BUILD_TESTS)
       Qt5::Core
   )
   add_soeasy_test(test_gui_smoke 30)
+
+  add_executable(test_capture_window
+      tests/test_capture_window.cpp
+  )
+  target_link_libraries(test_capture_window PRIVATE
+      soeasy_gui
+      soeasy_storage
+      soeasy_common
+      Qt5::Widgets
+      Qt5::Gui
+      Qt5::Core
+  )
 
   # Stage 4 Performance & Scale Test: 10,000+ Viewport Scroll, Snippet & Memory Stress
   add_executable(test_large_scale_perf

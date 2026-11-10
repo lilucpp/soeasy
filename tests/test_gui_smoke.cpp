@@ -20,6 +20,7 @@
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
 #include "gui/settings_dialog.h"
+#include "gui/theme_manager.h"
 #include "service/index_config.h"
 #include "service/index_pipeline.h"
 #include "service/worker_guard.h"
@@ -48,6 +49,7 @@ int main(int argc, char *argv[]) {
   qputenv("QT_QPA_PLATFORM", QByteArray("offscreen"));
 
   QApplication app(argc, argv);
+  soeasy::gui::ThemeManager::Instance().Init(&app);
   app.setApplicationName("SoEasy-SmokeTest");
 
   std::cout << "========================================================\n";
@@ -247,6 +249,8 @@ int main(int argc, char *argv[]) {
   config->AddSupportedExtension("txt");
   config->AddSupportedExtension("md");
   config->AddSupportedExtension("doc");
+  config->AddSupportedExtension("sh");
+  config->AddSupportedExtension("cpp");
 
   auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(config, worker_guard, storage);
   bool pipe_ok = pipeline->Init();
@@ -262,6 +266,31 @@ int main(int argc, char *argv[]) {
   WriteFile(doc2,
             "Rust 拥有内存安全与无畏并发的特性，常用于构建底层系统与沙箱进程。\n"
             "SoEasy 沙箱使用 C++17 与 POSIX SHM 共享内存进行高速数据交换。");
+
+  std::string doc_sh = test_dir + "/test2.sh";
+  WriteFile(doc_sh,
+            "#!/bin/bash\n\n"
+            "# ================= 配置区域 =================\n"
+            "# 待测试文件大小（建议大于物理内存的 1/4，或者至少 1GB）\n"
+            "FILE_SIZE=\"2G\"\n"
+            "DEST_SYS=\"test_data.sys\"\n"
+            "DEST_MY=\"test_data.my\"\n\n"
+            "# 你的程序路径\n"
+            "MY_CMD=\"./my_copy\"  # 请修改为你编译好的程序名\n\n"
+            "# 确保 sudo 权限可用（清空缓存需要）\n"
+            "if [ \"$EUID\" -ne 0 ]; then\n"
+            "  echo \"请使用 sudo 运行此脚本，以便在测试前清空缓存。\"\n"
+            "  exit\n"
+            "fi\n");
+
+  std::string doc_cpp = test_dir + "/main.cpp";
+  WriteFile(doc_cpp,
+            "#include <iostream>\n"
+            "// 测试用例 02：多线程并行计算测试\n"
+            "int main() {\n"
+            "  std::cout << \"测试并发流水线运行正常\" << std::endl;\n"
+            "  return 0;\n"
+            "}\n");
 
   std::string doc3 = test_dir + "/sample_specification_016.doc";
   WriteFile(doc3,
@@ -337,8 +366,13 @@ int main(int argc, char *argv[]) {
 
     // Test Master-Detail live preview panel integration
     auto *sbar = main_win.findChild<soeasy::gui::SearchBar *>();
+    auto *rview = main_win.findChild<soeasy::gui::ResultView *>();
     if (sbar) {
-      sbar->SetQuery("规格说明");
+      sbar->SetQuery("测试");
+    }
+    app.processEvents();
+    if (rview && rview->rowCount() > 0) {
+      rview->selectRow(0);
     }
     app.processEvents();
 

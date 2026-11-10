@@ -1,5 +1,7 @@
 #include "gui/preview_panel.h"
 
+#include <QApplication>
+#include <QClipboard>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -41,70 +43,102 @@ void PreviewPanel::SetStorageEngine(std::shared_ptr<storage::StorageEngine> stor
 }
 
 void PreviewPanel::SetupUi() {
+  setObjectName("PreviewPanel");
+
   auto *main_layout = new QVBoxLayout(this);
   main_layout->setContentsMargins(0, 0, 0, 0);
-  main_layout->setSpacing(6);
+  main_layout->setSpacing(0);
 
-  // 1. Header Card: File Info & Quick Actions
-  auto *header_card = new QWidget(this);
-  header_card->setObjectName("PreviewHeaderCard");
-  header_card->setProperty("surface", "card");
-  auto *header_layout = new QVBoxLayout(header_card);
-  header_layout->setContentsMargins(10, 8, 10, 8);
-  header_layout->setSpacing(4);
+  // 1. Header Bar: File Info & Quick Actions
+  auto *header_bar = new QFrame(this);
+  header_bar->setObjectName("PreviewHeaderBar");
+  auto *header_layout = new QVBoxLayout(header_bar);
+  header_layout->setContentsMargins(16, 12, 16, 10);
+  header_layout->setSpacing(6);
 
   auto *title_row = new QHBoxLayout();
-  title_row->setSpacing(8);
+  title_row->setSpacing(10);
 
-  icon_label_ = new QLabel(header_card);
+  icon_label_ = new QLabel(header_bar);
   icon_label_->setFixedSize(24, 24);
   icon_label_->setAlignment(Qt::AlignCenter);
 
-
-  title_label_ = new QLabel("未选中文件", header_card);
+  title_label_ = new QLabel("未选中文件", header_bar);
   title_label_->setObjectName("PreviewFileTitle");
+  QFont f_title = title_label_->font();
+  f_title.setBold(true);
+  f_title.setPointSize(11);
+  title_label_->setFont(f_title);
 
-  btn_open_file_ = new QPushButton("打开文件", header_card);
+  btn_open_file_ = new QPushButton("打开文件", header_bar);
   btn_open_file_->setProperty("role", "primary");
-btn_open_folder_ = new QPushButton("所在目录", header_card);
+  btn_open_folder_ = new QPushButton("所在目录", header_bar);
   btn_open_folder_->setProperty("role", "secondary");
-title_row->addWidget(icon_label_);
+
+  title_row->addWidget(icon_label_);
   title_row->addWidget(title_label_, 1);
   title_row->addWidget(btn_open_file_);
   title_row->addWidget(btn_open_folder_);
   header_layout->addLayout(title_row);
 
-  path_label_ = new QLabel(header_card);
+  auto *path_row = new QHBoxLayout();
+  path_row->setSpacing(6);
+  path_label_ = new QLabel(header_bar);
   path_label_->setObjectName("PreviewFilePath");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
   path_label_->setWordWrap(true);
-  header_layout->addWidget(path_label_);
 
-  main_layout->addWidget(header_card);
+  btn_copy_path_ = new QPushButton("复制", header_bar);
+  btn_copy_path_->setProperty("role", "secondary");
+  btn_copy_path_->setFixedSize(40, 22);
+  btn_copy_path_->setToolTip("复制完整路径至剪贴板");
+
+  path_row->addWidget(path_label_, 1);
+  path_row->addWidget(btn_copy_path_);
+  header_layout->addLayout(path_row);
+
+  main_layout->addWidget(header_bar);
 
   // 2. Navigation / In-Document Search Bar
-  auto *nav_layout = new QHBoxLayout();
-  nav_layout->setSpacing(6);
+  auto *nav_bar = new QFrame(this);
+  nav_bar->setObjectName("KeywordNavBar");
+  auto *nav_layout = new QHBoxLayout(nav_bar);
+  nav_layout->setContentsMargins(16, 0, 16, 0);
+  nav_layout->setSpacing(8);
 
-  label_jump_ = new QLabel("关键词跳转:", this);
+  label_jump_ = new QLabel("关键词", nav_bar);
+  label_jump_->setProperty("role", "hint-label");
 
+  keyword_pill_ = new QLabel(nav_bar);
+  keyword_pill_->setObjectName("KeywordPill");
+  keyword_pill_->setVisible(false);
 
-  in_doc_search_edit_ = new QLineEdit(this);
+  in_doc_search_edit_ = new QLineEdit(nav_bar);
   in_doc_search_edit_->setPlaceholderText("在正文中查找...");
   in_doc_search_edit_->setObjectName("InDocSearchEdit");
-btn_prev_ = new QPushButton("▲ 上一个", this);
-  btn_prev_->setProperty("role", "secondary");
-btn_next_ = new QPushButton("▼ 下一个", this);
-  btn_next_->setProperty("role", "secondary");
-match_count_label_ = new QLabel("匹配: 0 / 0", this);
+  in_doc_search_edit_->setMaximumWidth(140);
+
+  match_count_label_ = new QLabel("第 0 / 0 处", nav_bar);
   match_count_label_->setObjectName("MatchCountLabel");
 
+  btn_prev_ = new QPushButton("▲", nav_bar);
+  btn_prev_->setProperty("role", "secondary");
+  btn_prev_->setFixedSize(24, 24);
+  btn_prev_->setToolTip("跳转至上一个匹配项");
+
+  btn_next_ = new QPushButton("▼", nav_bar);
+  btn_next_->setProperty("role", "secondary");
+  btn_next_->setFixedSize(24, 24);
+  btn_next_->setToolTip("跳转至下一个匹配项");
+
   nav_layout->addWidget(label_jump_);
-  nav_layout->addWidget(in_doc_search_edit_, 1);
+  nav_layout->addWidget(keyword_pill_);
+  nav_layout->addWidget(in_doc_search_edit_);
+  nav_layout->addStretch();
+  nav_layout->addWidget(match_count_label_);
   nav_layout->addWidget(btn_prev_);
   nav_layout->addWidget(btn_next_);
-  nav_layout->addWidget(match_count_label_);
-  main_layout->addLayout(nav_layout);
+  main_layout->addWidget(nav_bar);
 
   // 3. Document Content Viewer
   text_viewer_ = new QTextBrowser(this);
@@ -112,14 +146,22 @@ match_count_label_ = new QLabel("匹配: 0 / 0", this);
   text_viewer_->setObjectName("SourceCodeViewer");
   main_layout->addWidget(text_viewer_, 1);
 
-  // 4. Meta Status Label
-  meta_label_ = new QLabel(this);
+  // 4. Meta Status Bar (#PreviewFooterBar)
+  auto *footer_bar = new QFrame(this);
+  footer_bar->setObjectName("PreviewFooterBar");
+  auto *footer_layout = new QHBoxLayout(footer_bar);
+  footer_layout->setContentsMargins(16, 0, 16, 0);
+
+  meta_label_ = new QLabel(footer_bar);
   meta_label_->setObjectName("PreviewMetaLabel");
-  main_layout->addWidget(meta_label_);
+  footer_layout->addWidget(meta_label_);
+  footer_layout->addStretch();
+  main_layout->addWidget(footer_bar);
 
   // Connections
   connect(btn_open_file_, &QPushButton::clicked, this, &PreviewPanel::OnOpenWithDefaultApp);
   connect(btn_open_folder_, &QPushButton::clicked, this, &PreviewPanel::OnOpenFolder);
+  connect(btn_copy_path_, &QPushButton::clicked, this, &PreviewPanel::OnCopyPath);
   connect(btn_next_, &QPushButton::clicked, this, &PreviewPanel::OnFindNext);
   connect(btn_prev_, &QPushButton::clicked, this, &PreviewPanel::OnFindPrev);
   connect(in_doc_search_edit_, &QLineEdit::textChanged, this, [this]() {
@@ -132,6 +174,15 @@ match_count_label_ = new QLabel("匹配: 0 / 0", this);
   });
 
   RetranslateUi();
+}
+
+void PreviewPanel::OnCopyPath() {
+  if (!current_file_path_.isEmpty()) {
+    QClipboard *cb = QApplication::clipboard();
+    if (cb) {
+      cb->setText(current_file_path_);
+    }
+  }
 }
 
 void PreviewPanel::RetranslateUi() {
@@ -180,7 +231,10 @@ void PreviewPanel::ClearPreview() {
   path_label_->setText(Tr("no_content_extracted"));
   btn_open_file_->setEnabled(false);
   btn_open_folder_->setEnabled(false);
+  if (btn_copy_path_) btn_copy_path_->setEnabled(false);
+  if (keyword_pill_) keyword_pill_->setVisible(false);
   in_doc_search_edit_->clear();
+  in_doc_search_edit_->setVisible(true);
   match_count_label_->setText(Tr("match_count").arg(0).arg(0));
 
   text_viewer_->clear();
@@ -203,12 +257,19 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
 
   btn_open_file_->setEnabled(true);
   btn_open_folder_->setEnabled(true);
+  if (btn_copy_path_) btn_copy_path_->setEnabled(true);
 
-  if (!keywords.empty()) {
-    in_doc_search_edit_->setText(QString::fromStdString(keywords[0]));
+  if (!keywords.empty() && !keywords[0].empty()) {
+    if (keyword_pill_) {
+      keyword_pill_->setText(QString::fromStdString(keywords[0]));
+      keyword_pill_->setVisible(true);
+    }
+    in_doc_search_edit_->setVisible(false);
   } else {
-    in_doc_search_edit_->clear();
+    if (keyword_pill_) keyword_pill_->setVisible(false);
+    in_doc_search_edit_->setVisible(true);
   }
+  in_doc_search_edit_->clear();
 
   std::string decompressed_utf8;
   bool ok = false;
@@ -255,11 +316,12 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
   text_viewer_->setPlainText(QString::fromStdString(decompressed_utf8));
   HighlightOccurrences();
 
-  QString meta_info = QString("大小: %1  |  修改时间: %2")
+  QString meta_info = QString("%1  ·  修改于 %2  ·  %3  ·  UTF-8")
                           .arg(FormatFileSize(fi.size()))
-                          .arg(fi.lastModified().toString("yyyy-MM-dd hh:mm"));
+                          .arg(fi.lastModified().toString("yyyy-MM-dd hh:mm"))
+                          .arg(ext.isEmpty() ? "TEXT" : ext.toUpper());
   if (decompress_ms > 0.0) {
-    meta_info += QString("  |  解密耗时: %1 ms").arg(decompress_ms, 0, 'f', 2);
+    meta_info += QString("  ·  解密: %1ms").arg(decompress_ms, 0, 'f', 1);
   }
   meta_label_->setText(meta_info);
 }
@@ -269,13 +331,14 @@ void PreviewPanel::HighlightOccurrences() {
   current_match_idx_ = -1;
 
   if (current_keywords_.empty() || text_viewer_->toPlainText().isEmpty()) {
-    match_count_label_->setText("匹配: 0 / 0");
+    match_count_label_->setText("第 0 / 0 处");
     return;
   }
 
   QTextDocument *doc = text_viewer_->document();
   QTextCharFormat highlight_format;
-  highlight_format.setBackground(QColor("#FFF59D"));
+  highlight_format.setBackground(QColor("#FEF08A"));
+  highlight_format.setForeground(QColor("#854D0E"));
   highlight_format.setForeground(QColor("#B71C1C"));
   highlight_format.setFontWeight(QFont::Bold);
 
