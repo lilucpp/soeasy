@@ -18,6 +18,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QSpinBox>
 #include <QTabBar>
 #include <QTableWidget>
 #include <QTextStream>
@@ -145,6 +146,64 @@ void SettingsDialog::SetupUi() {
       "  selection-color: #0284C7;"
       "  padding: 4px;"
       "  outline: none;"
+      "}"
+      "QSpinBox {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 24px 4px 10px;"
+      "  color: #1E293B;"
+      "  min-height: 24px;"
+      "}"
+      "QSpinBox:hover {"
+      "  border-color: #94A3B8;"
+      "}"
+      "QSpinBox:focus {"
+      "  border-color: #0284C7;"
+      "}"
+      "QSpinBox::up-button {"
+      "  subcontrol-origin: border;"
+      "  subcontrol-position: top right;"
+      "  width: 20px;"
+      "  height: 14px;"
+      "  border: none;"
+      "  background: transparent;"
+      "  margin-top: 2px;"
+      "  margin-right: 3px;"
+      "  border-top-right-radius: 4px;"
+      "}"
+      "QSpinBox::up-button:hover {"
+      "  background-color: #F1F5F9;"
+      "}"
+      "QSpinBox::up-button:pressed {"
+      "  background-color: #E2E8F0;"
+      "}"
+      "QSpinBox::up-arrow {"
+      "  image: url(:/icons/chevron_up.png);"
+      "  width: 9px;"
+      "  height: 9px;"
+      "}"
+      "QSpinBox::down-button {"
+      "  subcontrol-origin: border;"
+      "  subcontrol-position: bottom right;"
+      "  width: 20px;"
+      "  height: 14px;"
+      "  border: none;"
+      "  background: transparent;"
+      "  margin-bottom: 2px;"
+      "  margin-right: 3px;"
+      "  border-bottom-right-radius: 4px;"
+      "}"
+      "QSpinBox::down-button:hover {"
+      "  background-color: #F1F5F9;"
+      "}"
+      "QSpinBox::down-button:pressed {"
+      "  background-color: #E2E8F0;"
+      "}"
+      "QSpinBox::down-arrow {"
+      "  image: url(:/icons/chevron_down.png);"
+      "  width: 9px;"
+      "  height: 9px;"
       "}"
       "QTreeWidget::item:selected, QListWidget::item:selected {"
       "  background-color: #E0F2FE;"
@@ -656,21 +715,29 @@ QWidget *SettingsDialog::CreatePerformanceTab() {
   auto *tab_perf = new QWidget();
   auto *form_perf = new QFormLayout(tab_perf);
 
-  debounce_combo_ = new QComboBox(tab_perf);
+  debounce_spin_ = new QSpinBox(tab_perf);
+  debounce_spin_->setRange(50, 5000);
+  debounce_spin_->setSingleStep(50);
   label_debounce_ = new QLabel("文件变动去抖动等待延迟:", tab_perf);
-  form_perf->addRow(label_debounce_, debounce_combo_);
+  form_perf->addRow(label_debounce_, debounce_spin_);
 
-  max_size_combo_ = new QComboBox(tab_perf);
+  max_size_spin_ = new QSpinBox(tab_perf);
+  max_size_spin_->setRange(1, 1024);
+  max_size_spin_->setSingleStep(10);
   label_max_size_ = new QLabel("单文件最大全文索引上限:", tab_perf);
-  form_perf->addRow(label_max_size_, max_size_combo_);
+  form_perf->addRow(label_max_size_, max_size_spin_);
 
-  worker_count_combo_ = new QComboBox(tab_perf);
+  worker_count_spin_ = new QSpinBox(tab_perf);
+  worker_count_spin_->setRange(1, 8);
+  worker_count_spin_->setSingleStep(1);
   label_worker_count_ = new QLabel("并发解析 Worker 进程数:", tab_perf);
-  form_perf->addRow(label_worker_count_, worker_count_combo_);
+  form_perf->addRow(label_worker_count_, worker_count_spin_);
 
-  min_img_chars_combo_ = new QComboBox(tab_perf);
+  min_img_chars_spin_ = new QSpinBox(tab_perf);
+  min_img_chars_spin_->setRange(0, 50);
+  min_img_chars_spin_->setSingleStep(1);
   label_min_img_chars_ = new QLabel("图片最少有效文字数（过滤表情/图标）:", tab_perf);
-  form_perf->addRow(label_min_img_chars_, min_img_chars_combo_);
+  form_perf->addRow(label_min_img_chars_, min_img_chars_spin_);
 
   filter_thumbs_check_ = new QCheckBox("自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)", tab_perf);
   form_perf->addRow("", filter_thumbs_check_);
@@ -830,123 +897,15 @@ void SettingsDialog::RetranslateUi() {
 
   // Tab: Performance & Scheduling
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
-  if (debounce_combo_) {
-    QVariant cur_val = debounce_combo_->currentData();
-    debounce_combo_->blockSignals(true);
-    debounce_combo_->clear();
-    QString ms = Tr("suffix_ms");
-    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
-    struct Option { int val; QString note; };
-    const Option opts[] = {
-      {50, ""}, {100, ""}, {200, ""},
-      {300, is_zh ? " (默认推荐)" : " (Recommended)"},
-      {500, ""}, {1000, ""}, {2000, ""}, {5000, ""}
-    };
-    bool found = false;
-    for (const auto &o : opts) {
-      debounce_combo_->addItem(QString("%1%2%3").arg(o.val).arg(ms).arg(o.note), o.val);
-      if (cur_val.isValid() && cur_val.toInt() == o.val) {
-        debounce_combo_->setCurrentIndex(debounce_combo_->count() - 1);
-        found = true;
-      }
-    }
-    if (!found && cur_val.isValid()) {
-      debounce_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(ms), cur_val);
-      debounce_combo_->setCurrentIndex(debounce_combo_->count() - 1);
-    }
-    debounce_combo_->blockSignals(false);
-  }
-
+  if (debounce_spin_) debounce_spin_->setSuffix(Tr("suffix_ms"));
   if (label_max_size_) label_max_size_->setText(Tr("label_max_file_size"));
-  if (max_size_combo_) {
-    QVariant cur_val = max_size_combo_->currentData();
-    max_size_combo_->blockSignals(true);
-    max_size_combo_->clear();
-    QString mb = Tr("suffix_mb");
-    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
-    struct Option { int val; QString note; };
-    const Option opts[] = {
-      {10, ""}, {20, ""}, {30, ""},
-      {50, is_zh ? " (默认推荐)" : " (Recommended)"},
-      {100, ""}, {200, ""}, {500, ""},
-      {1024, is_zh ? " (1 GB)" : " (1 GB)"}
-    };
-    bool found = false;
-    for (const auto &o : opts) {
-      max_size_combo_->addItem(QString("%1%2%3").arg(o.val).arg(mb).arg(o.note), o.val);
-      if (cur_val.isValid() && cur_val.toInt() == o.val) {
-        max_size_combo_->setCurrentIndex(max_size_combo_->count() - 1);
-        found = true;
-      }
-    }
-    if (!found && cur_val.isValid()) {
-      max_size_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(mb), cur_val);
-      max_size_combo_->setCurrentIndex(max_size_combo_->count() - 1);
-    }
-    max_size_combo_->blockSignals(false);
-  }
-
+  if (max_size_spin_) max_size_spin_->setSuffix(Tr("suffix_mb"));
   if (label_worker_count_) label_worker_count_->setText(Tr("label_workers"));
-  if (worker_count_combo_) {
-    QVariant cur_val = worker_count_combo_->currentData();
-    worker_count_combo_->blockSignals(true);
-    worker_count_combo_->clear();
-    QString wk = Tr("suffix_workers");
-    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
-    struct Option { int val; QString note; };
-    const Option opts[] = {
-      {1, is_zh ? " (单核/低功耗)" : " (Single Core)"},
-      {2, is_zh ? " (默认推荐)" : " (Recommended)"},
-      {3, ""},
-      {4, is_zh ? " (四核/性能)" : " (Quad Core)"},
-      {6, ""},
-      {8, is_zh ? " (八核/极限)" : " (Octa Core)"}
-    };
-    bool found = false;
-    for (const auto &o : opts) {
-      worker_count_combo_->addItem(QString("%1%2%3").arg(o.val).arg(wk).arg(o.note), o.val);
-      if (cur_val.isValid() && cur_val.toInt() == o.val) {
-        worker_count_combo_->setCurrentIndex(worker_count_combo_->count() - 1);
-        found = true;
-      }
-    }
-    if (!found && cur_val.isValid()) {
-      worker_count_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(wk), cur_val);
-      worker_count_combo_->setCurrentIndex(worker_count_combo_->count() - 1);
-    }
-    worker_count_combo_->blockSignals(false);
-  }
-
+  if (worker_count_spin_) worker_count_spin_->setSuffix(Tr("suffix_workers"));
   if (label_min_img_chars_) label_min_img_chars_->setText(Tr("label_min_ocr_chars"));
-  if (min_img_chars_combo_) {
-    QVariant cur_val = min_img_chars_combo_->currentData();
-    min_img_chars_combo_->blockSignals(true);
-    min_img_chars_combo_->clear();
+  if (min_img_chars_spin_) {
     bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
-    QString char_unit = is_zh ? " 个字" : " chars";
-    struct Option { int val; QString label; };
-    const Option opts[] = {
-      {0, is_zh ? "0 个字 (不限制/不过滤)" : "0 chars (Unlimited)"},
-      {2, QString("2%1").arg(char_unit)},
-      {4, QString("4%1%2").arg(char_unit).arg(is_zh ? " (默认推荐)" : " (Recommended)")},
-      {6, QString("6%1").arg(char_unit)},
-      {10, QString("10%1").arg(char_unit)},
-      {20, QString("20%1").arg(char_unit)},
-      {30, QString("30%1").arg(char_unit)}
-    };
-    bool found = false;
-    for (const auto &o : opts) {
-      min_img_chars_combo_->addItem(o.label, o.val);
-      if (cur_val.isValid() && cur_val.toInt() == o.val) {
-        min_img_chars_combo_->setCurrentIndex(min_img_chars_combo_->count() - 1);
-        found = true;
-      }
-    }
-    if (!found && cur_val.isValid()) {
-      min_img_chars_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(char_unit), cur_val);
-      min_img_chars_combo_->setCurrentIndex(min_img_chars_combo_->count() - 1);
-    }
-    min_img_chars_combo_->blockSignals(false);
+    min_img_chars_spin_->setSuffix(is_zh ? " 个字 (0为不限制)" : " chars (0 for unlimited)");
   }
   if (filter_thumbs_check_) filter_thumbs_check_->setText(Tr("check_filter_thumbs"));
 
@@ -1046,20 +1005,10 @@ void SettingsDialog::PopulateFromConfig() {
   is_updating_tree_ = false;
   UpdateExtensionsCount();
 
-  auto set_combo_val = [](QComboBox *combo, int val, const QString &fallback_suffix) {
-    if (!combo) return;
-    int idx = combo->findData(val);
-    if (idx < 0) {
-      combo->addItem(QString::number(val) + fallback_suffix, val);
-      idx = combo->count() - 1;
-    }
-    combo->setCurrentIndex(idx);
-  };
-
-  set_combo_val(debounce_combo_, static_cast<int>(config_->debounce_ms()), Tr("suffix_ms"));
-  set_combo_val(max_size_combo_, static_cast<int>(config_->max_file_size() / (1024 * 1024)), Tr("suffix_mb"));
-  set_combo_val(worker_count_combo_, static_cast<int>(config_->worker_count()), Tr("suffix_workers"));
-  set_combo_val(min_img_chars_combo_, static_cast<int>(config_->min_image_text_length()), "");
+  debounce_spin_->setValue(static_cast<int>(config_->debounce_ms()));
+  max_size_spin_->setValue(static_cast<int>(config_->max_file_size() / (1024 * 1024)));
+  worker_count_spin_->setValue(static_cast<int>(config_->worker_count()));
+  min_img_chars_spin_->setValue(static_cast<int>(config_->min_image_text_length()));
   filter_thumbs_check_->setChecked(config_->filter_cache_thumbnails());
 
   int log_idx = log_level_combo_->findData(QString::fromStdString(config_->log_level()));
@@ -1318,18 +1267,10 @@ void SettingsDialog::OnSaveAndApply() {
   config_->set_enable_embedded_image_ocr(embedded_image_ocr_check_->isChecked());
 
   // Save performance and filtering
-  if (debounce_combo_ && debounce_combo_->currentData().isValid()) {
-    config_->set_debounce_ms(debounce_combo_->currentData().toUInt());
-  }
-  if (max_size_combo_ && max_size_combo_->currentData().isValid()) {
-    config_->set_max_file_size(static_cast<uint64_t>(max_size_combo_->currentData().toUInt()) * 1024 * 1024);
-  }
-  if (worker_count_combo_ && worker_count_combo_->currentData().isValid()) {
-    config_->set_worker_count(static_cast<size_t>(worker_count_combo_->currentData().toUInt()));
-  }
-  if (min_img_chars_combo_ && min_img_chars_combo_->currentData().isValid()) {
-    config_->set_min_image_text_length(min_img_chars_combo_->currentData().toUInt());
-  }
+  config_->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
+  config_->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
+  config_->set_worker_count(static_cast<size_t>(worker_count_spin_->value()));
+  config_->set_min_image_text_length(static_cast<uint32_t>(min_img_chars_spin_->value()));
   config_->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
 
   // Save logging settings

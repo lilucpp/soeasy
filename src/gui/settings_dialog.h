@@ -10,6 +10,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -128,13 +129,13 @@ class SettingsDialog : public QDialog {
 
   // Tab: Performance & Scheduling
   QLabel *label_debounce_ = nullptr;
-  QComboBox *debounce_combo_ = nullptr;
+  QSpinBox *debounce_spin_ = nullptr;
   QLabel *label_max_size_ = nullptr;
-  QComboBox *max_size_combo_ = nullptr;
+  QSpinBox *max_size_spin_ = nullptr;
   QLabel *label_worker_count_ = nullptr;
-  QComboBox *worker_count_combo_ = nullptr;
+  QSpinBox *worker_count_spin_ = nullptr;
   QLabel *label_min_img_chars_ = nullptr;
-  QComboBox *min_img_chars_combo_ = nullptr;
+  QSpinBox *min_img_chars_spin_ = nullptr;
   QCheckBox *filter_thumbs_check_ = nullptr;
 
   // Logging & Debugging options
