@@ -68,37 +68,84 @@ void ContentPreviewDialog::SetupUi() {
 
   // Search/Navigation bar inside document
   auto *nav_layout = new QHBoxLayout();
-  auto *label_search = new QLabel(Tr("label_jump"), this);
-  in_doc_search_edit_ = new QLineEdit(this);
-  if (!keywords_.empty()) {
-    in_doc_search_edit_->setText(QString::fromStdString(keywords_[0]));
-  }
-  in_doc_search_edit_->setPlaceholderText(Tr("search_in_content_ph"));
-  in_doc_search_edit_->setMaximumWidth(200);
+  auto *label_search = new QLabel(Tr("keyword_label"), this);
+  label_search->setStyleSheet("font-size: 12px; color: #475569; font-weight: 500;");
 
-  auto *btn_prev = new QPushButton(Tr("btn_prev"), this);
-  auto *btn_next = new QPushButton(Tr("btn_next"), this);
+  keyword_tag_label_ = new QLabel(this);
+  if (!keywords_.empty()) {
+    QString joined_kw;
+    for (size_t i = 0; i < keywords_.size(); ++i) {
+      if (i > 0) joined_kw += ", ";
+      joined_kw += QString::fromStdString(keywords_[i]);
+    }
+    keyword_tag_label_->setText(joined_kw);
+    keyword_tag_label_->setStyleSheet(
+        "QLabel {"
+        "  font-size: 12px;"
+        "  font-weight: 600;"
+        "  color: #B45309;"
+        "  background-color: #FEF3C7;"
+        "  border: 1px solid #FDE68A;"
+        "  border-radius: 4px;"
+        "  padding: 3px 8px;"
+        "}");
+  } else {
+    keyword_tag_label_->setText(Tr("no_keywords"));
+    keyword_tag_label_->setStyleSheet(
+        "QLabel {"
+        "  font-size: 12px;"
+        "  font-weight: normal;"
+        "  color: #64748B;"
+        "  background-color: #F1F5F9;"
+        "  border: 1px solid #E2E8F0;"
+        "  border-radius: 4px;"
+        "  padding: 3px 8px;"
+        "}");
+  }
+  keyword_tag_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+  btn_prev_ = new QPushButton(Tr("btn_prev"), this);
+  btn_next_ = new QPushButton(Tr("btn_next"), this);
+  btn_prev_->setEnabled(false);
+  btn_next_->setEnabled(false);
+  btn_prev_->setStyleSheet(
+      "QPushButton {"
+      "  font-size: 11px;"
+      "  padding: 3px 8px;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 4px;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "}"
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:pressed { background-color: #E2E8F0; }"
+      "QPushButton:disabled { color: #94A3B8; background-color: #F8FAFC; border-color: #E2E8F0; }");
+  btn_next_->setStyleSheet(
+      "QPushButton {"
+      "  font-size: 11px;"
+      "  padding: 3px 8px;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 4px;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "}"
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:pressed { background-color: #E2E8F0; }"
+      "QPushButton:disabled { color: #94A3B8; background-color: #F8FAFC; border-color: #E2E8F0; }");
+
   match_count_label_ = new QLabel(Tr("match_count").arg(0).arg(0), this);
-  match_count_label_->setStyleSheet("color: #78909C;");
+  match_count_label_->setStyleSheet("font-size: 11px; color: #64748B;");
 
   nav_layout->addWidget(label_search);
-  nav_layout->addWidget(in_doc_search_edit_);
-  nav_layout->addWidget(btn_prev);
-  nav_layout->addWidget(btn_next);
-  nav_layout->addWidget(match_count_label_);
+  nav_layout->addWidget(keyword_tag_label_);
   nav_layout->addStretch();
+  nav_layout->addWidget(btn_prev_);
+  nav_layout->addWidget(btn_next_);
+  nav_layout->addWidget(match_count_label_);
   main_layout->addLayout(nav_layout);
 
-  connect(btn_next, &QPushButton::clicked, this, &ContentPreviewDialog::OnFindNext);
-  connect(btn_prev, &QPushButton::clicked, this, &ContentPreviewDialog::OnFindPrev);
-  connect(in_doc_search_edit_, &QLineEdit::textChanged, this, [this]() {
-    keywords_.clear();
-    QString text = in_doc_search_edit_->text().trimmed();
-    if (!text.isEmpty()) {
-      keywords_.push_back(text.toStdString());
-    }
-    HighlightOccurrences();
-  });
+  connect(btn_next_, &QPushButton::clicked, this, &ContentPreviewDialog::OnFindNext);
+  connect(btn_prev_, &QPushButton::clicked, this, &ContentPreviewDialog::OnFindPrev);
 
   // Text browser for full document view
   text_viewer_ = new QTextBrowser(this);
@@ -166,25 +213,17 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
 }
 
 void ContentPreviewDialog::HighlightOccurrences() {
-  match_positions_.clear();
+  match_ranges_.clear();
   current_match_idx_ = -1;
 
   if (keywords_.empty() || text_viewer_->toPlainText().isEmpty()) {
+    text_viewer_->setExtraSelections({});
     match_count_label_->setText("匹配: 0 / 0");
     return;
   }
 
   QTextDocument *doc = text_viewer_->document();
-  QTextCharFormat highlight_format;
-  highlight_format.setBackground(QColor("#FFF59D"));
-  highlight_format.setForeground(QColor("#B71C1C"));
-  highlight_format.setFontWeight(QFont::Bold);
-
-  // Clear existing formatting
-  QTextCursor clear_cursor(doc);
-  clear_cursor.select(QTextCursor::Document);
-  QTextCharFormat default_format;
-  clear_cursor.setCharFormat(default_format);
+  const size_t kMaxHighlights = 150;
 
   for (const auto &kw : keywords_) {
     if (kw.empty()) continue;
@@ -196,43 +235,95 @@ void ContentPreviewDialog::HighlightOccurrences() {
       if (cursor.isNull()) {
         break;
       }
-      match_positions_.push_back(cursor.selectionStart());
-      cursor.mergeCharFormat(highlight_format);
+      match_ranges_.push_back({cursor.selectionStart(), cursor.selectionEnd()});
+      if (match_ranges_.size() >= kMaxHighlights) {
+        break;
+      }
+    }
+    if (match_ranges_.size() >= kMaxHighlights) {
+      break;
     }
   }
 
-  // Sort match positions
-  std::sort(match_positions_.begin(), match_positions_.end());
-  match_positions_.erase(std::unique(match_positions_.begin(), match_positions_.end()), match_positions_.end());
+  if (!match_ranges_.empty()) {
+    std::sort(match_ranges_.begin(), match_ranges_.end(),
+              [](const MatchRange &a, const MatchRange &b) { return a.start < b.start; });
+    match_ranges_.erase(
+        std::unique(match_ranges_.begin(), match_ranges_.end(),
+                    [](const MatchRange &a, const MatchRange &b) { return a.start == b.start && a.end == b.end; }),
+        match_ranges_.end());
 
-  if (!match_positions_.empty()) {
+    btn_prev_->setEnabled(true);
+    btn_next_->setEnabled(true);
     JumpToMatch(0);
   } else {
+    text_viewer_->setExtraSelections({});
+    btn_prev_->setEnabled(false);
+    btn_next_->setEnabled(false);
     match_count_label_->setText(Tr("match_count").arg(0).arg(0));
   }
 }
 
+void ContentPreviewDialog::UpdateHighlightSelections() {
+  QList<QTextEdit::ExtraSelection> selections;
+  QTextDocument *doc = text_viewer_->document();
+  if (!doc || match_ranges_.empty()) {
+    text_viewer_->setExtraSelections(selections);
+    return;
+  }
+
+  // 1. 普通匹配项样式：柔和浅黄色背景 + 深琥珀色文字
+  QTextCharFormat normal_fmt;
+  normal_fmt.setBackground(QColor("#FEF08A"));  // 黄色高亮 (amber-200)
+  normal_fmt.setForeground(QColor("#854D0E"));  // 深褐/琥珀色 (amber-800)
+  normal_fmt.setFontWeight(QFont::DemiBold);
+
+  // 2. 当前激活焦点项样式：鲜艳高对比橙红色背景 + 纯白粗体文字
+  QTextCharFormat active_fmt;
+  active_fmt.setBackground(QColor("#EA580C"));  // 活力鲜亮橙 (orange-600)
+  active_fmt.setForeground(QColor("#FFFFFF"));  // 纯白清晰文字
+  active_fmt.setFontWeight(QFont::Bold);
+
+  selections.reserve(static_cast<int>(match_ranges_.size()));
+
+  for (size_t i = 0; i < match_ranges_.size(); ++i) {
+    QTextCursor cursor(doc);
+    cursor.setPosition(match_ranges_[i].start);
+    cursor.setPosition(match_ranges_[i].end, QTextCursor::KeepAnchor);
+
+    QTextEdit::ExtraSelection sel;
+    sel.cursor = cursor;
+    sel.format = (static_cast<int>(i) == current_match_idx_) ? active_fmt : normal_fmt;
+    selections.append(sel);
+  }
+
+  text_viewer_->setExtraSelections(selections);
+}
+
 void ContentPreviewDialog::JumpToMatch(int index) {
-  if (match_positions_.empty()) {
+  if (match_ranges_.empty()) {
     match_count_label_->setText(Tr("match_count").arg(0).arg(0));
     return;
   }
 
   if (index < 0) {
-    index = static_cast<int>(match_positions_.size()) - 1;
-  } else if (index >= static_cast<int>(match_positions_.size())) {
+    index = static_cast<int>(match_ranges_.size()) - 1;
+  } else if (index >= static_cast<int>(match_ranges_.size())) {
     index = 0;
   }
 
   current_match_idx_ = index;
-  int pos = match_positions_[current_match_idx_];
+  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_ranges_.size()));
 
+  UpdateHighlightSelections();
+
+  // 滚动视口定位到当前激活的高亮项
+  const auto &range = match_ranges_[current_match_idx_];
   QTextCursor cursor(text_viewer_->document());
-  cursor.setPosition(pos);
+  cursor.setPosition(range.start);
+  cursor.setPosition(range.end, QTextCursor::KeepAnchor);
   text_viewer_->setTextCursor(cursor);
   text_viewer_->ensureCursorVisible();
-
-  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
 }
 
 void ContentPreviewDialog::OnFindNext() {

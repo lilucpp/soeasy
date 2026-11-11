@@ -3,6 +3,7 @@
 
 #include "gui/search_table_model.h"
 
+#include <algorithm>
 #include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
@@ -76,6 +77,18 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const {
     return IconProvider::GetFileIcon(ext);
   }
 
+  if (role == Qt::UserRole + 1) {
+    if (col == kColFileName || col == kColPath) {
+      return item.file_path;
+    }
+  }
+
+  if (role == Qt::ToolTipRole) {
+    if (col == kColFileName || col == kColPath) {
+      return item.file_path;
+    }
+  }
+
   if (role == Qt::TextAlignmentRole) {
     switch (col) {
       case kColIndex:
@@ -135,6 +148,11 @@ QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation, 
           return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
       }
     }
+    if (role == Qt::ToolTipRole) {
+      if (section == kColIndex) {
+        return Tr("tip_header_id");
+      }
+    }
   }
   return QVariant();
 }
@@ -142,6 +160,9 @@ QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation, 
 void SearchTableModel::SetResults(const std::vector<DisplayResultItem> &items) {
   beginResetModel();
   items_ = items;
+  for (size_t i = 0; i < items_.size(); ++i) {
+    items_[i].initial_order = static_cast<int>(i);
+  }
   endResetModel();
 }
 
@@ -152,7 +173,11 @@ void SearchTableModel::AppendResults(const std::vector<DisplayResultItem> &items
   int first = static_cast<int>(items_.size());
   int last = first + static_cast<int>(items.size()) - 1;
   beginInsertRows(QModelIndex(), first, last);
+  size_t start_idx = items_.size();
   items_.insert(items_.end(), items.begin(), items.end());
+  for (size_t i = start_idx; i < items_.size(); ++i) {
+    items_[i].initial_order = static_cast<int>(i);
+  }
   endInsertRows();
 }
 
@@ -164,6 +189,42 @@ void SearchTableModel::ClearResults() {
 
 void SearchTableModel::RetranslateUi() {
   emit headerDataChanged(Qt::Horizontal, 0, kColCount - 1);
+}
+
+void SearchTableModel::sort(int column, Qt::SortOrder order) {
+  if (items_.empty()) {
+    return;
+  }
+  layoutAboutToBeChanged();
+
+  std::sort(items_.begin(), items_.end(), [column, order](const DisplayResultItem &a, const DisplayResultItem &b) {
+    bool less = false;
+    switch (column) {
+      case kColFileName:
+        less = a.file_name.compare(b.file_name, Qt::CaseInsensitive) < 0;
+        break;
+      case kColPath:
+        less = a.file_path.compare(b.file_path, Qt::CaseInsensitive) < 0;
+        break;
+      case kColSize:
+        less = a.file_size < b.file_size;
+        break;
+      case kColMtime:
+        less = a.mtime < b.mtime;
+        break;
+      case kColScore:
+        // Score: negative values, smaller is more relevant in SQLite FTS5
+        less = a.score < b.score;
+        break;
+      case kColIndex:
+      default:
+        less = a.initial_order < b.initial_order;
+        break;
+    }
+    return (order == Qt::AscendingOrder) ? less : !less;
+  });
+
+  layoutChanged();
 }
 
 const DisplayResultItem *SearchTableModel::GetItem(int row) const {

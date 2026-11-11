@@ -4,9 +4,12 @@
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QFont>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <iostream>
@@ -17,6 +20,7 @@
 #include "common/machine_key_provider.h"
 #include "common/system_env.h"
 #include "gui/i18n.h"
+#include "gui/icon_provider.h"
 #include "gui/main_window.h"
 #include "service/index_config.h"
 #include "service/index_pipeline.h"
@@ -61,9 +65,11 @@ int main(int argc, char *argv[]) {
 #endif
 
   QApplication app(argc, argv);
+  app.setQuitOnLastWindowClosed(false);
   app.setApplicationName("SoEasy");
   app.setApplicationDisplayName("SoEasy - 让电脑没有难搜的文件");
   app.setApplicationVersion("1.0.0");
+  app.setWindowIcon(soeasy::gui::IconProvider::GetAppIcon());
 
   // Configure modern, anti-aliased sans-serif fonts across platforms
   QFont app_font;
@@ -132,6 +138,29 @@ int main(int argc, char *argv[]) {
     app_data_dir = QDir::homePath() + "/.soeasy";
   }
   QDir().mkpath(app_data_dir);
+
+  // Single-instance enforcement: ensure only one GUI process is active per user/profile
+  const QString instance_server_name =
+      "soeasy_gui_" + QString(QCryptographicHash::hash(app_data_dir.toUtf8(), QCryptographicHash::Sha1).toHex().left(16));
+
+  QLocalSocket existing_socket;
+  existing_socket.connectToServer(instance_server_name);
+  if (existing_socket.waitForConnected(500)) {
+    // Another GUI instance is already running! Signal it to bring its window to front and exit.
+    existing_socket.write("ACTIVATE\n");
+    existing_socket.waitForBytesWritten(1000);
+    existing_socket.disconnectFromServer();
+    std::cout << "[SoEasy] 另一个 GUI 进程实例正在运行中，已激活已有窗口。" << std::endl;
+    return 0;
+  }
+
+  // No active instance; claim the local server
+  QLocalServer::removeServer(instance_server_name);
+  auto *instance_server = new QLocalServer(&app);
+  if (!instance_server->listen(instance_server_name)) {
+    LOG_WARN("[Main] Failed to start single-instance listener on {}: {}",
+             instance_server_name.toStdString(), instance_server->errorString().toStdString());
+  }
 
   // Clean orphan spill temporary files left by previous abnormal exits or crashes
   soeasy::service::WorkerGuard::CleanupOrphanSpillFiles();
@@ -324,6 +353,18 @@ int main(int argc, char *argv[]) {
   // 5. Construct and show MainWindow immediately (Instant UI appearance)
   soeasy::gui::MainWindow main_window(pipeline);
   main_window.show();
+
+  // Listen for second-instance wakeups
+  QObject::connect(instance_server, &QLocalServer::newConnection, [&main_window, instance_server]() {
+    QLocalSocket *client = instance_server->nextPendingConnection();
+    if (!client) return;
+    QObject::connect(client, &QLocalSocket::readyRead, [&main_window, client]() {
+      QByteArray msg = client->readAll();
+      if (msg.contains("ACTIVATE")) {
+        main_window.ShowAndActivate();
+      }
+    });
+  });
 
   // Asynchronously trigger initial scan in the background with progress reporting on status bar
   main_window.StartBackgroundInitialIndex();

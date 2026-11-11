@@ -17,8 +17,8 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QSpinBox>
 #include <QStandardPaths>
+#include <QSpinBox>
 #include <QTabBar>
 #include <QTableWidget>
 #include <QTextStream>
@@ -39,7 +39,7 @@ namespace gui {
 
 SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent)
     : QDialog(parent), config_(std::move(config)) {
-  setWindowTitle("SoEasy - 索引配置与设置中心");
+  setWindowTitle(Tr("settings_title"));
   resize(800, 620);
   SetupUi();
   PopulateFromConfig();
@@ -48,47 +48,162 @@ SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWi
 SettingsDialog::~SettingsDialog() = default;
 
 void SettingsDialog::SetupUi() {
+  resize(860, 600);
   setStyleSheet(
       "QDialog {"
-      "  background-color: #FFFAFA;"
+      "  background-color: #FFFFFF;"
       "  color: #1E293B;"
       "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
       "'WenQuanYi Micro Hei', sans-serif;"
       "}"
-      "QTabWidget::pane {"
-      "  border: 1px solid #E2E8F0;"
-      "  background-color: #FFFFFF;"
+      "QListWidget#settings_nav_list {"
+      "  background-color: #F8FAFC;"
+      "  border: none;"
+      "  border-right: 1px solid #E2E8F0;"
+      "  outline: none;"
+      "  padding: 12px 8px;"
+      "}"
+      "QListWidget#settings_nav_list::item {"
+      "  min-height: 40px;"
+      "  max-height: 44px;"
       "  border-radius: 6px;"
-      "  top: -1px;"
+      "  color: #334155;"
+      "  font-size: 13px;"
+      "  font-weight: 500;"
+      "  padding-left: 14px;"
+      "  margin-bottom: 6px;"
       "}"
-      "QTabBar::tab {"
+      "QListWidget#settings_nav_list::item:hover {"
       "  background-color: #F1F5F9;"
-      "  color: #475569;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-bottom: none;"
-      "  padding: 6px 12px;"
-      "  min-width: 125px;"
-      "  border-top-left-radius: 6px;"
-      "  border-top-right-radius: 6px;"
-      "  margin-right: 3px;"
-      "  font-size: 12px;"
-      "}"
-      "QTabBar::tab:selected {"
-      "  background-color: #FFFFFF;"
-      "  color: #0284C7;"
-      "  border-color: #E2E8F0;"
-      "  border-bottom: 1px solid #FFFFFF;"
-      "}"
-      "QTabBar::tab:hover:!selected {"
-      "  background-color: #E2E8F0;"
       "  color: #0F172A;"
       "}"
-      "QTreeWidget, QListWidget, QLineEdit, QSpinBox, QComboBox {"
+      "QListWidget#settings_nav_list::item:selected {"
+      "  background-color: #E0F2FE;"
+      "  color: #0284C7;"
+      "  font-weight: 600;"
+      "}"
+      "QStackedWidget#settings_page_stack {"
+      "  background-color: #FFFFFF;"
+      "  border: none;"
+      "}"
+      "QWidget#settings_bottom_container {"
+      "  background-color: #F8FAFC;"
+      "  border-top: 1px solid #E2E8F0;"
+      "  padding: 8px 16px;"
+      "}"
+      "QTreeWidget, QListWidget {"
       "  background-color: #FFFFFF;"
       "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
+      "  border-radius: 6px;"
       "  padding: 4px 6px;"
       "  color: #1E293B;"
+      "}"
+      "QLineEdit {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 8px;"
+      "  color: #1E293B;"
+      "  min-height: 24px;"
+      "}"
+      "QLineEdit:hover {"
+      "  border-color: #94A3B8;"
+      "}"
+      "QLineEdit:focus {"
+      "  border-color: #0284C7;"
+      "}"
+      "QComboBox {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 28px 4px 10px;"
+      "  color: #1E293B;"
+      "  min-height: 24px;"
+      "}"
+      "QComboBox:hover {"
+      "  border-color: #94A3B8;"
+      "}"
+      "QComboBox:focus, QComboBox:on {"
+      "  border-color: #0284C7;"
+      "}"
+      "QComboBox::drop-down {"
+      "  subcontrol-origin: padding;"
+      "  subcontrol-position: top right;"
+      "  width: 26px;"
+      "  border: none;"
+      "  background: transparent;"
+      "}"
+      "QComboBox::down-arrow {"
+      "  image: url(:/icons/chevron_down.png);"
+      "  width: 12px;"
+      "  height: 12px;"
+      "}"
+      "QComboBox QAbstractItemView {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  background-color: #FFFFFF;"
+      "  selection-background-color: #E0F2FE;"
+      "  selection-color: #0284C7;"
+      "  padding: 4px;"
+      "  outline: none;"
+      "}"
+      "QSpinBox {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 24px 4px 10px;"
+      "  color: #1E293B;"
+      "  min-height: 24px;"
+      "}"
+      "QSpinBox:hover {"
+      "  border-color: #94A3B8;"
+      "}"
+      "QSpinBox:focus {"
+      "  border-color: #0284C7;"
+      "}"
+      "QSpinBox::up-button {"
+      "  subcontrol-origin: border;"
+      "  subcontrol-position: top right;"
+      "  width: 20px;"
+      "  height: 14px;"
+      "  border: none;"
+      "  background: transparent;"
+      "  margin-top: 2px;"
+      "  margin-right: 3px;"
+      "  border-top-right-radius: 4px;"
+      "}"
+      "QSpinBox::up-button:hover {"
+      "  background-color: #F1F5F9;"
+      "}"
+      "QSpinBox::up-button:pressed {"
+      "  background-color: #E2E8F0;"
+      "}"
+      "QSpinBox::up-arrow {"
+      "  image: url(:/icons/chevron_up.png);"
+      "  width: 9px;"
+      "  height: 9px;"
+      "}"
+      "QSpinBox::down-button {"
+      "  subcontrol-origin: border;"
+      "  subcontrol-position: bottom right;"
+      "  width: 20px;"
+      "  height: 14px;"
+      "  border: none;"
+      "  background: transparent;"
+      "  margin-bottom: 2px;"
+      "  margin-right: 3px;"
+      "  border-bottom-right-radius: 4px;"
+      "}"
+      "QSpinBox::down-button:hover {"
+      "  background-color: #F1F5F9;"
+      "}"
+      "QSpinBox::down-button:pressed {"
+      "  background-color: #E2E8F0;"
+      "}"
+      "QSpinBox::down-arrow {"
+      "  image: url(:/icons/chevron_down.png);"
+      "  width: 9px;"
+      "  height: 9px;"
       "}"
       "QTreeWidget::item:selected, QListWidget::item:selected {"
       "  background-color: #E0F2FE;"
@@ -130,24 +245,65 @@ void SettingsDialog::SetupUi() {
       "}");
 
   auto *main_layout = new QVBoxLayout(this);
-  tab_widget_ = new QTabWidget(this);
-  tab_widget_->setElideMode(Qt::ElideNone);
-  if (tab_widget_->tabBar()) {
-    tab_widget_->tabBar()->setElideMode(Qt::ElideNone);
-    tab_widget_->tabBar()->setExpanding(false);
-  }
+  main_layout->setContentsMargins(0, 0, 0, 0);
+  main_layout->setSpacing(0);
 
-  tab_widget_->addTab(CreateGeneralTab(), "常规与语言");
-  tab_widget_->addTab(CreateDirectoriesTab(), "索引目录");
-  tab_widget_->addTab(CreatePatternsTab(), "排除目录规则");
-  tab_widget_->addTab(CreateExtensionsTab(), "文件格式与解析");
-  tab_widget_->addTab(CreateUserDictTab(), "分词词库");
-  tab_widget_->addTab(CreatePerformanceTab(), "性能与日志");
+  auto *body_widget = new QWidget(this);
+  auto *body_layout = new QHBoxLayout(body_widget);
+  body_layout->setContentsMargins(0, 0, 0, 0);
+  body_layout->setSpacing(0);
 
-  main_layout->addWidget(tab_widget_);
-  main_layout->addLayout(CreateBottomBar());
+  nav_list_ = new QListWidget(body_widget);
+  nav_list_->setObjectName("settings_nav_list");
+  nav_list_->setFixedWidth(175);
+  nav_list_->setFocusPolicy(Qt::NoFocus);
+  nav_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  nav_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+  auto add_nav_item = [this](const QString &text) {
+    auto *item = new QListWidgetItem(text, nav_list_);
+    item->setSizeHint(QSize(175, 42));
+    item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    return item;
+  };
+
+  add_nav_item(Tr("tab_general"));
+  add_nav_item(Tr("tab_dirs"));
+  add_nav_item(Tr("tab_patterns"));
+  add_nav_item(Tr("tab_exts"));
+  add_nav_item(Tr("tab_user_dict"));
+  add_nav_item(Tr("tab_perf"));
+
+  page_stack_ = new QStackedWidget(body_widget);
+  page_stack_->setObjectName("settings_page_stack");
+  page_stack_->addWidget(CreateGeneralTab());
+  page_stack_->addWidget(CreateDirectoriesTab());
+  page_stack_->addWidget(CreatePatternsTab());
+  page_stack_->addWidget(CreateExtensionsTab());
+  page_stack_->addWidget(CreateUserDictTab());
+  page_stack_->addWidget(CreatePerformanceTab());
+
+  body_layout->addWidget(nav_list_);
+  body_layout->addWidget(page_stack_, 1);
+
+  main_layout->addWidget(body_widget, 1);
+
+  auto *bottom_container = new QWidget(this);
+  bottom_container->setObjectName("settings_bottom_container");
+  auto *bottom_bar = CreateBottomBar();
+  bottom_container->setLayout(bottom_bar);
+  main_layout->addWidget(bottom_container);
+
+  connect(nav_list_, &QListWidget::currentRowChanged, page_stack_, &QStackedWidget::setCurrentIndex);
+  nav_list_->setCurrentRow(0);
 
   RetranslateUi();
+}
+
+void SettingsDialog::SetCurrentTab(int index) {
+  if (nav_list_ && index >= 0 && index < nav_list_->count()) {
+    nav_list_->setCurrentRow(index);
+  }
 }
 
 QWidget *SettingsDialog::CreateGeneralTab() {
@@ -562,28 +718,24 @@ QWidget *SettingsDialog::CreatePerformanceTab() {
   debounce_spin_ = new QSpinBox(tab_perf);
   debounce_spin_->setRange(50, 5000);
   debounce_spin_->setSingleStep(50);
-  debounce_spin_->setSuffix(" 毫秒");
   label_debounce_ = new QLabel("文件变动去抖动等待延迟:", tab_perf);
   form_perf->addRow(label_debounce_, debounce_spin_);
 
   max_size_spin_ = new QSpinBox(tab_perf);
   max_size_spin_->setRange(1, 1024);
   max_size_spin_->setSingleStep(10);
-  max_size_spin_->setSuffix(" MB");
   label_max_size_ = new QLabel("单文件最大全文索引上限:", tab_perf);
   form_perf->addRow(label_max_size_, max_size_spin_);
 
   worker_count_spin_ = new QSpinBox(tab_perf);
   worker_count_spin_->setRange(1, 8);
   worker_count_spin_->setSingleStep(1);
-  worker_count_spin_->setSuffix(" 个进程");
   label_worker_count_ = new QLabel("并发解析 Worker 进程数:", tab_perf);
   form_perf->addRow(label_worker_count_, worker_count_spin_);
 
   min_img_chars_spin_ = new QSpinBox(tab_perf);
   min_img_chars_spin_->setRange(0, 50);
   min_img_chars_spin_->setSingleStep(1);
-  min_img_chars_spin_->setSuffix(" 个字 (0为不限制)");
   label_min_img_chars_ = new QLabel("图片最少有效文字数（过滤表情/图标）:", tab_perf);
   form_perf->addRow(label_min_img_chars_, min_img_chars_spin_);
 
@@ -649,13 +801,15 @@ QHBoxLayout *SettingsDialog::CreateBottomBar() {
 
 void SettingsDialog::RetranslateUi() {
   setWindowTitle(Tr("settings_title"));
-  if (tab_widget_) {
-    tab_widget_->setTabText(0, Tr("tab_general"));
-    tab_widget_->setTabText(1, Tr("tab_dirs"));
-    tab_widget_->setTabText(2, Tr("tab_patterns"));
-    tab_widget_->setTabText(3, Tr("tab_exts"));
-    tab_widget_->setTabText(4, Tr("tab_user_dict"));
-    tab_widget_->setTabText(5, Tr("tab_perf"));
+  if (nav_list_) {
+    const QString tab_names[] = {
+        Tr("tab_general"),   Tr("tab_dirs"),      Tr("tab_patterns"),
+        Tr("tab_exts"),      Tr("tab_user_dict"), Tr("tab_perf")};
+    for (int i = 0; i < nav_list_->count() && i < 6; ++i) {
+      auto *item = nav_list_->item(i);
+      item->setText(tab_names[i]);
+      item->setSizeHint(QSize(175, 42));
+    }
   }
 
   // Tab 0
@@ -741,7 +895,7 @@ void SettingsDialog::RetranslateUi() {
     user_dict_count_label_->setText(Tr("label_word_count").arg(user_dict_table_->rowCount()));
   }
 
-  // Tab 4: Performance
+  // Tab: Performance & Scheduling
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
   if (debounce_spin_) debounce_spin_->setSuffix(Tr("suffix_ms"));
   if (label_max_size_) label_max_size_->setText(Tr("label_max_file_size"));
@@ -749,7 +903,10 @@ void SettingsDialog::RetranslateUi() {
   if (label_worker_count_) label_worker_count_->setText(Tr("label_workers"));
   if (worker_count_spin_) worker_count_spin_->setSuffix(Tr("suffix_workers"));
   if (label_min_img_chars_) label_min_img_chars_->setText(Tr("label_min_ocr_chars"));
-  if (min_img_chars_spin_) min_img_chars_spin_->setSuffix(Tr("suffix_min_chars"));
+  if (min_img_chars_spin_) {
+    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
+    min_img_chars_spin_->setSuffix(is_zh ? " 个字 (0为不限制)" : " chars (0 for unlimited)");
+  }
   if (filter_thumbs_check_) filter_thumbs_check_->setText(Tr("check_filter_thumbs"));
 
   if (label_log_level_) label_log_level_->setText(Tr("label_log_level"));

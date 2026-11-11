@@ -60,6 +60,7 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget
   setWindowIcon(IconProvider::GetAppIcon());
   resize(1280, 750);
   SetupUi();
+  SetupTrayIcon();
 
   connect(this, &MainWindow::IndexProgressUpdated, this, &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
   connect(this, &MainWindow::IndexFinished, this, &MainWindow::OnIndexFinished, Qt::QueuedConnection);
@@ -69,6 +70,9 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget
 }
 
 MainWindow::~MainWindow() {
+  if (tray_icon_) {
+    tray_icon_->hide();
+  }
   if (pipeline_) {
     pipeline_->CancelScan();
   }
@@ -256,6 +260,102 @@ void MainWindow::SetupUi() {
   RetranslateUi();
 }
 
+void MainWindow::SetupTrayIcon() {
+  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    LOG_WARN("[MainWindow] System tray is not currently reported as available by the desktop environment; attempting initialization anyway.");
+  }
+
+  tray_icon_ = new QSystemTrayIcon(this);
+  tray_icon_->setIcon(IconProvider::GetAppIcon());
+  tray_icon_->setToolTip(Tr("app_title"));
+
+  tray_menu_ = new QMenu(this);
+  tray_menu_->setStyleSheet(
+      "QMenu {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 0px;"
+      "}"
+      "QMenu::item {"
+      "  padding: 6px 24px 6px 16px;"
+      "  font-size: 13px;"
+      "  color: #1E293B;"
+      "}"
+      "QMenu::item:selected {"
+      "  background-color: #E0F2FE;"
+      "  color: #0284C7;"
+      "}"
+      "QMenu::separator {"
+      "  height: 1px;"
+      "  background-color: #E2E8F0;"
+      "  margin: 4px 0px;"
+      "}");
+
+  action_show_ = tray_menu_->addAction(Tr("tray_show"), this, &MainWindow::OnTrayActionShow);
+  action_settings_ = tray_menu_->addAction(Tr("tray_settings"), this, &MainWindow::OnOpenSettings);
+  tray_menu_->addSeparator();
+  action_quit_ = tray_menu_->addAction(Tr("tray_quit"), this, &MainWindow::OnTrayActionQuit);
+
+  tray_icon_->setContextMenu(tray_menu_);
+
+  connect(tray_icon_, &QSystemTrayIcon::activated, this, &MainWindow::OnTrayActivated);
+
+  tray_icon_->show();
+}
+
+void MainWindow::OnTrayActivated(QSystemTrayIcon::ActivationReason reason) {
+  if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
+    if (isHidden() || isMinimized()) {
+      showNormal();
+      raise();
+      activateWindow();
+    } else {
+      showNormal();
+      raise();
+      activateWindow();
+    }
+  }
+}
+
+void MainWindow::ShowAndActivate() {
+  showNormal();
+  raise();
+  activateWindow();
+}
+
+void MainWindow::OnTrayActionShow() {
+  ShowAndActivate();
+}
+
+void MainWindow::OnTrayActionQuit() {
+  force_quit_ = true;
+  if (tray_icon_) {
+    tray_icon_->hide();
+  }
+  close();
+  qApp->quit();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+  if (force_quit_ || !tray_icon_ || !tray_icon_->isVisible()) {
+    if (tray_icon_) {
+      tray_icon_->hide();
+    }
+    event->accept();
+    QMainWindow::closeEvent(event);
+    qApp->quit();
+  } else {
+    event->ignore();
+    hide();
+    static bool has_shown_tray_tip = false;
+    if (!has_shown_tray_tip) {
+      has_shown_tray_tip = true;
+      tray_icon_->showMessage(Tr("app_name"), Tr("tray_tip_msg"), QSystemTrayIcon::Information, 2000);
+    }
+  }
+}
+
 void MainWindow::RetranslateUi() {
   setWindowTitle(Tr("app_title"));
   if (title_bar_) {
@@ -273,6 +373,18 @@ void MainWindow::RetranslateUi() {
   if (status_cancel_btn_) {
     status_cancel_btn_->setText(Tr("btn_cancel_index"));
     status_cancel_btn_->setToolTip(Tr("tip_cancel_index"));
+  }
+  if (tray_icon_) {
+    tray_icon_->setToolTip(Tr("app_title"));
+  }
+  if (action_show_) {
+    action_show_->setText(Tr("tray_show"));
+  }
+  if (action_settings_) {
+    action_settings_->setText(Tr("tray_settings"));
+  }
+  if (action_quit_) {
+    action_quit_->setText(Tr("tray_quit"));
   }
   UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
 }

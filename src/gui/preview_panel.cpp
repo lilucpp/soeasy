@@ -113,23 +113,24 @@ void PreviewPanel::SetupUi() {
   auto *nav_layout = new QHBoxLayout();
   nav_layout->setSpacing(6);
 
-  label_jump_ = new QLabel("关键词跳转:", this);
-  label_jump_->setStyleSheet("font-size: 12px; color: #475569;");
+  label_jump_ = new QLabel("关键词:", this);
+  label_jump_->setStyleSheet("font-size: 12px; color: #475569; font-weight: 500;");
 
-  in_doc_search_edit_ = new QLineEdit(this);
-  in_doc_search_edit_->setPlaceholderText("在正文中查找...");
-  in_doc_search_edit_->setStyleSheet(
-      "QLineEdit {"
+  keyword_tag_label_ = new QLabel(this);
+  keyword_tag_label_->setStyleSheet(
+      "QLabel {"
       "  font-size: 12px;"
-      "  padding: 4px 8px;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-radius: 6px;"
-      "  background-color: #FFFFFF;"
-      "  color: #1E293B;"
-      "}"
-      "QLineEdit:focus { border: 1.5px solid #0284C7; }");
+      "  font-weight: 600;"
+      "  color: #B45309;"
+      "  background-color: #FEF3C7;"
+      "  border: 1px solid #FDE68A;"
+      "  border-radius: 4px;"
+      "  padding: 3px 8px;"
+      "}");
+  keyword_tag_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
   btn_prev_ = new QPushButton("▲ 上一个", this);
+  btn_prev_->setEnabled(false);
   btn_prev_->setStyleSheet(
       "QPushButton {"
       "  font-size: 11px;"
@@ -140,8 +141,10 @@ void PreviewPanel::SetupUi() {
       "  color: #334155;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
-      "QPushButton:pressed { background-color: #E2E8F0; }");
+      "QPushButton:pressed { background-color: #E2E8F0; }"
+      "QPushButton:disabled { color: #94A3B8; background-color: #F8FAFC; border-color: #E2E8F0; }");
   btn_next_ = new QPushButton("▼ 下一个", this);
+  btn_next_->setEnabled(false);
   btn_next_->setStyleSheet(
       "QPushButton {"
       "  font-size: 11px;"
@@ -152,13 +155,15 @@ void PreviewPanel::SetupUi() {
       "  color: #334155;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
-      "QPushButton:pressed { background-color: #E2E8F0; }");
+      "QPushButton:pressed { background-color: #E2E8F0; }"
+      "QPushButton:disabled { color: #94A3B8; background-color: #F8FAFC; border-color: #E2E8F0; }");
 
   match_count_label_ = new QLabel("匹配: 0 / 0", this);
   match_count_label_->setStyleSheet("font-size: 11px; color: #64748B;");
 
   nav_layout->addWidget(label_jump_);
-  nav_layout->addWidget(in_doc_search_edit_, 1);
+  nav_layout->addWidget(keyword_tag_label_);
+  nav_layout->addStretch();
   nav_layout->addWidget(btn_prev_);
   nav_layout->addWidget(btn_next_);
   nav_layout->addWidget(match_count_label_);
@@ -211,14 +216,6 @@ void PreviewPanel::SetupUi() {
   connect(btn_open_folder_, &QPushButton::clicked, this, &PreviewPanel::OnOpenFolder);
   connect(btn_next_, &QPushButton::clicked, this, &PreviewPanel::OnFindNext);
   connect(btn_prev_, &QPushButton::clicked, this, &PreviewPanel::OnFindPrev);
-  connect(in_doc_search_edit_, &QLineEdit::textChanged, this, [this]() {
-    current_keywords_.clear();
-    QString text = in_doc_search_edit_->text().trimmed();
-    if (!text.isEmpty()) {
-      current_keywords_.push_back(text.toStdString());
-    }
-    HighlightOccurrences();
-  });
 
   RetranslateUi();
 }
@@ -231,10 +228,7 @@ void PreviewPanel::RetranslateUi() {
     btn_open_folder_->setText(Tr("btn_open_folder"));
   }
   if (label_jump_) {
-    label_jump_->setText(Tr("label_jump"));
-  }
-  if (in_doc_search_edit_) {
-    in_doc_search_edit_->setPlaceholderText(Tr("search_in_content_ph"));
+    label_jump_->setText(Tr("keyword_label"));
   }
   if (btn_prev_) {
     btn_prev_->setText(Tr("btn_prev"));
@@ -242,12 +236,17 @@ void PreviewPanel::RetranslateUi() {
   if (btn_next_) {
     btn_next_->setText(Tr("btn_next"));
   }
+  if (current_keywords_.empty()) {
+    if (keyword_tag_label_) {
+      keyword_tag_label_->setText(Tr("no_keywords"));
+    }
+  }
   if (match_count_label_) {
-    if (match_positions_.empty()) {
+    if (match_ranges_.empty()) {
       match_count_label_->setText(Tr("match_count").arg(0).arg(0));
     } else {
       int cur = (current_match_idx_ >= 0) ? current_match_idx_ + 1 : 1;
-      match_count_label_->setText(Tr("match_count").arg(cur).arg(match_positions_.size()));
+      match_count_label_->setText(Tr("match_count").arg(cur).arg(match_ranges_.size()));
     }
   }
   if (current_file_path_.isEmpty()) {
@@ -261,15 +260,32 @@ void PreviewPanel::ClearPreview() {
   current_file_name_.clear();
   current_file_path_.clear();
   current_keywords_.clear();
-  match_positions_.clear();
+  match_ranges_.clear();
   current_match_idx_ = -1;
+  if (text_viewer_) {
+    text_viewer_->setExtraSelections({});
+  }
 
   icon_label_->clear();
   title_label_->setText(Tr("no_file_selected"));
   path_label_->setText(Tr("no_content_extracted"));
   btn_open_file_->setEnabled(false);
   btn_open_folder_->setEnabled(false);
-  in_doc_search_edit_->clear();
+  if (keyword_tag_label_) {
+    keyword_tag_label_->setText(Tr("no_keywords"));
+    keyword_tag_label_->setStyleSheet(
+        "QLabel {"
+        "  font-size: 12px;"
+        "  font-weight: normal;"
+        "  color: #64748B;"
+        "  background-color: #F1F5F9;"
+        "  border: 1px solid #E2E8F0;"
+        "  border-radius: 4px;"
+        "  padding: 3px 8px;"
+        "}");
+  }
+  btn_prev_->setEnabled(false);
+  btn_next_->setEnabled(false);
   match_count_label_->setText(Tr("match_count").arg(0).arg(0));
 
   text_viewer_->clear();
@@ -294,9 +310,34 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
   btn_open_folder_->setEnabled(true);
 
   if (!keywords.empty()) {
-    in_doc_search_edit_->setText(QString::fromStdString(keywords[0]));
+    QString joined_kw;
+    for (size_t i = 0; i < keywords.size(); ++i) {
+      if (i > 0) joined_kw += ", ";
+      joined_kw += QString::fromStdString(keywords[i]);
+    }
+    keyword_tag_label_->setText(joined_kw);
+    keyword_tag_label_->setStyleSheet(
+        "QLabel {"
+        "  font-size: 12px;"
+        "  font-weight: 600;"
+        "  color: #B45309;"
+        "  background-color: #FEF3C7;"
+        "  border: 1px solid #FDE68A;"
+        "  border-radius: 4px;"
+        "  padding: 3px 8px;"
+        "}");
   } else {
-    in_doc_search_edit_->clear();
+    keyword_tag_label_->setText(Tr("no_keywords"));
+    keyword_tag_label_->setStyleSheet(
+        "QLabel {"
+        "  font-size: 12px;"
+        "  font-weight: normal;"
+        "  color: #64748B;"
+        "  background-color: #F1F5F9;"
+        "  border: 1px solid #E2E8F0;"
+        "  border-radius: 4px;"
+        "  padding: 3px 8px;"
+        "}");
   }
 
   std::string decompressed_utf8;
@@ -354,31 +395,17 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
 }
 
 void PreviewPanel::HighlightOccurrences() {
-  match_positions_.clear();
+  match_ranges_.clear();
   current_match_idx_ = -1;
 
   if (current_keywords_.empty() || text_viewer_->toPlainText().isEmpty()) {
+    text_viewer_->setExtraSelections({});
     match_count_label_->setText("匹配: 0 / 0");
     return;
   }
 
   QTextDocument *doc = text_viewer_->document();
-  QTextCharFormat highlight_format;
-  highlight_format.setBackground(QColor("#FFF59D"));
-  highlight_format.setForeground(QColor("#B71C1C"));
-  highlight_format.setFontWeight(QFont::Bold);
-
-  // Clear existing formatting efficiently within edit block
-  QTextCursor clear_cursor(doc);
-  clear_cursor.beginEditBlock();
-  clear_cursor.select(QTextCursor::Document);
-  QTextCharFormat default_format;
-  clear_cursor.setCharFormat(default_format);
-  clear_cursor.endEditBlock();
-
   const size_t kMaxHighlights = 100;
-  QTextCursor edit_cursor(doc);
-  edit_cursor.beginEditBlock();
 
   for (const auto &kw : current_keywords_) {
     if (kw.empty()) continue;
@@ -389,56 +416,111 @@ void PreviewPanel::HighlightOccurrences() {
       cursor = doc->find(query_qstr, cursor);
       if (cursor.isNull()) break;
 
-      match_positions_.push_back(cursor.position());
-      cursor.mergeCharFormat(highlight_format);
-      if (match_positions_.size() >= kMaxHighlights) {
+      match_ranges_.push_back({cursor.selectionStart(), cursor.selectionEnd()});
+      if (match_ranges_.size() >= kMaxHighlights) {
         break;
       }
     }
-    if (match_positions_.size() >= kMaxHighlights) {
+    if (match_ranges_.size() >= kMaxHighlights) {
       break;
     }
   }
 
-  edit_cursor.endEditBlock();
+  if (!match_ranges_.empty()) {
+    std::sort(match_ranges_.begin(), match_ranges_.end(),
+              [](const MatchRange &a, const MatchRange &b) { return a.start < b.start; });
+    match_ranges_.erase(
+        std::unique(match_ranges_.begin(), match_ranges_.end(),
+                    [](const MatchRange &a, const MatchRange &b) { return a.start == b.start && a.end == b.end; }),
+        match_ranges_.end());
 
-  if (!match_positions_.empty()) {
-    std::sort(match_positions_.begin(), match_positions_.end());
+    btn_prev_->setEnabled(true);
+    btn_next_->setEnabled(true);
     match_count_label_->setText(Tr("match_count")
                                     .arg(1)
                                     .arg(QString("%1%2")
-                                             .arg(match_positions_.size())
-                                             .arg(match_positions_.size() >= kMaxHighlights ? "+" : "")));
+                                             .arg(match_ranges_.size())
+                                             .arg(match_ranges_.size() >= kMaxHighlights ? "+" : "")));
     JumpToMatch(0);
   } else {
+    text_viewer_->setExtraSelections({});
+    btn_prev_->setEnabled(false);
+    btn_next_->setEnabled(false);
     match_count_label_->setText(Tr("match_count").arg(0).arg(0));
   }
 }
 
-void PreviewPanel::JumpToMatch(int index) {
-  if (index < 0 || index >= static_cast<int>(match_positions_.size())) {
+void PreviewPanel::UpdateHighlightSelections() {
+  QList<QTextEdit::ExtraSelection> selections;
+  QTextDocument *doc = text_viewer_->document();
+  if (!doc || match_ranges_.empty()) {
+    text_viewer_->setExtraSelections(selections);
     return;
   }
 
-  current_match_idx_ = index;
-  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_positions_.size()));
+  // 1. 普通匹配项样式：柔和浅黄色背景 + 深琥珀色文字
+  QTextCharFormat normal_fmt;
+  normal_fmt.setBackground(QColor("#FEF08A"));  // 黄色高亮 (amber-200)
+  normal_fmt.setForeground(QColor("#854D0E"));  // 深褐/琥珀色 (amber-800)
+  normal_fmt.setFontWeight(QFont::DemiBold);
 
-  int pos = match_positions_[current_match_idx_];
-  QTextCursor cursor = text_viewer_->textCursor();
-  cursor.setPosition(pos);
+  // 2. 当前激活焦点项样式：鲜艳高对比橙红色背景 + 纯白粗体文字 (如同 Chrome / VS Code 搜索聚焦)
+  QTextCharFormat active_fmt;
+  active_fmt.setBackground(QColor("#EA580C"));  // 活力鲜亮橙 (orange-600)
+  active_fmt.setForeground(QColor("#FFFFFF"));  // 纯白清晰文字
+  active_fmt.setFontWeight(QFont::Bold);
+
+  selections.reserve(static_cast<int>(match_ranges_.size()));
+
+  for (size_t i = 0; i < match_ranges_.size(); ++i) {
+    QTextCursor cursor(doc);
+    cursor.setPosition(match_ranges_[i].start);
+    cursor.setPosition(match_ranges_[i].end, QTextCursor::KeepAnchor);
+
+    QTextEdit::ExtraSelection sel;
+    sel.cursor = cursor;
+    sel.format = (static_cast<int>(i) == current_match_idx_) ? active_fmt : normal_fmt;
+    selections.append(sel);
+  }
+
+  text_viewer_->setExtraSelections(selections);
+}
+
+void PreviewPanel::JumpToMatch(int index) {
+  if (match_ranges_.empty()) {
+    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+    return;
+  }
+
+  if (index < 0) {
+    index = static_cast<int>(match_ranges_.size()) - 1;
+  } else if (index >= static_cast<int>(match_ranges_.size())) {
+    index = 0;
+  }
+
+  current_match_idx_ = index;
+  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_ranges_.size()));
+
+  UpdateHighlightSelections();
+
+  // 滚动视口定位到当前激活的高亮项
+  const auto &range = match_ranges_[current_match_idx_];
+  QTextCursor cursor(text_viewer_->document());
+  cursor.setPosition(range.start);
+  cursor.setPosition(range.end, QTextCursor::KeepAnchor);
   text_viewer_->setTextCursor(cursor);
   text_viewer_->ensureCursorVisible();
 }
 
 void PreviewPanel::OnFindNext() {
-  if (match_positions_.empty()) return;
-  int next_idx = (current_match_idx_ + 1) % match_positions_.size();
+  if (match_ranges_.empty()) return;
+  int next_idx = (current_match_idx_ + 1) % match_ranges_.size();
   JumpToMatch(next_idx);
 }
 
 void PreviewPanel::OnFindPrev() {
-  if (match_positions_.empty()) return;
-  int prev_idx = (current_match_idx_ - 1 + match_positions_.size()) % match_positions_.size();
+  if (match_ranges_.empty()) return;
+  int prev_idx = (current_match_idx_ - 1 + match_ranges_.size()) % match_ranges_.size();
   JumpToMatch(prev_idx);
 }
 

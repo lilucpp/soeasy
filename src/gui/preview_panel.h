@@ -39,7 +39,13 @@ class PreviewPanel : public QWidget {
  private:
   void SetupUi();
   void HighlightOccurrences();
+  void UpdateHighlightSelections();
   void JumpToMatch(int index);
+
+  struct MatchRange {
+    int start = 0;
+    int end = 0;
+  };
 
   int64_t current_doc_id_ = 0;
   QString current_file_name_;
@@ -55,7 +61,7 @@ class PreviewPanel : public QWidget {
   QPushButton *btn_open_folder_ = nullptr;
 
   QLabel *label_jump_ = nullptr;
-  QLineEdit *in_doc_search_edit_ = nullptr;
+  QLabel *keyword_tag_label_ = nullptr;
   QPushButton *btn_prev_ = nullptr;
   QPushButton *btn_next_ = nullptr;
   QLabel *match_count_label_ = nullptr;
@@ -63,7 +69,7 @@ class PreviewPanel : public QWidget {
   QTextBrowser *text_viewer_ = nullptr;
   QLabel *meta_label_ = nullptr;
 
-  std::vector<int> match_positions_;
+  std::vector<MatchRange> match_ranges_;
   int current_match_idx_ = -1;
 };
 
