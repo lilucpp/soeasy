@@ -66,7 +66,10 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const {
       case kColMtime:
         return QDateTime::fromSecsSinceEpoch(item.mtime).toString("yyyy-MM-dd hh:mm");
       case kColScore:
-        return QString::number(item.score, 'f', 2);
+        if (item.score <= 0.0) {
+          return QString("-");
+        }
+        return QString::number(item.score, 'f', 1);
       default:
         return QVariant();
     }
@@ -92,11 +95,12 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const {
   if (role == Qt::TextAlignmentRole) {
     switch (col) {
       case kColIndex:
-      case kColMtime:
         return Qt::AlignCenter;
       case kColSize:
       case kColScore:
         return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+      case kColMtime:
+        return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
       default:
         return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
     }
@@ -137,16 +141,7 @@ QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation, 
       }
     }
     if (role == Qt::TextAlignmentRole) {
-      switch (section) {
-        case kColIndex:
-        case kColMtime:
-          return Qt::AlignCenter;
-        case kColSize:
-        case kColScore:
-          return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
-        default:
-          return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
-      }
+      return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
     }
     if (role == Qt::ToolTipRole) {
       if (section == kColIndex) {

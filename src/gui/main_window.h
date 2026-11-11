@@ -96,6 +96,7 @@ class MainWindow : public QMainWindow {
   QProgressBar *status_progress_bar_ = nullptr;
   QPushButton *status_cancel_btn_ = nullptr;
   QLabel *status_file_label_ = nullptr;
+  QPushButton *status_preview_btn_ = nullptr;
   QLabel *status_latency_label_ = nullptr;
 
   QString current_query_;

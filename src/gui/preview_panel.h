@@ -30,6 +30,9 @@ class PreviewPanel : public QWidget {
   void ClearPreview();
   void RetranslateUi();
 
+ signals:
+  void CloseRequested();
+
  public slots:
   void OnOpenFolder();
   void OnOpenWithDefaultApp();
@@ -62,6 +65,7 @@ class PreviewPanel : public QWidget {
   QLabel *path_label_ = nullptr;
   QPushButton *btn_open_file_ = nullptr;
   QPushButton *btn_open_folder_ = nullptr;
+  QPushButton *btn_close_ = nullptr;
 
   QLabel *label_jump_ = nullptr;
   QLabel *keyword_tag_label_ = nullptr;

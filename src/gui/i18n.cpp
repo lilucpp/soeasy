@@ -91,7 +91,11 @@ void I18n::InitDictionary() {
       {"mode_filename", "文件名秒搜"},
       {"btn_preview", "◨ 预览"},
       {"tip_preview", "切换右侧即时正文预览面板 (Ctrl+P)"},
-      {"btn_settings", "⚙ 设置中心"},
+      {"btn_settings", "⚙ 系统设置"},
+      {"btn_scope_all", "📁 范围"},
+      {"tip_scope_all", "限定搜索目录（留空为全盘搜索）"},
+      {"tip_scope_active", "当前限定目录：%1\n点击更换，点击 ✕ 清除限定"},
+      {"tip_clear_scope", "清除限定范围 (恢复全盘搜索)"},
       {"label_scope", "限定搜索路径:"},
       {"scope_placeholder", "留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索..."},
       {"btn_clear_scope", "清除范围"},
@@ -99,19 +103,20 @@ void I18n::InitDictionary() {
 
       // Result Table
       {"th_id", "序号"},
-      {"tip_header_id", "序号（点击恢复默认相关度排序）"},
-      {"tip_reset_sort", "恢复默认相关度排序"},
+      {"tip_header_id", "序号（结果列表展示位次）"},
+      {"tip_reset_sort", "恢复默认排序"},
       {"th_filename", "文件名称"},
       {"th_path", "所在路径"},
       {"th_size", "大小"},
       {"th_mtime", "修改时间"},
-      {"th_score", "相关度评分"},
+      {"th_score", "相关度"},
       {"filename_match_prefix", "文件名匹配: %1"},
 
       // Preview Panel
       {"no_file_selected", "未选中文件"},
       {"btn_open_file", "打开文件"},
       {"btn_open_folder", "所在目录"},
+      {"tip_close_preview", "收起预览面板 (Ctrl+P)"},
       {"keyword_label", "检索词:"},
       {"no_keywords", "全篇预览"},
       {"label_jump", "关键词跳转:"},
@@ -134,12 +139,12 @@ void I18n::InitDictionary() {
 
       // Tray Icon
       {"tray_show", "显示主界面"},
-      {"tray_settings", "设置中心..."},
+      {"tray_settings", "系统设置..."},
       {"tray_quit", "退出程序"},
       {"tray_tip_msg", "SoEasy 已最小化到托盘，后台持续保持文件监控与索引。"},
 
       // Settings Dialog
-      {"settings_title", "索引配置与设置中心"},
+      {"settings_title", "系统设置"},
       {"tab_general", "常规与语言"},
       {"tab_dirs", "索引目录"},
       {"tab_patterns", "排除目录规则"},
@@ -300,7 +305,11 @@ void I18n::InitDictionary() {
       {"mode_filename", "Filename Search"},
       {"btn_preview", "◨ Preview"},
       {"tip_preview", "Toggle preview pane (Ctrl+P)"},
-      {"btn_settings", "⚙ Settings"},
+      {"btn_settings", "⚙ System Settings"},
+      {"btn_scope_all", "📁 Scope"},
+      {"tip_scope_all", "Constrain search directory (empty for all)"},
+      {"tip_scope_active", "Current scope: %1\nClick to change, click ✕ to clear"},
+      {"tip_clear_scope", "Clear scope (restore global search)"},
       {"label_scope", "Search Scope:"},
       {"scope_placeholder", "Leave empty for global search; or enter path to search within directory tree..."},
       {"btn_clear_scope", "Clear Scope"},
@@ -308,8 +317,8 @@ void I18n::InitDictionary() {
 
       // Result Table
       {"th_id", "#"},
-      {"tip_header_id", "# (Click to restore default relevance sort)"},
-      {"tip_reset_sort", "Restore default relevance sort"},
+      {"tip_header_id", "# (Row Index)"},
+      {"tip_reset_sort", "Restore default order"},
       {"th_filename", "File Name"},
       {"th_path", "Path"},
       {"th_size", "Size"},
@@ -321,6 +330,7 @@ void I18n::InitDictionary() {
       {"no_file_selected", "No file selected"},
       {"btn_open_file", "Open File"},
       {"btn_open_folder", "Open Folder"},
+      {"tip_close_preview", "Collapse preview pane (Ctrl+P)"},
       {"keyword_label", "Keywords:"},
       {"no_keywords", "Full Preview"},
       {"label_jump", "Jump to Match:"},
@@ -343,12 +353,12 @@ void I18n::InitDictionary() {
 
       // Tray Icon
       {"tray_show", "Show MainWindow"},
-      {"tray_settings", "Settings..."},
+      {"tray_settings", "System Settings..."},
       {"tray_quit", "Quit SoEasy"},
       {"tray_tip_msg", "SoEasy is minimized to system tray and watching files in background."},
 
       // Settings Dialog
-      {"settings_title", "Settings Center"},
+      {"settings_title", "System Settings"},
       {"tab_general", "General && Language"},
       {"tab_dirs", "Indexed Directories"},
       {"tab_patterns", "Excluded Patterns"},

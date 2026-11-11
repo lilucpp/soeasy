@@ -244,16 +244,45 @@ void MainWindow::SetupUi() {
   status_latency_label_->setStyleSheet("color: #334155; font-size: 12px;");
   status_latency_label_->setTextFormat(Qt::RichText);
 
+  status_preview_btn_ = new QPushButton(this);
+  status_preview_btn_->setObjectName("statusPreviewBtn");
+  status_preview_btn_->setCheckable(true);
+  status_preview_btn_->setChecked(true);
+  status_preview_btn_->setText(Tr("btn_preview"));
+  status_preview_btn_->setToolTip(Tr("tip_preview"));
+  status_preview_btn_->setCursor(Qt::PointingHandCursor);
+  status_preview_btn_->setStyleSheet(
+      "QPushButton#statusPreviewBtn {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 3px;"
+      "  background-color: #FFFFFF;"
+      "  color: #334155;"
+      "  font-size: 11px;"
+      "  padding: 1px 8px;"
+      "}"
+      "QPushButton#statusPreviewBtn:hover {"
+      "  background-color: #F1F5F9;"
+      "  border-color: #94A3B8;"
+      "  color: #0F172A;"
+      "}"
+      "QPushButton#statusPreviewBtn:checked {"
+      "  background-color: #E0F2FE;"
+      "  color: #0284C7;"
+      "  border-color: #BAE6FD;"
+      "}");
+  connect(status_preview_btn_, &QPushButton::clicked, this, &MainWindow::OnTogglePreview);
+
   statusBar()->addWidget(status_stats_label_);
   statusBar()->addWidget(status_progress_bar_);
   statusBar()->addWidget(status_cancel_btn_);
   statusBar()->addWidget(status_file_label_, 1);
+  statusBar()->addPermanentWidget(status_preview_btn_);
   statusBar()->addPermanentWidget(status_latency_label_);
 
   // Signal Connections
   connect(search_bar_, &SearchBar::SearchTriggered, this, &MainWindow::OnSearchTriggered);
   connect(search_bar_, &SearchBar::SettingsRequested, this, &MainWindow::OnOpenSettings);
-  connect(search_bar_, &SearchBar::PreviewToggleRequested, this, &MainWindow::OnTogglePreview);
+  connect(preview_panel_, &PreviewPanel::CloseRequested, this, &MainWindow::OnTogglePreview);
   connect(search_bar_, &SearchBar::NavigateResultsRequested, this, [this]() {
     if (result_view_ && result_view_->rowCount() > 0) {
       result_view_->setFocus();
@@ -423,6 +452,10 @@ void MainWindow::RetranslateUi() {
     status_cancel_btn_->setText(Tr("btn_cancel_index"));
     status_cancel_btn_->setToolTip(Tr("tip_cancel_index"));
   }
+  if (status_preview_btn_) {
+    status_preview_btn_->setText(Tr("btn_preview"));
+    status_preview_btn_->setToolTip(Tr("tip_preview"));
+  }
   if (tray_icon_) {
     tray_icon_->setToolTip(Tr("app_title"));
   }
@@ -500,7 +533,7 @@ void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString
       item.ext = QString::fromStdString(hit.ext);
       item.file_size = hit.file_size;
       item.mtime = hit.mtime;
-      item.score = hit.rank;
+      item.score = (hit.rank < 0) ? -hit.rank : hit.rank;
 
       // Extract snippet
       std::string snippet_raw = hit.snippet;
@@ -584,7 +617,7 @@ void MainWindow::OnLoadMoreRequested() {
       item.ext = QString::fromStdString(hit.ext);
       item.file_size = hit.file_size;
       item.mtime = hit.mtime;
-      item.score = hit.rank;
+      item.score = (hit.rank < 0) ? -hit.rank : hit.rank;
 
       std::string snippet_raw = hit.snippet;
       item.has_body_snippet = hit.has_body_snippet;
@@ -647,7 +680,11 @@ void MainWindow::OnFileSelected(int64_t doc_id, const QString &file_name, const 
 
 void MainWindow::OnTogglePreview() {
   if (preview_panel_) {
-    preview_panel_->setVisible(!preview_panel_->isVisible());
+    bool target_visible = !preview_panel_->isVisible();
+    preview_panel_->setVisible(target_visible);
+    if (status_preview_btn_) {
+      status_preview_btn_->setChecked(target_visible);
+    }
   }
 }
 

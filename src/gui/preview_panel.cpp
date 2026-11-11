@@ -81,10 +81,32 @@ void PreviewPanel::SetupUi() {
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
       "QPushButton:pressed { background-color: #E2E8F0; }");
 
+  btn_close_ = new QPushButton("✕", header_card);
+  btn_close_->setCursor(Qt::PointingHandCursor);
+  btn_close_->setToolTip("收起预览面板 (Ctrl+P)");
+  btn_close_->setStyleSheet(
+      "QPushButton {"
+      "  font-size: 12px;"
+      "  padding: 4px 8px;"
+      "  border: 1px solid transparent;"
+      "  border-radius: 4px;"
+      "  background-color: transparent;"
+      "  color: #94A3B8;"
+      "}"
+      "QPushButton:hover {"
+      "  background-color: #F1F5F9;"
+      "  color: #475569;"
+      "  border-color: #E2E8F0;"
+      "}"
+      "QPushButton:pressed {"
+      "  background-color: #E2E8F0;"
+      "}");
+
   title_row->addWidget(icon_label_);
   title_row->addWidget(title_label_, 1);
   title_row->addWidget(btn_open_file_);
   title_row->addWidget(btn_open_folder_);
+  title_row->addWidget(btn_close_);
   header_layout->addLayout(title_row);
 
   path_label_ = new QLabel(header_card);
@@ -195,6 +217,7 @@ void PreviewPanel::SetupUi() {
   // Connections
   connect(btn_open_file_, &QPushButton::clicked, this, &PreviewPanel::OnOpenWithDefaultApp);
   connect(btn_open_folder_, &QPushButton::clicked, this, &PreviewPanel::OnOpenFolder);
+  connect(btn_close_, &QPushButton::clicked, this, &PreviewPanel::CloseRequested);
   connect(btn_next_, &QPushButton::clicked, this, &PreviewPanel::OnFindNext);
   connect(btn_prev_, &QPushButton::clicked, this, &PreviewPanel::OnFindPrev);
 
@@ -207,6 +230,9 @@ void PreviewPanel::RetranslateUi() {
   }
   if (btn_open_folder_) {
     btn_open_folder_->setText(Tr("btn_open_folder"));
+  }
+  if (btn_close_) {
+    btn_close_->setToolTip(Tr("tip_close_preview"));
   }
   if (label_jump_) {
     label_jump_->setText(Tr("keyword_label"));
@@ -525,7 +551,7 @@ void PreviewPanel::RenderEmptyStateGuide() {
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%4</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">打开文件所在目录</td></tr>"
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%5</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">快速聚焦至搜索框</td></tr>"
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%6</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">显示 / 隐藏右侧预览面板</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">打开设置与配置中心</td></tr>"
+        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">打开系统设置</td></tr>"
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%8</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">清空搜索词 / 最小化至托盘</td></tr>")
         .arg(kbd("↑")).arg(kbd("↓"))
         .arg(kbd("Enter"))
@@ -541,7 +567,7 @@ void PreviewPanel::RenderEmptyStateGuide() {
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%4</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Open containing folder</td></tr>"
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%5</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Focus search input box</td></tr>"
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%6</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Toggle right preview panel</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Open settings center</td></tr>"
+        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Open System Settings</td></tr>"
         "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%8</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Clear query / hide to tray</td></tr>")
         .arg(kbd("↑")).arg(kbd("↓"))
         .arg(kbd("Enter"))
@@ -557,12 +583,12 @@ void PreviewPanel::RenderEmptyStateGuide() {
     tips_html =
         "<li><b>全文检索 (FTS5)</b>：多词空格组合（如 <code>报告 2026</code>），毫秒级倒排索引</li>"
         "<li><b>文件名秒搜</b>：点击搜索栏左侧模式下拉可秒级查找任意文件名</li>"
-        "<li><b>限定搜索路径</b>：在“限定搜索路径”中输入或选择特定项目目录</li>";
+        "<li><b>管理搜索目录</b>：点击右上角【⚙ 系统设置】可自由增减受索引监控的文件夹</li>";
   } else {
     tips_html =
         "<li><b>Full-text Search (FTS5)</b>: Multi-word space combinations (e.g. <code>report 2026</code>)</li>"
         "<li><b>Instant Filename</b>: Toggle mode to instant filename matching across all files</li>"
-        "<li><b>Scope Filtering</b>: Enter path in 'Search Scope' to restrict search to a directory</li>";
+        "<li><b>Manage Directories</b>: Click [⚙ System Settings] to configure monitored folders</li>";
   }
 
   QString html = QString(

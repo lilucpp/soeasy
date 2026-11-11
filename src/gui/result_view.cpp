@@ -121,14 +121,19 @@ void ResultView::SetupTable() {
   setShowGrid(false);
 
   setColumnHidden(SearchTableModel::kColPath, true);
-  setColumnHidden(SearchTableModel::kColScore, true);
+  setColumnHidden(SearchTableModel::kColScore, false);
 
   setSortingEnabled(true);
   horizontalHeader()->setSortIndicatorShown(true);
   horizontalHeader()->setSectionsClickable(true);
-  horizontalHeader()->setSortIndicator(SearchTableModel::kColIndex, Qt::AscendingOrder);
+  horizontalHeader()->setSortIndicator(SearchTableModel::kColScore, Qt::DescendingOrder);
 
   connect(horizontalHeader(), &QHeaderView::sectionClicked, this, [this](int logical_index) {
+    if (logical_index == SearchTableModel::kColScore) {
+      last_sorted_col_ = SearchTableModel::kColScore;
+      last_sort_order_ = horizontalHeader()->sortIndicatorOrder();
+      return;
+    }
     if (logical_index == SearchTableModel::kColIndex) {
       last_sorted_col_ = SearchTableModel::kColIndex;
       last_sort_order_ = Qt::AscendingOrder;
@@ -138,10 +143,10 @@ void ResultView::SetupTable() {
     }
     if (last_sorted_col_ == logical_index && last_sort_order_ == Qt::DescendingOrder) {
       // 3rd click on sorted column: cycle back to default search relevance order!
-      last_sorted_col_ = SearchTableModel::kColIndex;
-      last_sort_order_ = Qt::AscendingOrder;
-      horizontalHeader()->setSortIndicator(SearchTableModel::kColIndex, Qt::AscendingOrder);
-      sortByColumn(SearchTableModel::kColIndex, Qt::AscendingOrder);
+      last_sorted_col_ = SearchTableModel::kColScore;
+      last_sort_order_ = Qt::DescendingOrder;
+      horizontalHeader()->setSortIndicator(SearchTableModel::kColScore, Qt::DescendingOrder);
+      sortByColumn(SearchTableModel::kColScore, Qt::DescendingOrder);
       return;
     }
     last_sorted_col_ = logical_index;
@@ -176,11 +181,19 @@ void ResultView::SetupTable() {
       "QHeaderView::section {"
       "  background-color: #F8FAFC;"
       "  font-size: 12px;"
-      "  color: #334155;"
-      "  padding: 7px 8px;"
+      "  font-weight: 600;"
+      "  color: #475569;"
+      "  padding: 6px 20px 6px 10px;"
       "  border: none;"
       "  border-right: 1px solid #E2E8F0;"
       "  border-bottom: 1px solid #CBD5E1;"
+      "}"
+      "QHeaderView::up-arrow, QHeaderView::down-arrow {"
+      "  width: 10px;"
+      "  height: 10px;"
+      "  subcontrol-origin: padding;"
+      "  subcontrol-position: center right;"
+      "  padding-right: 4px;"
       "}"
       "QScrollBar:vertical {"
       "  width: 6px;"
@@ -343,10 +356,10 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
 
 void ResultView::SetResults(const std::vector<DisplayResultItem> &items) {
   ClearResults();
-  last_sorted_col_ = SearchTableModel::kColIndex;
-  last_sort_order_ = Qt::AscendingOrder;
+  last_sorted_col_ = SearchTableModel::kColScore;
+  last_sort_order_ = Qt::DescendingOrder;
   if (horizontalHeader()) {
-    horizontalHeader()->setSortIndicator(SearchTableModel::kColIndex, Qt::AscendingOrder);
+    horizontalHeader()->setSortIndicator(SearchTableModel::kColScore, Qt::DescendingOrder);
   }
   if (model_) {
     model_->SetResults(items);

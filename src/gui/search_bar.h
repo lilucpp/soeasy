@@ -2,7 +2,6 @@
 #define SOEASY_SRC_GUI_SEARCH_BAR_H_
 
 #include <QComboBox>
-#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QString>
@@ -26,11 +25,11 @@ class SearchBar : public QWidget {
 
   QString query() const;
   SearchMode mode() const;
-  QString path_scope() const;
+  QString path_scope() const { return path_scope_; }
 
   void SetQuery(const QString &query);
   void SetMode(SearchMode mode);
-  void SetPathScope(const QString &path);
+  void SetPathScope(const QString &path) { path_scope_ = path; }
   void FocusQuery();
   void ClearQuery();
   void RetranslateUi();
@@ -38,15 +37,12 @@ class SearchBar : public QWidget {
  signals:
   void SearchTriggered(const QString &query, int mode, const QString &path_scope);
   void SettingsRequested();
-  void PreviewToggleRequested();
   void NavigateResultsRequested();
 
  protected:
   bool eventFilter(QObject *watched, QEvent *event) override;
 
  private slots:
-  void OnBrowseScope();
-  void OnClearScope();
   void OnQueryTextChanged();
   void OnQueryImmediate();
 
@@ -55,13 +51,9 @@ class SearchBar : public QWidget {
 
   QLineEdit *query_edit_ = nullptr;
   QComboBox *mode_combo_ = nullptr;
-  QLineEdit *scope_edit_ = nullptr;
-  QLabel *label_scope_ = nullptr;
-  QPushButton *btn_scope_browse_ = nullptr;
-  QPushButton *btn_scope_clear_ = nullptr;
   QPushButton *btn_settings_ = nullptr;
-  QPushButton *btn_toggle_preview_ = nullptr;
 
+  QString path_scope_;
   QTimer *debounce_timer_ = nullptr;
 };
 
