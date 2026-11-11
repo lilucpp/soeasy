@@ -310,16 +310,13 @@
       background: #FFFAFA;
     }
 
-    /* Search Bar Row 1 & 2 */
+    /* Search Bar (Single Row) */
     .qt-search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       background: transparent;
       margin-bottom: 10px;
-    }
-
-    .qt-search-row1 {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
     }
 
     .qt-input-box {
@@ -353,17 +350,6 @@
       cursor: pointer;
     }
 
-    .qt-btn-preview {
-      background: #f8fafc;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      padding: 6px 14px;
-      font-size: 13px;
-      color: #334155;
-      cursor: pointer;
-      font-weight: 500;
-    }
-
     .qt-btn-settings {
       background: #f8fafc;
       border: 1px solid #cbd5e1;
@@ -373,39 +359,42 @@
       color: #334155;
       cursor: pointer;
       font-weight: 500;
-    }
-
-    .qt-search-row2 {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-    }
-
-    .qt-scope-label {
-      font-weight: bold;
-      color: #1e293b;
       white-space: nowrap;
     }
 
-    .qt-scope-input {
-      flex: 1;
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      padding: 5px 10px;
-      font-size: 12px;
-      color: #64748b;
+    .btn-qt-close-preview {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      font-size: 14px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-qt-close-preview:hover {
+      background: #f1f5f9;
+      color: #475569;
     }
 
-    .qt-btn-browse {
-      background: #bae6fd;
-      border: 1px solid #7dd3fc;
-      color: #0369a1;
-      border-radius: 6px;
-      padding: 4px 12px;
-      font-size: 12px;
-      font-weight: 600;
+    .qt-status-btn-preview {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 3px;
+      color: #334155;
+      font-size: 11px;
+      padding: 1px 8px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .qt-status-btn-preview:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .qt-status-btn-preview.active {
+      background: #e0f2fe;
+      color: #0284c7;
+      border-color: #bae6fd;
     }
 
     /* QSplitter: Left Table (60%) + Right Preview (40%) */
@@ -919,25 +908,17 @@
 
         <!-- Window Inner Layout -->
         <div class="qt-content">
-          <!-- Search Bar (Row 1 & 2) -->
+          <!-- Search Bar (Single Row) -->
           <div class="qt-search-bar">
-            <div class="qt-search-row1">
-              <div class="qt-input-box">
-                <svg width="16" height="16" fill="none" stroke="#0284c7" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                <input type="text" class="qt-input" id="demoQueryInput" value="财务报表" placeholder="输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, &quot;精确词组&quot;, 前缀*）..." data-i18n-ph="mockup-search-ph">
-              </div>
-              <select class="qt-select" id="modeSelector">
-                <option value="fts5" data-i18n="mockup-mode-fts5">全文倒排 (FTS5)</option>
-                <option value="filename" data-i18n="mockup-mode-filename">文件名秒搜</option>
-              </select>
-              <button class="qt-btn-preview" onclick="togglePreviewPane()" data-i18n="mockup-btn-preview">◨ 预览</button>
-              <button class="qt-btn-settings" data-i18n="mockup-btn-settings">⚙ 设置中心</button>
+            <select class="qt-select" id="modeSelector">
+              <option value="fts5" data-i18n="mockup-mode-fts5">全文倒排 (FTS5)</option>
+              <option value="filename" data-i18n="mockup-mode-filename">文件名秒搜</option>
+            </select>
+            <div class="qt-input-box">
+              <svg width="16" height="16" fill="none" stroke="#0284c7" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input type="text" class="qt-input" id="demoQueryInput" value="财务报表" placeholder="输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, &quot;精确词组&quot;, 前缀*）..." data-i18n-ph="mockup-search-ph">
             </div>
-            <div class="qt-search-row2">
-              <span class="qt-scope-label" data-i18n="mockup-scope-label">限定搜索路径:</span>
-              <input type="text" class="qt-scope-input" id="demoScopeInput" value="" placeholder="留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索..." data-i18n-ph="mockup-scope-ph">
-              <button class="qt-btn-browse" data-i18n="mockup-btn-browse">浏览...</button>
-            </div>
+            <button class="qt-btn-settings" data-i18n="mockup-btn-settings">⚙ 系统设置</button>
           </div>
 
           <!-- Splitter View (60% / 40%) -->
@@ -947,12 +928,12 @@
               <table class="qt-table">
                 <thead>
                   <tr>
-                    <th style="width: 42px; text-align: center;" data-i18n="mockup-th-id">序号</th>
+                    <th style="width: 44px; text-align: left;" data-i18n="mockup-th-id">序号</th>
                     <th data-i18n="mockup-th-name">文件名称</th>
                     <th data-i18n="mockup-th-path">所在路径</th>
-                    <th style="text-align: right;" data-i18n="mockup-th-size">大小</th>
-                    <th style="text-align: center;" data-i18n="mockup-th-mtime">修改时间</th>
-                    <th style="text-align: right;" data-i18n="mockup-th-score">相关度评分</th>
+                    <th style="text-align: left;" data-i18n="mockup-th-size">大小</th>
+                    <th style="text-align: left;" data-i18n="mockup-th-mtime">修改时间</th>
+                    <th style="text-align: left;" data-i18n="mockup-th-score">&#x25BC; 相关度</th>
                   </tr>
                 </thead>
                 <tbody id="demoTableBody">
@@ -969,6 +950,7 @@
                   <div class="preview-actions">
                     <button class="btn-qt-action-blue" data-i18n="mockup-btn-openfile">打开文件</button>
                     <button class="btn-qt-action-gray" data-i18n="mockup-btn-openfolder">所在目录</button>
+                    <button class="btn-qt-close-preview" onclick="togglePreviewPane()" title="收起预览面板 (Ctrl+P)">&times;</button>
                   </div>
                 </div>
                 <div class="preview-path" id="previewFilePath">/home/peanut/Finance/2026/2026年度第一季度财务报表.xlsx</div>
@@ -994,7 +976,10 @@
         <!-- Status Bar -->
         <div class="qt-statusbar">
           <span id="statusBarLeft" data-i18n="mockup-status-left">已索引 18,492 个文档 | 存储大小: 142.6 MB (Zstd密态压缩)</span>
-          <span style="color: #0369a1; font-weight: bold;" id="statusBarRight">搜索耗时: 0.38 毫秒 (命中 3 个文件)</span>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button class="qt-status-btn-preview active" id="btnStatusPreview" onclick="togglePreviewPane()" data-i18n="mockup-btn-preview">◨ 预览</button>
+            <span style="color: #0369a1; font-weight: bold;" id="statusBarRight">搜索耗时: 0.38 毫秒 (命中 3 个文件)</span>
+          </div>
         </div>
       </div>
 
@@ -1465,7 +1450,18 @@ struct ParseRequest {
 
     function togglePreviewPane() {
       const panel = document.getElementById("previewPanel");
-      panel.style.display = panel.style.display === "none" ? "flex" : "none";
+      const splitter = document.querySelector(".qt-splitter");
+      const btn = document.getElementById("btnStatusPreview");
+      const isHidden = (panel.style.display === "none");
+      if (isHidden) {
+        panel.style.display = "flex";
+        splitter.style.gridTemplateColumns = "58% 42%";
+        if (btn) btn.classList.add("active");
+      } else {
+        panel.style.display = "none";
+        splitter.style.gridTemplateColumns = "100%";
+        if (btn) btn.classList.remove("active");
+      }
     }
 
     renderMockup();
@@ -1483,16 +1479,13 @@ struct ParseRequest {
         "mockup-mode-fts5": "全文倒排 (FTS5)",
         "mockup-mode-filename": "文件名秒搜",
         "mockup-btn-preview": "◨ 预览",
-        "mockup-btn-settings": "⚙ 设置中心",
-        "mockup-scope-label": "限定搜索路径:",
-        "mockup-scope-ph": "留空表示全盘/全局检索；填入路径则仅在该目录及其子树下检索...",
-        "mockup-btn-browse": "浏览...",
+        "mockup-btn-settings": "⚙ 系统设置",
         "mockup-th-id": "序号",
         "mockup-th-name": "文件名称",
         "mockup-th-path": "所在路径",
         "mockup-th-size": "大小",
         "mockup-th-mtime": "修改时间",
-        "mockup-th-score": "相关度评分",
+        "mockup-th-score": "&#x25BC; 相关度",
         "mockup-btn-openfile": "打开文件",
         "mockup-btn-openfolder": "所在目录",
         "mockup-label-jump": "关键词跳转:",
@@ -1561,16 +1554,13 @@ struct ParseRequest {
         "mockup-mode-fts5": "Full-Text (FTS5)",
         "mockup-mode-filename": "Filename Search",
         "mockup-btn-preview": "◨ Preview",
-        "mockup-btn-settings": "⚙ Settings",
-        "mockup-scope-label": "Search Scope:",
-        "mockup-scope-ph": "Leave empty for global search; or enter path to search within directory...",
-        "mockup-btn-browse": "Browse...",
+        "mockup-btn-settings": "⚙ System Settings",
         "mockup-th-id": "#",
         "mockup-th-name": "File Name",
         "mockup-th-path": "Path",
         "mockup-th-size": "Size",
         "mockup-th-mtime": "Modified Date",
-        "mockup-th-score": "Relevance",
+        "mockup-th-score": "&#x25BC; Relevance",
         "mockup-btn-openfile": "Open File",
         "mockup-btn-openfolder": "Open Folder",
         "mockup-label-jump": "Jump to Match:",

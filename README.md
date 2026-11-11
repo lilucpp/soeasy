@@ -33,8 +33,8 @@ No Electron runtime. No telemetry. Sub-millisecond queries powered by an isolate
 - **Broad Format Coverage & Natural In-Place Extraction**  
   Office and PDF extraction is powered by an enhanced fork of [DocToText (v5.1.2+)](https://github.com/lilucpp/doctotext). Features include in-place streaming OCR for embedded images, natural top-to-bottom reading order recovery for PDFs, smart deduplication on searchable PDFs, and automatic fallback for pure scanned documents. Native extractors handle code repositories, OpenDocument (ODF), Apple iWork, RTF, and EML. Standalone images are indexed via an embedded PP-OCRv6 deep learning engine.
 
-- **Desktop-Native Dual-Pane Interface**  
-  A responsive Master-Detail layout with instant file preview, keyboard navigation, and real-time directory monitoring (`efsw`) featuring event debouncing.
+- **Desktop-Native Dual-Pane Interface & Keyboard-Centric Workflow**  
+  A distraction-free, single-row searchbar with instant mode switching (FTS5 Full-Text vs. Instant Filename Search). Features a responsive Master-Detail layout with live keyword-highlighted content preview, dedicated BM25 relevance sorting, full keyboard-centric navigation (<kbd>Enter</kbd> to open with system defaults, <kbd>Ctrl+O</kbd> to reveal in file manager, <kbd>Ctrl+P</kbd> preview toggle, <kbd>Esc</kbd> to clear/minimize), and real-time directory monitoring (`efsw`) with event debouncing.
 
 ---
 
