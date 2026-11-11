@@ -14,7 +14,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
+find_package(Qt5 COMPONENTS Core Gui Widgets Network REQUIRED)
 find_package(OpenCV REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 find_package(Boost 1.73 REQUIRED COMPONENTS nowide)
@@ -450,6 +450,7 @@ add_library(soeasy_gui STATIC
     src/gui/result_view.cpp
     src/gui/title_bar.cpp
     src/gui/main_window.cpp
+    resources/resources.qrc
 )
 target_include_directories(soeasy_gui PUBLIC
     src
@@ -458,6 +459,7 @@ target_link_libraries(soeasy_gui PUBLIC
     Qt5::Widgets
     Qt5::Gui
     Qt5::Core
+    Qt5::Network
     soeasy_service
     soeasy_storage
 )

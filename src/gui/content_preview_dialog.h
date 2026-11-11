@@ -35,7 +35,13 @@ class ContentPreviewDialog : public QDialog {
   void SetupUi();
   void LoadContentAndHighlight();
   void HighlightOccurrences();
+  void UpdateHighlightSelections();
   void JumpToMatch(int index);
+
+  struct MatchRange {
+    int start = 0;
+    int end = 0;
+  };
 
   int64_t doc_id_ = 0;
   QString file_name_;
@@ -46,9 +52,11 @@ class ContentPreviewDialog : public QDialog {
   QTextBrowser *text_viewer_ = nullptr;
   QLabel *path_label_ = nullptr;
   QLabel *match_count_label_ = nullptr;
-  QLineEdit *in_doc_search_edit_ = nullptr;
+  QLabel *keyword_tag_label_ = nullptr;
+  QPushButton *btn_prev_ = nullptr;
+  QPushButton *btn_next_ = nullptr;
 
-  std::vector<int> match_positions_;
+  std::vector<MatchRange> match_ranges_;
   int current_match_idx_ = -1;
 };
 

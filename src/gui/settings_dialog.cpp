@@ -17,7 +17,6 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QSpinBox>
 #include <QStandardPaths>
 #include <QTabBar>
 #include <QTableWidget>
@@ -39,7 +38,7 @@ namespace gui {
 
 SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent)
     : QDialog(parent), config_(std::move(config)) {
-  setWindowTitle("SoEasy - 索引配置与设置中心");
+  setWindowTitle(Tr("settings_title"));
   resize(800, 620);
   SetupUi();
   PopulateFromConfig();
@@ -48,47 +47,104 @@ SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWi
 SettingsDialog::~SettingsDialog() = default;
 
 void SettingsDialog::SetupUi() {
+  resize(860, 600);
   setStyleSheet(
       "QDialog {"
-      "  background-color: #FFFAFA;"
+      "  background-color: #FFFFFF;"
       "  color: #1E293B;"
       "  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', "
       "'WenQuanYi Micro Hei', sans-serif;"
       "}"
-      "QTabWidget::pane {"
-      "  border: 1px solid #E2E8F0;"
-      "  background-color: #FFFFFF;"
+      "QListWidget#settings_nav_list {"
+      "  background-color: #F8FAFC;"
+      "  border: none;"
+      "  border-right: 1px solid #E2E8F0;"
+      "  outline: none;"
+      "  padding: 12px 8px;"
+      "}"
+      "QListWidget#settings_nav_list::item {"
+      "  min-height: 40px;"
+      "  max-height: 44px;"
       "  border-radius: 6px;"
-      "  top: -1px;"
+      "  color: #334155;"
+      "  font-size: 13px;"
+      "  font-weight: 500;"
+      "  padding-left: 14px;"
+      "  margin-bottom: 6px;"
       "}"
-      "QTabBar::tab {"
+      "QListWidget#settings_nav_list::item:hover {"
       "  background-color: #F1F5F9;"
-      "  color: #475569;"
-      "  border: 1px solid #CBD5E1;"
-      "  border-bottom: none;"
-      "  padding: 6px 12px;"
-      "  min-width: 125px;"
-      "  border-top-left-radius: 6px;"
-      "  border-top-right-radius: 6px;"
-      "  margin-right: 3px;"
-      "  font-size: 12px;"
-      "}"
-      "QTabBar::tab:selected {"
-      "  background-color: #FFFFFF;"
-      "  color: #0284C7;"
-      "  border-color: #E2E8F0;"
-      "  border-bottom: 1px solid #FFFFFF;"
-      "}"
-      "QTabBar::tab:hover:!selected {"
-      "  background-color: #E2E8F0;"
       "  color: #0F172A;"
       "}"
-      "QTreeWidget, QListWidget, QLineEdit, QSpinBox, QComboBox {"
+      "QListWidget#settings_nav_list::item:selected {"
+      "  background-color: #E0F2FE;"
+      "  color: #0284C7;"
+      "  font-weight: 600;"
+      "}"
+      "QStackedWidget#settings_page_stack {"
+      "  background-color: #FFFFFF;"
+      "  border: none;"
+      "}"
+      "QWidget#settings_bottom_container {"
+      "  background-color: #F8FAFC;"
+      "  border-top: 1px solid #E2E8F0;"
+      "  padding: 8px 16px;"
+      "}"
+      "QTreeWidget, QListWidget {"
       "  background-color: #FFFFFF;"
       "  border: 1px solid #CBD5E1;"
-      "  border-radius: 4px;"
+      "  border-radius: 6px;"
       "  padding: 4px 6px;"
       "  color: #1E293B;"
+      "}"
+      "QLineEdit {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 8px;"
+      "  color: #1E293B;"
+      "  min-height: 24px;"
+      "}"
+      "QLineEdit:hover {"
+      "  border-color: #94A3B8;"
+      "}"
+      "QLineEdit:focus {"
+      "  border-color: #0284C7;"
+      "}"
+      "QComboBox {"
+      "  background-color: #FFFFFF;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  padding: 4px 28px 4px 10px;"
+      "  color: #1E293B;"
+      "  min-height: 24px;"
+      "}"
+      "QComboBox:hover {"
+      "  border-color: #94A3B8;"
+      "}"
+      "QComboBox:focus, QComboBox:on {"
+      "  border-color: #0284C7;"
+      "}"
+      "QComboBox::drop-down {"
+      "  subcontrol-origin: padding;"
+      "  subcontrol-position: top right;"
+      "  width: 26px;"
+      "  border: none;"
+      "  background: transparent;"
+      "}"
+      "QComboBox::down-arrow {"
+      "  image: url(:/icons/chevron_down.png);"
+      "  width: 12px;"
+      "  height: 12px;"
+      "}"
+      "QComboBox QAbstractItemView {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 6px;"
+      "  background-color: #FFFFFF;"
+      "  selection-background-color: #E0F2FE;"
+      "  selection-color: #0284C7;"
+      "  padding: 4px;"
+      "  outline: none;"
       "}"
       "QTreeWidget::item:selected, QListWidget::item:selected {"
       "  background-color: #E0F2FE;"
@@ -130,24 +186,65 @@ void SettingsDialog::SetupUi() {
       "}");
 
   auto *main_layout = new QVBoxLayout(this);
-  tab_widget_ = new QTabWidget(this);
-  tab_widget_->setElideMode(Qt::ElideNone);
-  if (tab_widget_->tabBar()) {
-    tab_widget_->tabBar()->setElideMode(Qt::ElideNone);
-    tab_widget_->tabBar()->setExpanding(false);
-  }
+  main_layout->setContentsMargins(0, 0, 0, 0);
+  main_layout->setSpacing(0);
 
-  tab_widget_->addTab(CreateGeneralTab(), "常规与语言");
-  tab_widget_->addTab(CreateDirectoriesTab(), "索引目录");
-  tab_widget_->addTab(CreatePatternsTab(), "排除目录规则");
-  tab_widget_->addTab(CreateExtensionsTab(), "文件格式与解析");
-  tab_widget_->addTab(CreateUserDictTab(), "分词词库");
-  tab_widget_->addTab(CreatePerformanceTab(), "性能与日志");
+  auto *body_widget = new QWidget(this);
+  auto *body_layout = new QHBoxLayout(body_widget);
+  body_layout->setContentsMargins(0, 0, 0, 0);
+  body_layout->setSpacing(0);
 
-  main_layout->addWidget(tab_widget_);
-  main_layout->addLayout(CreateBottomBar());
+  nav_list_ = new QListWidget(body_widget);
+  nav_list_->setObjectName("settings_nav_list");
+  nav_list_->setFixedWidth(175);
+  nav_list_->setFocusPolicy(Qt::NoFocus);
+  nav_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  nav_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+  auto add_nav_item = [this](const QString &text) {
+    auto *item = new QListWidgetItem(text, nav_list_);
+    item->setSizeHint(QSize(175, 42));
+    item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    return item;
+  };
+
+  add_nav_item(Tr("tab_general"));
+  add_nav_item(Tr("tab_dirs"));
+  add_nav_item(Tr("tab_patterns"));
+  add_nav_item(Tr("tab_exts"));
+  add_nav_item(Tr("tab_user_dict"));
+  add_nav_item(Tr("tab_perf"));
+
+  page_stack_ = new QStackedWidget(body_widget);
+  page_stack_->setObjectName("settings_page_stack");
+  page_stack_->addWidget(CreateGeneralTab());
+  page_stack_->addWidget(CreateDirectoriesTab());
+  page_stack_->addWidget(CreatePatternsTab());
+  page_stack_->addWidget(CreateExtensionsTab());
+  page_stack_->addWidget(CreateUserDictTab());
+  page_stack_->addWidget(CreatePerformanceTab());
+
+  body_layout->addWidget(nav_list_);
+  body_layout->addWidget(page_stack_, 1);
+
+  main_layout->addWidget(body_widget, 1);
+
+  auto *bottom_container = new QWidget(this);
+  bottom_container->setObjectName("settings_bottom_container");
+  auto *bottom_bar = CreateBottomBar();
+  bottom_container->setLayout(bottom_bar);
+  main_layout->addWidget(bottom_container);
+
+  connect(nav_list_, &QListWidget::currentRowChanged, page_stack_, &QStackedWidget::setCurrentIndex);
+  nav_list_->setCurrentRow(0);
 
   RetranslateUi();
+}
+
+void SettingsDialog::SetCurrentTab(int index) {
+  if (nav_list_ && index >= 0 && index < nav_list_->count()) {
+    nav_list_->setCurrentRow(index);
+  }
 }
 
 QWidget *SettingsDialog::CreateGeneralTab() {
@@ -559,33 +656,21 @@ QWidget *SettingsDialog::CreatePerformanceTab() {
   auto *tab_perf = new QWidget();
   auto *form_perf = new QFormLayout(tab_perf);
 
-  debounce_spin_ = new QSpinBox(tab_perf);
-  debounce_spin_->setRange(50, 5000);
-  debounce_spin_->setSingleStep(50);
-  debounce_spin_->setSuffix(" 毫秒");
+  debounce_combo_ = new QComboBox(tab_perf);
   label_debounce_ = new QLabel("文件变动去抖动等待延迟:", tab_perf);
-  form_perf->addRow(label_debounce_, debounce_spin_);
+  form_perf->addRow(label_debounce_, debounce_combo_);
 
-  max_size_spin_ = new QSpinBox(tab_perf);
-  max_size_spin_->setRange(1, 1024);
-  max_size_spin_->setSingleStep(10);
-  max_size_spin_->setSuffix(" MB");
+  max_size_combo_ = new QComboBox(tab_perf);
   label_max_size_ = new QLabel("单文件最大全文索引上限:", tab_perf);
-  form_perf->addRow(label_max_size_, max_size_spin_);
+  form_perf->addRow(label_max_size_, max_size_combo_);
 
-  worker_count_spin_ = new QSpinBox(tab_perf);
-  worker_count_spin_->setRange(1, 8);
-  worker_count_spin_->setSingleStep(1);
-  worker_count_spin_->setSuffix(" 个进程");
+  worker_count_combo_ = new QComboBox(tab_perf);
   label_worker_count_ = new QLabel("并发解析 Worker 进程数:", tab_perf);
-  form_perf->addRow(label_worker_count_, worker_count_spin_);
+  form_perf->addRow(label_worker_count_, worker_count_combo_);
 
-  min_img_chars_spin_ = new QSpinBox(tab_perf);
-  min_img_chars_spin_->setRange(0, 50);
-  min_img_chars_spin_->setSingleStep(1);
-  min_img_chars_spin_->setSuffix(" 个字 (0为不限制)");
+  min_img_chars_combo_ = new QComboBox(tab_perf);
   label_min_img_chars_ = new QLabel("图片最少有效文字数（过滤表情/图标）:", tab_perf);
-  form_perf->addRow(label_min_img_chars_, min_img_chars_spin_);
+  form_perf->addRow(label_min_img_chars_, min_img_chars_combo_);
 
   filter_thumbs_check_ = new QCheckBox("自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)", tab_perf);
   form_perf->addRow("", filter_thumbs_check_);
@@ -649,13 +734,15 @@ QHBoxLayout *SettingsDialog::CreateBottomBar() {
 
 void SettingsDialog::RetranslateUi() {
   setWindowTitle(Tr("settings_title"));
-  if (tab_widget_) {
-    tab_widget_->setTabText(0, Tr("tab_general"));
-    tab_widget_->setTabText(1, Tr("tab_dirs"));
-    tab_widget_->setTabText(2, Tr("tab_patterns"));
-    tab_widget_->setTabText(3, Tr("tab_exts"));
-    tab_widget_->setTabText(4, Tr("tab_user_dict"));
-    tab_widget_->setTabText(5, Tr("tab_perf"));
+  if (nav_list_) {
+    const QString tab_names[] = {
+        Tr("tab_general"),   Tr("tab_dirs"),      Tr("tab_patterns"),
+        Tr("tab_exts"),      Tr("tab_user_dict"), Tr("tab_perf")};
+    for (int i = 0; i < nav_list_->count() && i < 6; ++i) {
+      auto *item = nav_list_->item(i);
+      item->setText(tab_names[i]);
+      item->setSizeHint(QSize(175, 42));
+    }
   }
 
   // Tab 0
@@ -741,15 +828,126 @@ void SettingsDialog::RetranslateUi() {
     user_dict_count_label_->setText(Tr("label_word_count").arg(user_dict_table_->rowCount()));
   }
 
-  // Tab 4: Performance
+  // Tab: Performance & Scheduling
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
-  if (debounce_spin_) debounce_spin_->setSuffix(Tr("suffix_ms"));
+  if (debounce_combo_) {
+    QVariant cur_val = debounce_combo_->currentData();
+    debounce_combo_->blockSignals(true);
+    debounce_combo_->clear();
+    QString ms = Tr("suffix_ms");
+    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
+    struct Option { int val; QString note; };
+    const Option opts[] = {
+      {50, ""}, {100, ""}, {200, ""},
+      {300, is_zh ? " (默认推荐)" : " (Recommended)"},
+      {500, ""}, {1000, ""}, {2000, ""}, {5000, ""}
+    };
+    bool found = false;
+    for (const auto &o : opts) {
+      debounce_combo_->addItem(QString("%1%2%3").arg(o.val).arg(ms).arg(o.note), o.val);
+      if (cur_val.isValid() && cur_val.toInt() == o.val) {
+        debounce_combo_->setCurrentIndex(debounce_combo_->count() - 1);
+        found = true;
+      }
+    }
+    if (!found && cur_val.isValid()) {
+      debounce_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(ms), cur_val);
+      debounce_combo_->setCurrentIndex(debounce_combo_->count() - 1);
+    }
+    debounce_combo_->blockSignals(false);
+  }
+
   if (label_max_size_) label_max_size_->setText(Tr("label_max_file_size"));
-  if (max_size_spin_) max_size_spin_->setSuffix(Tr("suffix_mb"));
+  if (max_size_combo_) {
+    QVariant cur_val = max_size_combo_->currentData();
+    max_size_combo_->blockSignals(true);
+    max_size_combo_->clear();
+    QString mb = Tr("suffix_mb");
+    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
+    struct Option { int val; QString note; };
+    const Option opts[] = {
+      {10, ""}, {20, ""}, {30, ""},
+      {50, is_zh ? " (默认推荐)" : " (Recommended)"},
+      {100, ""}, {200, ""}, {500, ""},
+      {1024, is_zh ? " (1 GB)" : " (1 GB)"}
+    };
+    bool found = false;
+    for (const auto &o : opts) {
+      max_size_combo_->addItem(QString("%1%2%3").arg(o.val).arg(mb).arg(o.note), o.val);
+      if (cur_val.isValid() && cur_val.toInt() == o.val) {
+        max_size_combo_->setCurrentIndex(max_size_combo_->count() - 1);
+        found = true;
+      }
+    }
+    if (!found && cur_val.isValid()) {
+      max_size_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(mb), cur_val);
+      max_size_combo_->setCurrentIndex(max_size_combo_->count() - 1);
+    }
+    max_size_combo_->blockSignals(false);
+  }
+
   if (label_worker_count_) label_worker_count_->setText(Tr("label_workers"));
-  if (worker_count_spin_) worker_count_spin_->setSuffix(Tr("suffix_workers"));
+  if (worker_count_combo_) {
+    QVariant cur_val = worker_count_combo_->currentData();
+    worker_count_combo_->blockSignals(true);
+    worker_count_combo_->clear();
+    QString wk = Tr("suffix_workers");
+    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
+    struct Option { int val; QString note; };
+    const Option opts[] = {
+      {1, is_zh ? " (单核/低功耗)" : " (Single Core)"},
+      {2, is_zh ? " (默认推荐)" : " (Recommended)"},
+      {3, ""},
+      {4, is_zh ? " (四核/性能)" : " (Quad Core)"},
+      {6, ""},
+      {8, is_zh ? " (八核/极限)" : " (Octa Core)"}
+    };
+    bool found = false;
+    for (const auto &o : opts) {
+      worker_count_combo_->addItem(QString("%1%2%3").arg(o.val).arg(wk).arg(o.note), o.val);
+      if (cur_val.isValid() && cur_val.toInt() == o.val) {
+        worker_count_combo_->setCurrentIndex(worker_count_combo_->count() - 1);
+        found = true;
+      }
+    }
+    if (!found && cur_val.isValid()) {
+      worker_count_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(wk), cur_val);
+      worker_count_combo_->setCurrentIndex(worker_count_combo_->count() - 1);
+    }
+    worker_count_combo_->blockSignals(false);
+  }
+
   if (label_min_img_chars_) label_min_img_chars_->setText(Tr("label_min_ocr_chars"));
-  if (min_img_chars_spin_) min_img_chars_spin_->setSuffix(Tr("suffix_min_chars"));
+  if (min_img_chars_combo_) {
+    QVariant cur_val = min_img_chars_combo_->currentData();
+    min_img_chars_combo_->blockSignals(true);
+    min_img_chars_combo_->clear();
+    bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
+    QString char_unit = is_zh ? " 个字" : " chars";
+    struct Option { int val; QString label; };
+    const Option opts[] = {
+      {0, is_zh ? "0 个字 (不限制/不过滤)" : "0 chars (Unlimited)"},
+      {2, QString("2%1").arg(char_unit)},
+      {4, QString("4%1%2").arg(char_unit).arg(is_zh ? " (默认推荐)" : " (Recommended)")},
+      {6, QString("6%1").arg(char_unit)},
+      {10, QString("10%1").arg(char_unit)},
+      {20, QString("20%1").arg(char_unit)},
+      {30, QString("30%1").arg(char_unit)}
+    };
+    bool found = false;
+    for (const auto &o : opts) {
+      min_img_chars_combo_->addItem(o.label, o.val);
+      if (cur_val.isValid() && cur_val.toInt() == o.val) {
+        min_img_chars_combo_->setCurrentIndex(min_img_chars_combo_->count() - 1);
+        found = true;
+      }
+    }
+    if (!found && cur_val.isValid()) {
+      min_img_chars_combo_->addItem(QString("%1%2").arg(cur_val.toInt()).arg(char_unit), cur_val);
+      min_img_chars_combo_->setCurrentIndex(min_img_chars_combo_->count() - 1);
+    }
+    min_img_chars_combo_->blockSignals(false);
+  }
   if (filter_thumbs_check_) filter_thumbs_check_->setText(Tr("check_filter_thumbs"));
 
   if (label_log_level_) label_log_level_->setText(Tr("label_log_level"));
@@ -848,10 +1046,20 @@ void SettingsDialog::PopulateFromConfig() {
   is_updating_tree_ = false;
   UpdateExtensionsCount();
 
-  debounce_spin_->setValue(static_cast<int>(config_->debounce_ms()));
-  max_size_spin_->setValue(static_cast<int>(config_->max_file_size() / (1024 * 1024)));
-  worker_count_spin_->setValue(static_cast<int>(config_->worker_count()));
-  min_img_chars_spin_->setValue(static_cast<int>(config_->min_image_text_length()));
+  auto set_combo_val = [](QComboBox *combo, int val, const QString &fallback_suffix) {
+    if (!combo) return;
+    int idx = combo->findData(val);
+    if (idx < 0) {
+      combo->addItem(QString::number(val) + fallback_suffix, val);
+      idx = combo->count() - 1;
+    }
+    combo->setCurrentIndex(idx);
+  };
+
+  set_combo_val(debounce_combo_, static_cast<int>(config_->debounce_ms()), Tr("suffix_ms"));
+  set_combo_val(max_size_combo_, static_cast<int>(config_->max_file_size() / (1024 * 1024)), Tr("suffix_mb"));
+  set_combo_val(worker_count_combo_, static_cast<int>(config_->worker_count()), Tr("suffix_workers"));
+  set_combo_val(min_img_chars_combo_, static_cast<int>(config_->min_image_text_length()), "");
   filter_thumbs_check_->setChecked(config_->filter_cache_thumbnails());
 
   int log_idx = log_level_combo_->findData(QString::fromStdString(config_->log_level()));
@@ -1110,10 +1318,18 @@ void SettingsDialog::OnSaveAndApply() {
   config_->set_enable_embedded_image_ocr(embedded_image_ocr_check_->isChecked());
 
   // Save performance and filtering
-  config_->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
-  config_->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
-  config_->set_worker_count(static_cast<size_t>(worker_count_spin_->value()));
-  config_->set_min_image_text_length(static_cast<uint32_t>(min_img_chars_spin_->value()));
+  if (debounce_combo_ && debounce_combo_->currentData().isValid()) {
+    config_->set_debounce_ms(debounce_combo_->currentData().toUInt());
+  }
+  if (max_size_combo_ && max_size_combo_->currentData().isValid()) {
+    config_->set_max_file_size(static_cast<uint64_t>(max_size_combo_->currentData().toUInt()) * 1024 * 1024);
+  }
+  if (worker_count_combo_ && worker_count_combo_->currentData().isValid()) {
+    config_->set_worker_count(static_cast<size_t>(worker_count_combo_->currentData().toUInt()));
+  }
+  if (min_img_chars_combo_ && min_img_chars_combo_->currentData().isValid()) {
+    config_->set_min_image_text_length(min_img_chars_combo_->currentData().toUInt());
+  }
   config_->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
 
   // Save logging settings

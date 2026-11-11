@@ -1,12 +1,16 @@
 #ifndef SOEASY_SRC_GUI_MAIN_WINDOW_H_
 #define SOEASY_SRC_GUI_MAIN_WINDOW_H_
 
+#include <QAction>
+#include <QCloseEvent>
 #include <QLabel>
 #include <QMainWindow>
+#include <QMenu>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QSystemTrayIcon>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -43,6 +47,11 @@ class MainWindow : public QMainWindow {
    */
   void StartBackgroundInitialIndex(bool force_incremental = false);
 
+  /**
+   * @brief Bring window to foreground, restoring from minimized or hidden/tray state.
+   */
+  void ShowAndActivate();
+
  signals:
   void IndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file);
   void IndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
@@ -50,6 +59,7 @@ class MainWindow : public QMainWindow {
  protected:
   void changeEvent(QEvent *event) override;
   void showEvent(QShowEvent *event) override;
+  void closeEvent(QCloseEvent *event) override;
 
  private slots:
   void OnSearchTriggered(const QString &query, int mode, const QString &path_scope);
@@ -64,8 +74,13 @@ class MainWindow : public QMainWindow {
   void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file);
   void OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
 
+  void OnTrayActivated(QSystemTrayIcon::ActivationReason reason);
+  void OnTrayActionShow();
+  void OnTrayActionQuit();
+
  private:
   void SetupUi();
+  void SetupTrayIcon();
   void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
 
@@ -98,6 +113,13 @@ class MainWindow : public QMainWindow {
   std::atomic<bool> pending_reindex_{false};
   bool splitter_initialized_{false};
   int current_task_type_{kTaskInitial};
+
+  QSystemTrayIcon *tray_icon_ = nullptr;
+  QMenu *tray_menu_ = nullptr;
+  QAction *action_show_ = nullptr;
+  QAction *action_settings_ = nullptr;
+  QAction *action_quit_ = nullptr;
+  bool force_quit_{false};
   std::chrono::steady_clock::time_point index_start_time_;
 };
 

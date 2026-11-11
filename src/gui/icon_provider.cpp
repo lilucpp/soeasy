@@ -9,6 +9,8 @@
 #include <QPainterPath>
 #include <QPixmap>
 
+extern int qInitResources_resources();
+
 namespace soeasy {
 namespace gui {
 
@@ -144,23 +146,55 @@ QIcon IconProvider::GetFileIcon(const QString &extension_or_filename) {
   }
 
   QIcon icon;
-  if (ext == "doc" || ext == "docx") {
+  if (ext == "doc" || ext == "docx" || ext == "odt" || ext == "fodt" || ext == "pages" || ext == "rtf") {
     icon = RenderFileBadgeIcon("W", "#2B579A", true);
+  } else if (ext == "xls" || ext == "xlsx" || ext == "xlsb" || ext == "ods" || ext == "fods" || ext == "numbers" || ext == "csv") {
+    icon = RenderFileBadgeIcon("X", "#2E7D32", true);
+  } else if (ext == "ppt" || ext == "pptx" || ext == "odp" || ext == "fodp" || ext == "key" || ext == "keynote") {
+    icon = RenderFileBadgeIcon("P", "#E65100", true);
   } else if (ext == "pdf") {
     icon = RenderFileBadgeIcon("pdf", "#D32F2F", true);
   } else if (ext == "md" || ext == "markdown") {
     icon = RenderFileBadgeIcon("md", "#0288D1", false);
-  } else if (ext == "txt" || ext == "log" || ext == "ini" || ext == "conf") {
+  } else if (ext == "txt" || ext == "log" || ext == "ini" || ext == "conf" || ext == "cfg") {
     icon = RenderTextDocumentIcon();
-  } else if (ext == "xls" || ext == "xlsx" || ext == "csv") {
-    icon = RenderFileBadgeIcon("X", "#2E7D32", true);
-  } else if (ext == "ppt" || ext == "pptx") {
-    icon = RenderFileBadgeIcon("P", "#E65100", true);
-  } else if (ext == "cpp" || ext == "c" || ext == "h" || ext == "hpp" || ext == "py" || ext == "java" || ext == "js" ||
-             ext == "ts" || ext == "json" || ext == "xml" || ext == "html" || ext == "css") {
-    icon = RenderFileBadgeIcon("</>", "#00897B", true);
+  } else if (ext == "sh" || ext == "bash" || ext == "zsh" || ext == "bat" || ext == "cmd" || ext == "ps1") {
+    icon = RenderFileBadgeIcon(">_", "#263238", true);
+  } else if (ext == "html" || ext == "htm") {
+    icon = RenderFileBadgeIcon("</>", "#E65100", true);
+  } else if (ext == "css") {
+    icon = RenderFileBadgeIcon("CSS", "#0284C7", true);
+  } else if (ext == "xml" || ext == "xsd" || ext == "xsl") {
+    icon = RenderFileBadgeIcon("XML", "#D97706", true);
+  } else if (ext == "json" || ext == "yaml" || ext == "yml" || ext == "toml") {
+    icon = RenderFileBadgeIcon("{ }", "#6366F1", true);
+  } else if (ext == "cpp" || ext == "c" || ext == "cc" || ext == "cxx" || ext == "h" || ext == "hpp" || ext == "hxx") {
+    icon = RenderFileBadgeIcon("C++", "#00897B", true);
+  } else if (ext == "py") {
+    icon = RenderFileBadgeIcon("PY", "#1E88E5", true);
+  } else if (ext == "java") {
+    icon = RenderFileBadgeIcon("JV", "#F4511E", true);
+  } else if (ext == "go") {
+    icon = RenderFileBadgeIcon("GO", "#00ACC1", true);
+  } else if (ext == "rs") {
+    icon = RenderFileBadgeIcon("RS", "#D84315", true);
+  } else if (ext == "js" || ext == "jsx") {
+    icon = RenderFileBadgeIcon("JS", "#F59E0B", true);
+  } else if (ext == "ts" || ext == "tsx") {
+    icon = RenderFileBadgeIcon("TS", "#2563EB", true);
+  } else if (ext == "sql") {
+    icon = RenderFileBadgeIcon("SQL", "#7C3AED", true);
+  } else if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp" || ext == "bmp" || ext == "tiff" || ext == "tif" || ext == "jfif" || ext == "pnm") {
+    icon = RenderFileBadgeIcon("IMG", "#9333EA", true);
+  } else if (ext == "eml") {
+    icon = RenderFileBadgeIcon("@", "#0284C7", true);
+  } else if (ext == "zip" || ext == "tar" || ext == "gz" || ext == "7z" || ext == "rar") {
+    icon = RenderFileBadgeIcon("ZIP", "#475569", true);
+  } else if (ext == "odg") {
+    icon = RenderFileBadgeIcon("D", "#F57C00", true);
   } else {
-    icon = RenderFileBadgeIcon("", "#90A4AE", true);
+    QString label = ext.toUpper().left(3);
+    icon = RenderFileBadgeIcon(label, "#90A4AE", true);
   }
 
   s_icon_cache[ext] = icon;
@@ -196,6 +230,17 @@ QIcon IconProvider::GetSearchIcon() {
 QIcon IconProvider::GetAppIcon() {
   if (s_icon_cache.contains("__app__")) {
     return s_icon_cache["__app__"];
+  }
+
+  // 1. Load from built-in Qt resource
+  ::qInitResources_resources();
+
+  if (QFile::exists(":/icons/soeasy.ico")) {
+    QIcon res_icon(":/icons/soeasy.ico");
+    if (!res_icon.isNull() && !res_icon.pixmap(18, 18).isNull()) {
+      s_icon_cache["__app__"] = res_icon;
+      return res_icon;
+    }
   }
 
   QIcon icon;
@@ -274,25 +319,7 @@ QIcon IconProvider::GetAppIcon() {
 }
 
 QString IconProvider::GetDownArrowImagePath() {
-  const QString path = QDir::tempPath() + "/soeasy_arrow_down.png";
-  if (QFile::exists(path)) {
-    return path;
-  }
-  QPixmap arrow(12, 8);
-  arrow.fill(Qt::transparent);
-  {
-    QPainter p(&arrow);
-    p.setRenderHint(QPainter::Antialiasing);
-    QPen pen(QColor("#64748B"), 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-    p.setPen(pen);
-    QPainterPath path_draw;
-    path_draw.moveTo(2, 2.5);
-    path_draw.lineTo(6, 6);
-    path_draw.lineTo(10, 2.5);
-    p.drawPath(path_draw);
-  }
-  arrow.save(path);
-  return path;
+  return QStringLiteral(":/icons/chevron_down.png");
 }
 
 }  // namespace gui

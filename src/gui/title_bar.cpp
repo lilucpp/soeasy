@@ -26,15 +26,37 @@ void TitleBar::SetupUi() {
   icon_label_ = new QLabel(this);
   icon_label_->setFixedSize(20, 20);
   icon_label_->setAlignment(Qt::AlignCenter);
-  icon_label_->setPixmap(IconProvider::GetAppIcon().pixmap(18, 18));
+  icon_label_->setScaledContents(true);
+  icon_label_->setPixmap(IconProvider::GetAppIcon().pixmap(36, 36));
   icon_label_->setStyleSheet("border: none; background: transparent; padding: 0px;");
 
-  title_label_ = new QLabel("SoEasy - 让电脑没有难搜的文件", this);
+  title_label_ = new QLabel(Tr("app_name"), this);
   title_label_->setStyleSheet(
       "QLabel {"
       "  font-size: 13px;"
-      "  font-weight: bold;"
-      "  color: #1E293B;"
+      "  font-weight: 700;"
+      "  color: #0F172A;"
+      "  background: transparent;"
+      "  border: none;"
+      "}");
+
+  divider_label_ = new QLabel("|", this);
+  divider_label_->setStyleSheet(
+      "QLabel {"
+      "  font-size: 11px;"
+      "  font-weight: normal;"
+      "  color: #CBD5E1;"
+      "  background: transparent;"
+      "  border: none;"
+      "  padding: 0px 2px;"
+      "}");
+
+  slogan_label_ = new QLabel(Tr("app_slogan"), this);
+  slogan_label_->setStyleSheet(
+      "QLabel {"
+      "  font-size: 12px;"
+      "  font-weight: 400;"
+      "  color: #64748B;"
       "  background: transparent;"
       "  border: none;"
       "}");
@@ -99,6 +121,8 @@ void TitleBar::SetupUi() {
 
   layout->addWidget(icon_label_);
   layout->addWidget(title_label_);
+  layout->addWidget(divider_label_);
+  layout->addWidget(slogan_label_);
   layout->addStretch(1);
   layout->addWidget(btn_min_);
   layout->addWidget(btn_max_);
@@ -113,7 +137,10 @@ void TitleBar::SetupUi() {
 
 void TitleBar::RetranslateUi() {
   if (title_label_) {
-    title_label_->setText(Tr("app_title"));
+    title_label_->setText(Tr("app_name"));
+  }
+  if (slogan_label_) {
+    slogan_label_->setText(Tr("app_slogan"));
   }
   if (btn_min_) {
     btn_min_->setToolTip(Tr("minimize"));

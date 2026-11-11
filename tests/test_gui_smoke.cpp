@@ -162,15 +162,22 @@ int main(int argc, char *argv[]) {
       soeasy::gui::SettingsDialog dlg_en(config);
       dlg_en.resize(800, 600);
       dlg_en.show();
-      auto *tab_widget = dlg_en.findChild<QTabWidget *>();
-      if (tab_widget) {
-        tab_widget->setCurrentIndex(3);
-      }
+      dlg_en.SetCurrentTab(3);
       app.processEvents();
       QPixmap pix = dlg_en.grab();
       bool ok = pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_en.png").string()));
       std::cout << "  -> dlg_en save ok: " << ok << ", isNull: " << pix.isNull() << ", size: " << pix.width() << "x"
                 << pix.height() << "\n";
+    }
+
+    // Verify Tab 5 (Performance & Logs) Combobox rendering
+    {
+      soeasy::gui::SettingsDialog dlg_tab5(config);
+      dlg_tab5.resize(800, 600);
+      dlg_tab5.show();
+      dlg_tab5.SetCurrentTab(5);
+      app.processEvents();
+      dlg_tab5.grab().save("/tmp/tab5_combo_fixed.png");
     }
 
     std::string test_cfg_file = soeasy::test::GetTestTempPath("soeasy_i18n_test_config.json").string();
@@ -193,10 +200,7 @@ int main(int argc, char *argv[]) {
       soeasy::gui::SettingsDialog dlg_zh(config);
       dlg_zh.resize(800, 600);
       dlg_zh.show();
-      auto *tab_widget = dlg_zh.findChild<QTabWidget *>();
-      if (tab_widget) {
-        tab_widget->setCurrentIndex(3);
-      }
+      dlg_zh.SetCurrentTab(3);
       app.processEvents();
       QPixmap pix = dlg_zh.grab();
       pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_zh.png").string()));

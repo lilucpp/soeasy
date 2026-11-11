@@ -70,6 +70,8 @@ void I18n::InitDictionary() {
   zh_dict_ = {
       // Common & Window
       {"app_title", "SoEasy - 让电脑没有难搜的文件"},
+      {"app_name", "SoEasy"},
+      {"app_slogan", "让电脑没有难搜的文件"},
       {"minimize", "最小化"},
       {"maximize", "最大化 / 还原"},
       {"close", "关闭"},
@@ -97,6 +99,8 @@ void I18n::InitDictionary() {
 
       // Result Table
       {"th_id", "序号"},
+      {"tip_header_id", "序号（点击恢复默认相关度排序）"},
+      {"tip_reset_sort", "恢复默认相关度排序"},
       {"th_filename", "文件名称"},
       {"th_path", "所在路径"},
       {"th_size", "大小"},
@@ -108,6 +112,8 @@ void I18n::InitDictionary() {
       {"no_file_selected", "未选中文件"},
       {"btn_open_file", "打开文件"},
       {"btn_open_folder", "所在目录"},
+      {"keyword_label", "检索词:"},
+      {"no_keywords", "全篇预览"},
       {"label_jump", "关键词跳转:"},
       {"search_in_content_ph", "在正文中查找..."},
       {"btn_prev", "▲ 上一个"},
@@ -126,8 +132,14 @@ void I18n::InitDictionary() {
       {"status_indexed_complete", "全量索引已完成: 共 %1 个文档，耗时 %2 秒"},
       {"status_indexed_cancel", "索引已取消: 共处理 %1 个文档，耗时 %2 秒"},
 
+      // Tray Icon
+      {"tray_show", "显示主界面"},
+      {"tray_settings", "设置中心..."},
+      {"tray_quit", "退出程序"},
+      {"tray_tip_msg", "SoEasy 已最小化到托盘，后台持续保持文件监控与索引。"},
+
       // Settings Dialog
-      {"settings_title", "SoEasy - 索引配置与设置中心"},
+      {"settings_title", "索引配置与设置中心"},
       {"tab_general", "常规与语言"},
       {"tab_dirs", "索引目录"},
       {"tab_patterns", "排除目录规则"},
@@ -266,6 +278,8 @@ void I18n::InitDictionary() {
   en_dict_ = {
       // Common & Window
       {"app_title", "SoEasy - Make Every File Searchable"},
+      {"app_name", "SoEasy"},
+      {"app_slogan", "Make Every File Searchable"},
       {"minimize", "Minimize"},
       {"maximize", "Maximize / Restore"},
       {"close", "Close"},
@@ -294,6 +308,8 @@ void I18n::InitDictionary() {
 
       // Result Table
       {"th_id", "#"},
+      {"tip_header_id", "# (Click to restore default relevance sort)"},
+      {"tip_reset_sort", "Restore default relevance sort"},
       {"th_filename", "File Name"},
       {"th_path", "Path"},
       {"th_size", "Size"},
@@ -305,6 +321,8 @@ void I18n::InitDictionary() {
       {"no_file_selected", "No file selected"},
       {"btn_open_file", "Open File"},
       {"btn_open_folder", "Open Folder"},
+      {"keyword_label", "Keywords:"},
+      {"no_keywords", "Full Preview"},
       {"label_jump", "Jump to Match:"},
       {"search_in_content_ph", "Find in content..."},
       {"btn_prev", "▲ Previous"},
@@ -323,8 +341,14 @@ void I18n::InitDictionary() {
       {"status_indexed_complete", "Indexing completed: %1 documents in %2 s"},
       {"status_indexed_cancel", "Indexing cancelled: %1 documents processed in %2 s"},
 
+      // Tray Icon
+      {"tray_show", "Show MainWindow"},
+      {"tray_settings", "Settings..."},
+      {"tray_quit", "Quit SoEasy"},
+      {"tray_tip_msg", "SoEasy is minimized to system tray and watching files in background."},
+
       // Settings Dialog
-      {"settings_title", "SoEasy - Settings Center"},
+      {"settings_title", "Settings Center"},
       {"tab_general", "General && Language"},
       {"tab_dirs", "Indexed Directories"},
       {"tab_patterns", "Excluded Patterns"},

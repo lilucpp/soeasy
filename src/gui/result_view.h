@@ -82,6 +82,9 @@ class ResultView : public QTableView {
 
   int hover_row_ = -1;
   QPoint hover_pos_;
+
+  int last_sorted_col_ = -1;
+  Qt::SortOrder last_sort_order_ = Qt::AscendingOrder;
 };
 
 }  // namespace gui

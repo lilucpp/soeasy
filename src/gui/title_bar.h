@@ -36,6 +36,8 @@ class TitleBar : public QWidget {
 
   QLabel *icon_label_ = nullptr;
   QLabel *title_label_ = nullptr;
+  QLabel *divider_label_ = nullptr;
+  QLabel *slogan_label_ = nullptr;
   QPushButton *btn_min_ = nullptr;
   QPushButton *btn_max_ = nullptr;
   QPushButton *btn_close_ = nullptr;

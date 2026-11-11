@@ -71,11 +71,13 @@ cp -d "${DT_LIB}"/libcharsetdetect* "${STAGE_DIR}/lib/" 2>/dev/null || true
 ORT_LIB="${PROJECT_ROOT}/third_party/onnxruntime/lib"
 cp -d "${ORT_LIB}"/libonnxruntime* "${STAGE_DIR}/lib/" 2>/dev/null || true
 
-# 收集 Qt5 xcb 平台插件
+# 收集 Qt5 xcb 平台插件与 imageformats 图标解析插件
 QT_XCB="/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms/libqxcb.so"
 if [ -f "${QT_XCB}" ]; then
   cp -p "${QT_XCB}" "${STAGE_DIR}/plugins/platforms/"
 fi
+mkdir -p "${STAGE_DIR}/plugins/imageformats"
+cp -p /usr/lib/x86_64-linux-gnu/qt5/plugins/imageformats/libqico.so "${STAGE_DIR}/plugins/imageformats/" 2>/dev/null || true
 
 # 5. 收集词典与 OCR 模型文件
 echo "[5/6] 收集结巴词典、PP-OCRv6 模型与启动引导脚本..."

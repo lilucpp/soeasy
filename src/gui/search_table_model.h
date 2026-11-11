@@ -22,6 +22,7 @@ struct DisplayResultItem {
   double score = 0.0;
   QString snippet_html;
   bool has_body_snippet = false;
+  int initial_order = 0;
 };
 
 /**
@@ -56,6 +57,7 @@ class SearchTableModel : public QAbstractTableModel {
   void AppendResults(const std::vector<DisplayResultItem> &items);
   void ClearResults();
   void RetranslateUi();
+  void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
 
   [[nodiscard]] const DisplayResultItem *GetItem(int row) const;
   DisplayResultItem *GetItemMutable(int row);

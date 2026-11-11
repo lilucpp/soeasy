@@ -10,7 +10,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
-#include <QSpinBox>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTreeWidget>
@@ -35,6 +35,8 @@ class SettingsDialog : public QDialog {
  public:
   explicit SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent = nullptr);
   ~SettingsDialog() override;
+
+  void SetCurrentTab(int index);
 
  signals:
   void SettingsApplied();
@@ -77,7 +79,8 @@ class SettingsDialog : public QDialog {
 
   std::shared_ptr<service::IndexConfig> config_;
 
-  QTabWidget *tab_widget_ = nullptr;
+  QListWidget *nav_list_ = nullptr;
+  QStackedWidget *page_stack_ = nullptr;
 
   // Tab 0: General & Language
   QLabel *label_language_ = nullptr;
@@ -125,13 +128,13 @@ class SettingsDialog : public QDialog {
 
   // Tab: Performance & Scheduling
   QLabel *label_debounce_ = nullptr;
-  QSpinBox *debounce_spin_ = nullptr;
+  QComboBox *debounce_combo_ = nullptr;
   QLabel *label_max_size_ = nullptr;
-  QSpinBox *max_size_spin_ = nullptr;
+  QComboBox *max_size_combo_ = nullptr;
   QLabel *label_worker_count_ = nullptr;
-  QSpinBox *worker_count_spin_ = nullptr;
+  QComboBox *worker_count_combo_ = nullptr;
   QLabel *label_min_img_chars_ = nullptr;
-  QSpinBox *min_img_chars_spin_ = nullptr;
+  QComboBox *min_img_chars_combo_ = nullptr;
   QCheckBox *filter_thumbs_check_ = nullptr;
 
   // Logging & Debugging options
