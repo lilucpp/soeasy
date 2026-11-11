@@ -173,6 +173,7 @@ class MockStorageEngineContract : public IStorageEngine {
   MOCK_METHOD(bool, GetFileMetadata, (int64_t, uint64_t *, int64_t *, int *), (override));
   MOCK_METHOD(std::vector<FileMetaRecord>, GetAllFilesMetadata, (), (override));
   MOCK_METHOD(ScopedReadConnection, AcquireReadConnection, (), (override));
+  MOCK_METHOD(bool, Rekey, (const std::string &), (override));
   MOCK_METHOD(std::string, GetLastError, (), (const, override));
 };
 

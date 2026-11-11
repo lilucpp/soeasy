@@ -5,7 +5,18 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <wincrypt.h>
+#include <io.h>
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 #include <cstdint>
 #include <cstring>
@@ -13,11 +24,6 @@
 #include <iomanip>
 #include <sstream>
 #include <vector>
-
-#ifdef _WIN32
-#include <wincrypt.h>
-#include <windows.h>
-#endif
 
 #include "common/logger.h"
 
