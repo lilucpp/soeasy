@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QVBoxLayout>
 
@@ -30,6 +31,7 @@ void SearchBar::SetupUi() {
   query_edit_->setPlaceholderText("输入搜索关键词（支持 FTS5 语法：AND, OR, NOT, \"精确词组\", 前缀*）...");
   query_edit_->addAction(IconProvider::GetSearchIcon(), QLineEdit::LeadingPosition);
   query_edit_->setClearButtonEnabled(true);
+  query_edit_->installEventFilter(this);
   query_edit_->setStyleSheet(
       "QLineEdit {"
       "  font-size: 13px;"
@@ -274,6 +276,36 @@ void SearchBar::SetMode(SearchMode mode) {
 
 void SearchBar::SetPathScope(const QString &path) {
   scope_edit_->setText(path);
+}
+
+void SearchBar::FocusQuery() {
+  if (query_edit_) {
+    query_edit_->setFocus();
+    query_edit_->selectAll();
+  }
+}
+
+void SearchBar::ClearQuery() {
+  if (query_edit_) {
+    query_edit_->clear();
+    query_edit_->setFocus();
+  }
+}
+
+bool SearchBar::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == query_edit_ && event->type() == QEvent::KeyPress) {
+    auto *key_event = static_cast<QKeyEvent *>(event);
+    if (key_event->key() == Qt::Key_Escape) {
+      if (!query_edit_->text().isEmpty()) {
+        ClearQuery();
+        return true;
+      }
+    } else if (key_event->key() == Qt::Key_Down) {
+      emit NavigateResultsRequested();
+      return true;
+    }
+  }
+  return QWidget::eventFilter(watched, event);
 }
 
 void SearchBar::OnBrowseScope() {

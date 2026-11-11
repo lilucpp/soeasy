@@ -30,14 +30,17 @@ class PreviewPanel : public QWidget {
   void ClearPreview();
   void RetranslateUi();
 
- private slots:
-  void OnFindNext();
-  void OnFindPrev();
+ public slots:
   void OnOpenFolder();
   void OnOpenWithDefaultApp();
 
+ private slots:
+  void OnFindNext();
+  void OnFindPrev();
+
  private:
   void SetupUi();
+  void RenderEmptyStateGuide();
   void HighlightOccurrences();
   void UpdateHighlightSelections();
   void JumpToMatch(int index);
@@ -67,7 +70,6 @@ class PreviewPanel : public QWidget {
   QLabel *match_count_label_ = nullptr;
 
   QTextBrowser *text_viewer_ = nullptr;
-  QLabel *meta_label_ = nullptr;
 
   std::vector<MatchRange> match_ranges_;
   int current_match_idx_ = -1;

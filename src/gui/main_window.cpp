@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QShortcut>
 #include <QStatusBar>
 #include <QTimer>
 #include <QUrl>
@@ -253,9 +254,57 @@ void MainWindow::SetupUi() {
   connect(search_bar_, &SearchBar::SearchTriggered, this, &MainWindow::OnSearchTriggered);
   connect(search_bar_, &SearchBar::SettingsRequested, this, &MainWindow::OnOpenSettings);
   connect(search_bar_, &SearchBar::PreviewToggleRequested, this, &MainWindow::OnTogglePreview);
+  connect(search_bar_, &SearchBar::NavigateResultsRequested, this, [this]() {
+    if (result_view_ && result_view_->rowCount() > 0) {
+      result_view_->setFocus();
+      if (!result_view_->currentIndex().isValid()) {
+        result_view_->selectRow(0);
+      }
+    }
+  });
   connect(result_view_, &ResultView::FileSelected, this, &MainWindow::OnFileSelected);
   connect(result_view_, &ResultView::FileOpenRequested, this, &MainWindow::OnFileOpenRequested);
   connect(result_view_, &ResultView::LoadMoreRequested, this, &MainWindow::OnLoadMoreRequested);
+
+  // Global Keyboard Shortcuts
+  auto *sc_focus = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_F), this);
+  connect(sc_focus, &QShortcut::activated, this, [this]() {
+    if (search_bar_) search_bar_->FocusQuery();
+  });
+
+  auto *sc_preview = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_P), this);
+  connect(sc_preview, &QShortcut::activated, this, &MainWindow::OnTogglePreview);
+
+  auto *sc_settings = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_Comma), this);
+  connect(sc_settings, &QShortcut::activated, this, &MainWindow::OnOpenSettings);
+
+  auto *sc_open_folder = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_O), this);
+  connect(sc_open_folder, &QShortcut::activated, this, [this]() {
+    if (preview_panel_) preview_panel_->OnOpenFolder();
+  });
+
+  auto *sc_open_enter = new QShortcut(QKeySequence(Qt::Key_Return), this);
+  connect(sc_open_enter, &QShortcut::activated, this, [this]() {
+    if (result_view_) {
+      result_view_->OpenCurrentSelectedItem();
+    }
+  });
+
+  auto *sc_open_enter_kp = new QShortcut(QKeySequence(Qt::Key_Enter), this);
+  connect(sc_open_enter_kp, &QShortcut::activated, this, [this]() {
+    if (result_view_) {
+      result_view_->OpenCurrentSelectedItem();
+    }
+  });
+
+  auto *sc_esc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+  connect(sc_esc, &QShortcut::activated, this, [this]() {
+    if (search_bar_ && !search_bar_->query().isEmpty()) {
+      search_bar_->ClearQuery();
+    } else {
+      close();
+    }
+  });
 
   RetranslateUi();
 }

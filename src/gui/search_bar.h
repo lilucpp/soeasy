@@ -31,12 +31,18 @@ class SearchBar : public QWidget {
   void SetQuery(const QString &query);
   void SetMode(SearchMode mode);
   void SetPathScope(const QString &path);
+  void FocusQuery();
+  void ClearQuery();
   void RetranslateUi();
 
  signals:
   void SearchTriggered(const QString &query, int mode, const QString &path_scope);
   void SettingsRequested();
   void PreviewToggleRequested();
+  void NavigateResultsRequested();
+
+ protected:
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
  private slots:
   void OnBrowseScope();

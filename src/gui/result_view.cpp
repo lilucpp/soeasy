@@ -350,7 +350,33 @@ void ResultView::SetResults(const std::vector<DisplayResultItem> &items) {
   }
   if (model_) {
     model_->SetResults(items);
+    if (!items.empty()) {
+      selectRow(0);
+    }
   }
+}
+
+void ResultView::OpenCurrentSelectedItem() {
+  QModelIndex cur = currentIndex();
+  if (!cur.isValid() && model_ && model_->rowCount() > 0) {
+    cur = model_->index(0, SearchTableModel::kColFileName);
+    setCurrentIndex(cur);
+  }
+  if (cur.isValid() && model_) {
+    const auto *it = model_->GetItem(cur.row());
+    if (it) {
+      emit FileOpenRequested(it->doc_id, it->file_name, it->file_path);
+    }
+  }
+}
+
+void ResultView::keyPressEvent(QKeyEvent *event) {
+  if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+    OpenCurrentSelectedItem();
+    event->accept();
+    return;
+  }
+  QTableView::keyPressEvent(event);
 }
 
 void ResultView::AppendResults(const std::vector<DisplayResultItem> &items) {

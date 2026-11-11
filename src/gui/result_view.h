@@ -40,6 +40,7 @@ class ResultView : public QTableView {
   void RetranslateUi();
 
   void EnsureSnippetForRows(int start_row, int end_row);
+  void OpenCurrentSelectedItem();
 
   [[nodiscard]] int rowCount() const { return model_ ? model_->rowCount() : 0; }
   [[nodiscard]] int columnCount() const { return model_ ? model_->columnCount() : 0; }
@@ -59,6 +60,7 @@ class ResultView : public QTableView {
   void LoadMoreRequested();
 
  protected:
+  void keyPressEvent(QKeyEvent *event) override;
   void mouseMoveEvent(QMouseEvent *event) override;
   void leaveEvent(QEvent *event) override;
 
