@@ -58,9 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-ctest-logs
-          path: |
-            build_test/Testing/Temporary/LastTest.log
-            build_test/Testing/Temporary/LastTestsFailed.log
+          path: build_test/Testing/Temporary/
 
       - name: Build and Package Linux Release
         run: |
@@ -143,6 +141,19 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll build/ 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll build/ 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libdouble-conversion*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libicu*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libharfbuzz*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libpcre2*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libzstd*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libfreetype*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libpng*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libgraphite2*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libbrotli*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libbz2*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libglib*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libintl*.dll build/ 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/liblzma*.dll build/ 2>/dev/null || true
 
           # Deploy Qt dependencies and plugins into build directory
           WINDEPLOYQT=$(command -v windeployqt-qt5 || command -v windeployqt || true)
@@ -153,6 +164,14 @@ jobs:
           mkdir -p build/platforms
           cp -p ${MINGW_PREFIX}/share/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
+
+          # Automated recursive PE dependency convergence for test executables
+          python3 scripts/collect_win64_deps.py \
+            --target-dir build \
+            --search-dirs \
+              "${MINGW_PREFIX}/bin" \
+              third_party/doctotext/lib \
+              third_party/onnxruntime/lib
 
       - name: Build DAT Dictionary
         run: |
@@ -243,6 +262,34 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libdouble-conversion*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libicu*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libharfbuzz*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libpcre2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libzstd*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libfreetype*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libpng*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libgraphite2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libbrotli*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libbz2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libglib*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/libintl*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/bin/liblzma*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+
+          # Ensure Qt plugins are explicitly deployed
+          mkdir -p "${STAGE_DIR}/bin/platforms" "${STAGE_DIR}/bin/styles"
+          cp -p ${MINGW_PREFIX}/share/qt5/plugins/platforms/*.dll "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/share/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
+
+          # Automated recursive PE dependency convergence for release artifact
+          python3 scripts/collect_win64_deps.py \
+            --target-dir "${STAGE_DIR}/bin" \
+            --search-dirs \
+              "${MINGW_PREFIX}/bin" \
+              third_party/doctotext/lib \
+              third_party/onnxruntime/lib
           
           cd dist && zip -r -q "${DIST_NAME}.zip" "${DIST_NAME}"
 

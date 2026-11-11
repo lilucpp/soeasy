@@ -196,7 +196,7 @@ target_include_directories(soeasy_common PUBLIC
     third_party/utfcpp/source
 )
 if(WIN32)
-    target_link_libraries(soeasy_common PUBLIC pthread Boost::nowide)
+    target_link_libraries(soeasy_common PUBLIC pthread Boost::nowide advapi32)
 else()
     target_link_libraries(soeasy_common PUBLIC rt pthread Boost::nowide)
 endif()

@@ -59,8 +59,15 @@ SYSTEM_DLLS = {
     "wldap32.dll",
     "ws2_32.dll",
     "wsock32.dll",
-    "wtsapi32.dll",
     "uuid.dll",
+    "kernelbase.dll",
+    "msvcp140.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+    "cryptnet.dll",
+    "propsys.dll",
+    "shcore.dll",
+    "rsaenh.dll",
 }
 
 def is_system_dll(name: str) -> bool:

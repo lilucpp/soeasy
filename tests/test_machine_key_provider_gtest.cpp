@@ -3,7 +3,13 @@
 
 #include <gtest/gtest.h>
 #include <sys/stat.h>
+
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
 #include <unistd.h>
+#endif
 
 #include <filesystem>
 #include <fstream>
@@ -17,8 +23,12 @@ namespace fs = std::filesystem;
 class MachineKeyProviderTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    test_dir_ = fs::temp_directory_path() / ("soeasy_key_test_" + std::to_string(getpid()));
-    fs::create_directories(test_dir_);
+    const auto *info = ::testing::UnitTest::GetInstance()->current_test_info();
+    std::string test_name = info ? info->name() : "default";
+    test_dir_ = fs::temp_directory_path() / ("soeasy_key_test_" + std::to_string(getpid()) + "_" + test_name);
+    std::error_code ec;
+    fs::remove_all(test_dir_, ec);
+    fs::create_directories(test_dir_, ec);
     dict_dir_ = "third_party/cppjieba/dict";
   }
 
