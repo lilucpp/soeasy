@@ -166,6 +166,7 @@ jobs:
           cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
 
           # Automated recursive PE dependency convergence for test executables
+          export PYTHONIOENCODING=utf-8
           python3 scripts/collect_win64_deps.py \
             --target-dir build \
             --search-dirs \
@@ -284,6 +285,7 @@ jobs:
           cp -p ${MINGW_PREFIX}/lib/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
 
           # Automated recursive PE dependency convergence for release artifact
+          export PYTHONIOENCODING=utf-8
           python3 scripts/collect_win64_deps.py \
             --target-dir "${STAGE_DIR}/bin" \
             --search-dirs \

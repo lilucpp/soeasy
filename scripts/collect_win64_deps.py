@@ -8,6 +8,14 @@ import shutil
 import subprocess
 import sys
 
+# Ensure UTF-8 output on Windows consoles with non-UTF8 default code pages
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # System DLLs provided natively by Windows OS (Windows 7/10/11)
 SYSTEM_DLL_PREFIXES = (
     "api-ms-win-",
@@ -124,9 +132,9 @@ def main():
         sys.exit(1)
 
     print("========================================================")
-    print("   SoEasy PE 依赖库自动递归收集工具 (MinGW Win64)")
-    print(f"   目标目录: {target_dir}")
-    print(f"   搜索路径: {search_dirs}")
+    print("   SoEasy PE Dependency Collector (MinGW Win64)")
+    print(f"   Target directory: {target_dir}")
+    print(f"   Search paths: {search_dirs}")
     print("========================================================")
 
     # Cache directory file lists for fast case-insensitive lookup
@@ -179,15 +187,15 @@ def main():
         if not new_copies:
             break
 
-        print(f"[第 {round_idx} 轮] 成功收集并补充 {len(new_copies)} 个动态库:")
+        print(f"[Round {round_idx}] Collected and added {len(new_copies)} dynamic libraries:")
         for imp, src, dst in new_copies:
             print(f"  + {imp} <- {src}")
         round_idx += 1
 
     print("========================================================")
-    print(f"依赖收集完成! 目标目录当前共有 {len(collected_lower)} 个动态链接库。")
+    print(f"Dependency collection complete! Target directory contains {len(collected_lower)} DLLs.")
     if unresolved:
-        print("注意: 以下非系统库未在搜索路径中找到 (可能由 MSVC 运行库或外部提供):")
+        print("Notice: The following non-system DLLs were not found in search paths:")
         for u in sorted(unresolved):
             print(f"  - {u}")
     print("========================================================")
