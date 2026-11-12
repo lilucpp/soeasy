@@ -235,6 +235,14 @@ QIcon IconProvider::GetAppIcon() {
   // 1. Load from built-in Qt resource
   ::qInitResources_resources();
 
+  if (QFile::exists(":/icons/soeasy.png")) {
+    QIcon res_icon(":/icons/soeasy.png");
+    if (!res_icon.isNull() && !res_icon.pixmap(18, 18).isNull()) {
+      s_icon_cache["__app__"] = res_icon;
+      return res_icon;
+    }
+  }
+
   if (QFile::exists(":/icons/soeasy.ico")) {
     QIcon res_icon(":/icons/soeasy.ico");
     if (!res_icon.isNull() && !res_icon.pixmap(18, 18).isNull()) {

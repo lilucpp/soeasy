@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>icons/soeasy.ico</file>
+        <file>icons/soeasy.png</file>
         <file>icons/chevron_down.svg</file>
         <file>icons/chevron_up.svg</file>
         <file>icons/chevron_down.png</file>

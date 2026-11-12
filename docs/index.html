@@ -6,8 +6,9 @@
   <title>SoEasy - 让电脑没有难搜的文件 | 原生桌面全文检索引擎</title>
   <meta name="description" content="让电脑没有难搜的文件。基于 C++17 与 Qt5 的原生跨平台桌面全文检索工具。物理多进程沙箱隔离防卡死、纯本地透明 AES-128 加密存储，深度支持 Office、PDF、源码及图片 OCR。">
   <meta name="keywords" content="SoEasy, 桌面全文检索, 本地搜索, desktop search, full-text search, offline search, SQLite FTS5, DocToText, OCR">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" href="app_icon.png">
   <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="app_icon.png">
   <style>
     /* 色彩体系：严格参考标准 RGB 16 进制颜色库 (https://www.sioe.cn/yingyong/yanse-rgb-16/)
        主题色：Snow 雪 #FFFAFA (255, 250, 250) */
@@ -197,6 +198,10 @@
       max-width: 740px;
       margin: 0 auto 34px;
       line-height: 1.65;
+    }
+
+    @media (max-width: 640px) {
+      .hero-br { display: none; }
     }
 
     /* Downloads Bar (Dual Platform) */
@@ -828,24 +833,9 @@
   <header>
     <div class="container nav-inner">
       <div class="brand">
-        <svg class="brand-logo-svg" width="28" height="28" viewBox="0 0 128 128" fill="none" style="display: block; border-radius: 6px; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);">
-          <defs>
-            <linearGradient id="brandBg" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#0284C7"/>
-              <stop offset="50%" stop-color="#0369A1"/>
-              <stop offset="100%" stop-color="#0F172A"/>
-            </linearGradient>
-          </defs>
-          <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#brandBg)" stroke="#FFFAFA" stroke-width="2" stroke-opacity="0.35"/>
-          <circle cx="56" cy="54" r="28" fill="rgba(255,250,250,0.18)"/>
-          <circle cx="56" cy="54" r="28" fill="none" stroke="#FFFAFA" stroke-width="7"/>
-          <line x1="77" y1="75" x2="101" y2="99" stroke="#FFFAFA" stroke-width="9" stroke-linecap="round"/>
-          <line x1="78" y1="76" x2="94" y2="92" stroke="#0284C7" stroke-width="3.5" stroke-linecap="round"/>
-          <path d="M 68 40.5 C 61 33.5 45 35 44 45.5 C 43 56 69 52.5 68 63 C 67 73 50 74.5 44 67.5" fill="none" stroke="#FFFAFA" stroke-width="6.5" stroke-linecap="round"/>
-          <circle cx="70" cy="38" r="4.5" fill="#F59E0B" stroke="#FFFAFA" stroke-width="1.5"/>
-        </svg>
+        <img src="app_icon.png" width="30" height="30" class="brand-logo-img" alt="SoEasy" style="display: block; border-radius: 6px; box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);">
         <span>SoEasy</span>
-        <span class="brand-tag">v0.2.1</span>
+        <span class="brand-tag">v0.3.0</span>
       </div>
       <div class="nav-actions">
         <button class="lang-btn" id="langToggle">EN / 中文</button>
@@ -865,16 +855,16 @@
       </h1>
 
       <p class="hero-subtitle" data-i18n="hero-subtitle">
-        基于现代 C++17 与 Qt5 架构。提供 FTS5 全文倒排与文件名双秒搜模式、物理多进程沙箱隔离自愈，以及纯本地透明 AES-128 加密存储。深入支持 Office、PDF、工程源码与图片 OCR。
+        基于现代 C++17 与 Qt5 极速架构，提供全文倒排与文件名秒搜、多进程沙箱隔离自愈。<br class="hero-br">深入支持 Office、PDF、代码与图片 OCR，硬件绑定纯本地透明加密，毫秒即搜即览。
       </p>
 
       <!-- Dual Platform Downloads -->
       <div class="download-group">
-        <a href="https://github.com/lilucpp/soeasy/releases/download/v0.2.1/soeasy-v0.2.1-windows-x64.zip" class="btn-download btn-win" target="_blank">
+        <a href="https://github.com/lilucpp/soeasy/releases/download/v0.3.0/soeasy-v0.3.0-windows-x64.zip" class="btn-download btn-win" target="_blank">
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.901-1.799"/></svg>
           <span data-i18n="btn-win">下载 Windows 便携版 (x64 .zip)</span>
         </a>
-        <a href="https://github.com/lilucpp/soeasy/releases/download/v0.2.1/soeasy-v0.2.1-linux-x86_64.zip" class="btn-download btn-linux" target="_blank">
+        <a href="https://github.com/lilucpp/soeasy/releases/download/v0.3.0/soeasy-v0.3.0-linux-x86_64.zip" class="btn-download btn-linux" target="_blank">
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12.504 0c-.13 0-.256.008-.387.017-3.92.274-7.07 3.33-7.07 7.086 0 1.25.352 2.42.96 3.42C3.12 12.18 1 15.34 1 19.04c0 2.74 2.22 4.96 4.96 4.96h12.08c3.31 0 6-2.69 6-6 0-2.97-2.16-5.43-5.01-5.91.01-.17.01-.34.01-.51 0-4.42-3.58-8-8-8-.18 0-.35.01-.53.02z"/></svg>
           <span data-i18n="btn-linux">下载 Linux 便携版 (x86_64 .zip)</span>
         </a>
@@ -888,15 +878,7 @@
         <!-- Title Bar -->
         <div class="qt-titlebar">
           <div class="qt-titlebar-left">
-            <svg width="18" height="18" viewBox="0 0 128 128" fill="none" style="display: block; border-radius: 4px;">
-              <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#brandBg)" stroke="#FFFAFA" stroke-width="2" stroke-opacity="0.35"/>
-              <circle cx="56" cy="54" r="28" fill="rgba(255,250,250,0.18)"/>
-              <circle cx="56" cy="54" r="28" fill="none" stroke="#FFFAFA" stroke-width="7"/>
-              <line x1="77" y1="75" x2="101" y2="99" stroke="#FFFAFA" stroke-width="9" stroke-linecap="round"/>
-              <line x1="78" y1="76" x2="94" y2="92" stroke="#0284C7" stroke-width="3.5" stroke-linecap="round"/>
-              <path d="M 68 40.5 C 61 33.5 45 35 44 45.5 C 43 56 69 52.5 68 63 C 67 73 50 74.5 44 67.5" fill="none" stroke="#FFFAFA" stroke-width="6.5" stroke-linecap="round"/>
-              <circle cx="70" cy="38" r="4.5" fill="#F59E0B" stroke="#FFFAFA" stroke-width="1.5"/>
-            </svg>
+            <img src="app_icon.png" width="18" height="18" class="mockup-logo-img" alt="SoEasy" style="display: block; border-radius: 3px;">
             <span id="mockupTitle" data-i18n="mockup-title">SoEasy - 让电脑没有难搜的文件</span>
           </div>
           <div class="qt-controls">
@@ -1155,7 +1137,7 @@
       </div>
       <div class="footer-links">
         <a href="https://github.com/lilucpp/soeasy" target="_blank">GitHub 仓库</a>
-        <a href="https://github.com/lilucpp/soeasy/releases/tag/v0.2.1" target="_blank">Release v0.2.1</a>
+        <a href="https://github.com/lilucpp/soeasy/releases/tag/v0.3.0" target="_blank">Release v0.3.0</a>
         <a href="https://github.com/lilucpp/doctotext" target="_blank">DocToText 增强版</a>
       </div>
     </div>
@@ -1470,7 +1452,7 @@ struct ParseRequest {
     const langDict = {
       zh: {
         "hero-title": "让电脑没有难搜的文件",
-        "hero-subtitle": "基于现代 C++17 与 Qt5 架构。提供 FTS5 全文倒排与文件名双秒搜模式、物理多进程沙箱隔离自愈，以及纯本地透明 AES-128 加密存储。深入支持 Office、PDF、工程源码与图片 OCR。",
+        "hero-subtitle": "基于现代 C++17 与 Qt5 极速架构，提供全文倒排与文件名秒搜、多进程沙箱隔离自愈。<br class=\"hero-br\">深入支持 Office、PDF、代码与图片 OCR，硬件绑定纯本地透明加密，毫秒即搜即览。",
         "btn-win": "下载 Windows 便携版 (x64 .zip)",
         "btn-linux": "下载 Linux 便携版 (x86_64 .zip)",
         "btn-all": "所有 Release 发布产物 &rarr;",
@@ -1545,7 +1527,7 @@ struct ParseRequest {
       },
       en: {
         "hero-title": "Make Every File Searchable On Your Desktop",
-        "hero-subtitle": "Engineered with C++17 & Qt5. Dual search modes (FTS5 full-text + fast filename), crash-isolated worker sandbox, and transparent local AES-128 encrypted storage. Deep support for Office, PDF, code trees, and OCR.",
+        "hero-subtitle": "Engineered with C++17 &amp; Qt5. Dual search modes, crash-resilient worker sandbox, and local machine-bound encrypted storage.<br class=\"hero-br\">Deep support for Office, PDF, code trees, and PP-OCR, delivering sub-millisecond retrieval with absolute privacy.",
         "btn-win": "Download Windows Release (x64 .zip)",
         "btn-linux": "Download Linux Release (x86_64 .zip)",
         "btn-all": "All Release Binaries &rarr;",
