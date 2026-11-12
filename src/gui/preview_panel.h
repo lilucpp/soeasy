@@ -1,16 +1,18 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Use of this source code is governed by an Apache-2.0 license.
+
 #ifndef SOEASY_SRC_GUI_PREVIEW_PANEL_H_
 #define SOEASY_SRC_GUI_PREVIEW_PANEL_H_
 
 #include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QString>
-#include <QTextBrowser>
 #include <QWidget>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "gui/document_viewer_widget.h"
 #include "storage/storage_engine.h"
 
 namespace soeasy {
@@ -30,6 +32,9 @@ class PreviewPanel : public QWidget {
   void ClearPreview();
   void RetranslateUi();
 
+  [[nodiscard]] DocumentViewerWidget *viewer() const { return viewer_; }
+  void WaitForLoadFinished(int timeout_ms = 1000);
+
  signals:
   void CloseRequested();
 
@@ -37,22 +42,11 @@ class PreviewPanel : public QWidget {
   void OnOpenFolder();
   void OnOpenWithDefaultApp();
 
- private slots:
-  void OnFindNext();
-  void OnFindPrev();
-
  private:
   void SetupUi();
   void RenderEmptyStateGuide();
-  void HighlightOccurrences();
-  void UpdateHighlightSelections();
-  void JumpToMatch(int index);
 
-  struct MatchRange {
-    int start = 0;
-    int end = 0;
-  };
-
+  uint64_t load_request_id_ = 0;
   int64_t current_doc_id_ = 0;
   QString current_file_name_;
   QString current_file_path_;
@@ -67,16 +61,7 @@ class PreviewPanel : public QWidget {
   QPushButton *btn_open_folder_ = nullptr;
   QPushButton *btn_close_ = nullptr;
 
-  QLabel *label_jump_ = nullptr;
-  QLabel *keyword_tag_label_ = nullptr;
-  QPushButton *btn_prev_ = nullptr;
-  QPushButton *btn_next_ = nullptr;
-  QLabel *match_count_label_ = nullptr;
-
-  QTextBrowser *text_viewer_ = nullptr;
-
-  std::vector<MatchRange> match_ranges_;
-  int current_match_idx_ = -1;
+  DocumentViewerWidget *viewer_ = nullptr;
 };
 
 }  // namespace gui

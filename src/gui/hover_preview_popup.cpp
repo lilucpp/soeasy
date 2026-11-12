@@ -6,22 +6,10 @@
 #include <QScreen>
 #include <QVBoxLayout>
 
+#include "gui/gui_utils.h"
+
 namespace soeasy {
 namespace gui {
-
-namespace {
-
-QString FormatFileSize(uint64_t bytes) {
-  if (bytes < 1024) {
-    return QString("%1 B").arg(bytes);
-  }
-  if (bytes < 1024 * 1024) {
-    return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
-  }
-  return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 2);
-}
-
-}  // namespace
 
 HoverPreviewPopup::HoverPreviewPopup(QWidget *parent) : QWidget(parent, Qt::ToolTip | Qt::FramelessWindowHint) {
   setAttribute(Qt::WA_ShowWithoutActivating);

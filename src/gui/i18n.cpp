@@ -240,6 +240,8 @@ void I18n::InitDictionary() {
 
       // Content Preview Dialog
       {"preview_dlg_title", "文档正文预览 - %1"},
+      {"preview_loading_content", "正在加载正文预览..."},
+      {"preview_cannot_read", "无法读取文档内容或正文为空。"},
       {"btn_open_folder_sys", "打开所在文件夹"},
       {"btn_open_app_sys", "用系统默认程序打开"},
 
@@ -456,6 +458,8 @@ void I18n::InitDictionary() {
 
       // Content Preview Dialog
       {"preview_dlg_title", "Content Preview - %1"},
+      {"preview_loading_content", "Loading content preview..."},
+      {"preview_cannot_read", "Unable to read document content or content is empty."},
       {"btn_open_folder_sys", "Open Folder"},
       {"btn_open_app_sys", "Open with Default App"},
 

@@ -1,0 +1,246 @@
+/* ===================================================================
+   SoEasy Desktop Search - Unified Light Theme (Design Tokens & Styles)
+   =================================================================== */
+
+/* --- 1. Global Dialog & Widget Defaults --- */
+QDialog {
+    background-color: #FFFFFF;
+    color: #1E293B;
+    font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;
+}
+
+/* --- 2. Navigation Sidebar in Settings --- */
+QListWidget#settings_nav_list {
+    background-color: #F8FAFC;
+    border: none;
+    border-right: 1px solid #E2E8F0;
+    outline: none;
+    padding: 12px 8px;
+}
+
+QListWidget#settings_nav_list::item {
+    min-height: 40px;
+    max-height: 44px;
+    border-radius: 6px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 500;
+    padding-left: 14px;
+    margin-bottom: 6px;
+}
+
+QListWidget#settings_nav_list::item:hover {
+    background-color: #F1F5F9;
+    color: #0F172A;
+}
+
+QListWidget#settings_nav_list::item:selected {
+    background-color: #E0F2FE;
+    color: #0284C7;
+    font-weight: 600;
+}
+
+QStackedWidget#settings_page_stack {
+    background-color: #FFFFFF;
+    border: none;
+}
+
+QWidget#settings_bottom_container {
+    background-color: #F8FAFC;
+    border-top: 1px solid #E2E8F0;
+    padding: 8px 16px;
+}
+
+/* --- 3. Form Controls & Data Views --- */
+QTreeWidget, QListWidget, QTableWidget {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 4px 6px;
+    color: #1E293B;
+}
+
+QTreeWidget::item:selected, QListWidget::item:selected, QTableWidget::item:selected {
+    background-color: #E0F2FE;
+    color: #0284C7;
+}
+
+QLineEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: #1E293B;
+    min-height: 24px;
+}
+
+QLineEdit:hover {
+    border-color: #94A3B8;
+}
+
+QLineEdit:focus {
+    border-color: #0284C7;
+}
+
+QComboBox {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 4px 28px 4px 10px;
+    color: #1E293B;
+    min-height: 24px;
+}
+
+QComboBox:hover {
+    border-color: #94A3B8;
+}
+
+QComboBox:focus, QComboBox:on {
+    border-color: #0284C7;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 26px;
+    border: none;
+    background: transparent;
+}
+
+QComboBox::down-arrow {
+    image: url(:/icons/chevron_down.png);
+    width: 12px;
+    height: 12px;
+}
+
+QComboBox QAbstractItemView {
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    background-color: #FFFFFF;
+    selection-background-color: #E0F2FE;
+    selection-color: #0284C7;
+    padding: 4px;
+    outline: none;
+}
+
+QSpinBox {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    padding: 4px 24px 4px 10px;
+    color: #1E293B;
+    min-height: 24px;
+}
+
+QSpinBox:hover {
+    border-color: #94A3B8;
+}
+
+QSpinBox:focus {
+    border-color: #0284C7;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    width: 20px;
+    border: none;
+    background: #F1F5F9;
+}
+
+QSpinBox::up-button {
+    subcontrol-position: top right;
+    border-top-right-radius: 5px;
+}
+
+QSpinBox::down-button {
+    subcontrol-position: bottom right;
+    border-bottom-right-radius: 5px;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background: #E2E8F0;
+}
+
+QSpinBox::up-arrow {
+    image: url(:/icons/chevron_up.png);
+    width: 10px;
+    height: 10px;
+}
+
+QSpinBox::down-arrow {
+    image: url(:/icons/chevron_down.png);
+    width: 10px;
+    height: 10px;
+}
+
+QHeaderView::section {
+    background-color: #F8FAFC;
+    color: #475569;
+    font-weight: 600;
+    font-size: 12px;
+    border: none;
+    border-bottom: 1px solid #E2E8F0;
+    padding: 5px 8px;
+}
+
+/* --- 4. Push Buttons --- */
+QPushButton {
+    background-color: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+    padding: 6px 14px;
+    color: #334155;
+    font-size: 12px;
+}
+
+QPushButton:hover {
+    background-color: #F1F5F9;
+    border-color: #94A3B8;
+    color: #0F172A;
+}
+
+QPushButton:pressed {
+    background-color: #E2E8F0;
+}
+
+QPushButton:disabled {
+    color: #94A3B8;
+    background-color: #F8FAFC;
+    border-color: #E2E8F0;
+}
+
+QPushButton:default {
+    background-color: #0284C7;
+    border-color: #0369A1;
+    color: #FFFFFF;
+}
+
+QPushButton:default:hover {
+    background-color: #0369A1;
+}
+
+/* --- 5. Clean Custom Scrollbars --- */
+QScrollBar:vertical {
+    width: 6px;
+    background: transparent;
+    margin: 0px;
+    padding: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #CBD5E1;
+    min-height: 24px;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #94A3B8;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+    background: transparent;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+}

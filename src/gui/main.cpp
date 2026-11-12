@@ -22,6 +22,7 @@
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
 #include "gui/main_window.h"
+#include "gui/theme_manager.h"
 #include "service/index_config.h"
 #include "service/index_pipeline.h"
 #include "service/worker_guard.h"
@@ -86,6 +87,8 @@ int main(int argc, char *argv[]) {
   app_font.setWeight(QFont::Normal);
   app_font.setStyleStrategy(QFont::PreferAntialias);
   app.setFont(app_font);
+
+  soeasy::gui::ThemeManager::ApplyDefaultTheme(app);
 
   QCommandLineParser parser;
   parser.setApplicationDescription("SoEasy Desktop Search Engine");

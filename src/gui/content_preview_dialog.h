@@ -1,16 +1,18 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Use of this source code is governed by an Apache-2.0 license.
+
 #ifndef SOEASY_SRC_GUI_CONTENT_PREVIEW_DIALOG_H_
 #define SOEASY_SRC_GUI_CONTENT_PREVIEW_DIALOG_H_
 
 #include <QDialog>
 #include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QString>
-#include <QTextBrowser>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "gui/document_viewer_widget.h"
 #include "storage/storage_engine.h"
 
 namespace soeasy {
@@ -26,22 +28,12 @@ class ContentPreviewDialog : public QDialog {
   ~ContentPreviewDialog() override = default;
 
  private slots:
-  void OnFindNext();
-  void OnFindPrev();
   void OnOpenFolder();
   void OnOpenWithDefaultApp();
 
  private:
   void SetupUi();
   void LoadContentAndHighlight();
-  void HighlightOccurrences();
-  void UpdateHighlightSelections();
-  void JumpToMatch(int index);
-
-  struct MatchRange {
-    int start = 0;
-    int end = 0;
-  };
 
   int64_t doc_id_ = 0;
   QString file_name_;
@@ -49,15 +41,8 @@ class ContentPreviewDialog : public QDialog {
   std::vector<std::string> keywords_;
   std::shared_ptr<storage::StorageEngine> storage_;
 
-  QTextBrowser *text_viewer_ = nullptr;
+  DocumentViewerWidget *viewer_ = nullptr;
   QLabel *path_label_ = nullptr;
-  QLabel *match_count_label_ = nullptr;
-  QLabel *keyword_tag_label_ = nullptr;
-  QPushButton *btn_prev_ = nullptr;
-  QPushButton *btn_next_ = nullptr;
-
-  std::vector<MatchRange> match_ranges_;
-  int current_match_idx_ = -1;
 };
 
 }  // namespace gui
