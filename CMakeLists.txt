@@ -502,6 +502,20 @@ if(BUILD_TESTS)
       Qt5::Core
   )
 
+  # Real-world Live Search Snapshot Capture & Verification
+  add_executable(capture_real_search_screenshot
+      tests/capture_real_search_screenshot.cpp
+  )
+  target_link_libraries(capture_real_search_screenshot PRIVATE
+      soeasy_gui
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+      Qt5::Widgets
+      Qt5::Gui
+      Qt5::Core
+  )
+
   # Stage 4 Performance & Scale Test: 10,000+ Viewport Scroll, Snippet & Memory Stress
   add_executable(test_large_scale_perf
       tests/test_large_scale_perf.cpp

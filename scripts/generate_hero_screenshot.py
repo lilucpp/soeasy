@@ -15,15 +15,15 @@ from PIL import Image, ImageDraw, ImageFilter
 
 def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    raw_path = "/tmp/soeasy_real_window_raw.png"
+    raw_path = "/tmp/soeasy_real_live_window.png"
     out_path = os.path.join(root, "docs", "screenshot.png")
-    bin_path = os.path.join(root, "build", "render_hero_shot")
+    bin_path = os.path.join(root, "build", "capture_real_search_screenshot")
 
     if not os.path.exists(bin_path):
-        print(f"Building render_hero_shot first...")
-        subprocess.check_call(["cmake", "--build", os.path.join(root, "build"), "--target", "render_hero_shot", "-j4"])
+        print(f"Building capture_real_search_screenshot first...")
+        subprocess.check_call(["cmake", "--build", os.path.join(root, "build"), "--target", "capture_real_search_screenshot", "-j4"])
 
-    print("Running render_hero_shot (offscreen)...")
+    print("Running capture_real_search_screenshot (offscreen)...")
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "offscreen"
     subprocess.check_call([bin_path, raw_path], env=env)

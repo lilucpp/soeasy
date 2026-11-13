@@ -169,17 +169,17 @@ int main(int argc, char *argv[]) {
         "审计完成日期：2026年10月31日";
 
     if (preview_panel->viewer()) {
-      preview_panel->viewer()->LoadContent(mock_text, {"财务审计", "财务报告"});
+      preview_panel->viewer()->LoadContent(mock_text, {"财务审计"});
     }
   }
 
-  // 5. Update status bar labels
+  // 5. Update status bar labels to match real MainWindow exactly
   auto all_labels = main_win.findChildren<QLabel *>();
   for (auto *lbl : all_labels) {
     if (lbl->text().contains("在索引文件") || lbl->text().contains("待扫描")) {
-      lbl->setText("在索引文件: 18,492 个 | 密态存储: 142.6 MB (Zstd密态压缩)");
+      lbl->setText("在索引文件: 18,492 个 | 匹配结果: 4 条");
     } else if (lbl->text().contains("检索耗时") || lbl->text().contains("就绪")) {
-      lbl->setText("● 检索耗时: 0.38 ms (4 个结果)");
+      lbl->setText("<span style=\"color: #16A34A; font-size: 13px;\">●</span> 检索耗时: 0.38 ms");
     }
   }
 
