@@ -3,7 +3,7 @@
 > **让电脑没有难搜的文件**  
 > *Make every file searchable on your computer.*
 
-[English](README.md) | [简体中文](README_zh.md) | [Release v0.3.0](https://github.com/lilucpp/soeasy/releases/tag/v0.3.0)
+[English](README.md) | [简体中文](README_zh.md) | [最新版本 (Latest Release)](https://github.com/lilucpp/soeasy/releases/latest)
 
 ---
 
