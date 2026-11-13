@@ -233,10 +233,47 @@ void I18n::InitDictionary() {
 
       // Rebuild & Actions
       {"btn_rebuild", "清空并重建索引..."},
+      {"btn_save", "保存并应用"},
+      {"btn_cancel", "取消"},
+      {"btn_browse", "浏览..."},
+      {"dlg_error", "错误"},
+      {"dlg_tip", "提示"},
+      {"save_cfg_failed", "保存配置文件失败，请检查权限或磁盘空间。"},
       {"rebuild_confirm_title", "确认重建索引"},
       {"rebuild_confirm_text",
        "此操作将彻底清空当前所有的全文倒排索引与密态缓存，\n并对所有配置的监控目录从头进行全量重新解析与构建。\n\n确定"
        "要继续吗？"},
+      {"rebuild_confirm_msg",
+       "此操作将彻底清空当前所有的全文倒排索引与密态缓存，\n并对所有配置的监控目录从头进行全量重新解析与构建。\n\n确定"
+       "要继续吗？"},
+
+      // Settings Tabs (refactored key aliases)
+      {"label_ui_language", "界面显示语言 (UI Language):"},
+      {"dlg_choose_dir", "选择待索引的目录"},
+      {"word_exists_dict", "关键词“%1”已在自定义列表中！"},
+      {"word_exists_base", "关键词“%1”已存在于系统基础词库中，分词器天然支持精准切词，无需重复添加。"},
+      {"ocr_group_title", "高级解析能力"},
+      {"ocr_checkbox_label", "提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)"},
+      {"ocr_tip_label",
+       "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n    "
+       "不勾选可获得极致解析性能（纯文本毫秒级完成索引）。"},
+      {"exts_tree_title", "支持与索引的文件格式分类（勾选以启用全文索引）："},
+      {"tree_col_category", "分类 / 格式扩展名"},
+      {"tree_col_desc", "说明与处理引擎"},
+      {"cat_custom_title", "用户自定义格式 (Custom)"},
+      {"cat_custom_desc", "用户手动添加的专有文件后缀与提取规则"},
+      {"label_custom_ext", "添加自定义扩展名:"},
+      {"btn_add_ext", "添加格式"},
+      {"btn_rm_custom_ext", "移除所选自定义"},
+      {"label_max_size", "单文件最大全文索引上限:"},
+      {"filter_thumbs_check", "自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)"},
+      {"label_console_out", "终端输出调试:"},
+      {"chk_console_out", "输出控制台实时镜像 (Console stdout，用于终端调试)"},
+      {"label_sync_flush", "落盘同步模式:"},
+      {"chk_sync_flush", "同步即时落盘模式 (Sync Flush，每条日志即刻刷盘，排查异常卡死)"},
+      {"chk_dt_log", "启用 DocToText 详细文档解析日志 (默认关闭，用于排查 Office/PDF 解析问题)"},
+      {"dt_log_ph", "留空则默认输出至 logs/doctotext.log"},
+      {"dlg_choose_log_file", "选择 DocToText 日志输出文件"},
 
       // Content Preview Dialog
       {"preview_dlg_title", "文档正文预览 - %1"},
@@ -451,10 +488,48 @@ void I18n::InitDictionary() {
 
       // Rebuild & Actions
       {"btn_rebuild", "Rebuild Index..."},
+      {"btn_save", "Save && Apply"},
+      {"btn_cancel", "Cancel"},
+      {"btn_browse", "Browse..."},
+      {"dlg_error", "Error"},
+      {"dlg_tip", "Information"},
+      {"save_cfg_failed", "Failed to save configuration file. Please check permissions or disk space."},
       {"rebuild_confirm_title", "Confirm Index Rebuild"},
       {"rebuild_confirm_text",
        "This will clear all inverted indices and encrypted caches,\nand completely rebuild indices from scratch for "
        "all configured directories.\n\nAre you sure you want to proceed?"},
+      {"rebuild_confirm_msg",
+       "This will clear all inverted indices and encrypted caches,\nand completely rebuild indices from scratch for "
+       "all configured directories.\n\nAre you sure you want to proceed?"},
+
+      // Settings Tabs (refactored key aliases)
+      {"label_ui_language", "Interface Language (UI Language):"},
+      {"dlg_choose_dir", "Select Directory to Index"},
+      {"word_exists_dict", "Keyword '%1' already exists in the custom list!"},
+      {"word_exists_base",
+       "Keyword '%1' already exists in system base dictionary; tokenization is naturally supported."},
+      {"ocr_group_title", "Advanced Parsing Capabilities"},
+      {"ocr_checkbox_label", "Extract && OCR embedded images in documents (Office / PDF / ODF)"},
+      {"ocr_tip_label",
+       "💡 Unchecked by default. Extracts embedded images for PP-OCRv6 recognition.\n    Unchecked yields maximum "
+       "indexing throughput (instant plain-text extraction)."},
+      {"exts_tree_title", "Supported file format categories (check to enable full-text indexing):"},
+      {"tree_col_category", "Category / Extension"},
+      {"tree_col_desc", "Description & Parser Engine"},
+      {"cat_custom_title", "User-Defined Formats (Custom)"},
+      {"cat_custom_desc", "Manually registered file extensions and extraction rules"},
+      {"label_custom_ext", "Add Custom Extension:"},
+      {"btn_add_ext", "Add Format"},
+      {"btn_rm_custom_ext", "Remove Selected"},
+      {"label_max_size", "Max indexable file size:"},
+      {"filter_thumbs_check", "Filter out cache thumbnails & icons (e.g. WeAppIcon, Thumb)"},
+      {"label_console_out", "Console output:"},
+      {"chk_console_out", "Mirror logs to console stdout (terminal debugging)"},
+      {"label_sync_flush", "Disk sync mode:"},
+      {"chk_sync_flush", "Synchronous flush mode (immediate disk sync for crash diagnosis)"},
+      {"chk_dt_log", "Enable DocToText verbose logging (troubleshooting Office/PDF parsing)"},
+      {"dt_log_ph", "Leave empty for default logs/doctotext.log"},
+      {"dlg_choose_log_file", "Select DocToText Log File"},
 
       // Content Preview Dialog
       {"preview_dlg_title", "Content Preview - %1"},

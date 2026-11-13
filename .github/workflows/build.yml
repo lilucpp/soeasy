@@ -127,7 +127,7 @@ jobs:
 
       - name: Build SoEasy and Test Suite (Windows x64)
         run: |
-          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
+          QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=ON \
@@ -136,7 +136,7 @@ jobs:
 
       - name: Deploy Runtime DLLs to Build Directory
         run: |
-          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
+          QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
           # Copy third-party runtime DLLs to build directory (same directory as test executables)
           cp -p third_party/doctotext/lib/*.dll build/ 2>/dev/null || true
           cp -p third_party/onnxruntime/lib/*.dll build/ 2>/dev/null || true
@@ -173,7 +173,7 @@ jobs:
           QT_PLUGIN_PATH: ${{ github.workspace }}/build
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
-          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
+          QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
           export QT_PLUGIN_PATH="$(pwd)/build:${QT_UNIX_DIR}/plugins:${QT_PLUGIN_PATH}"
           if ! ctest --test-dir build --output-on-failure --timeout 180 -j1; then
             STEP_SUMMARY_PATH=$(cygpath -u "${GITHUB_STEP_SUMMARY:-/tmp/step_summary.md}" 2>/dev/null || echo "${GITHUB_STEP_SUMMARY}")
@@ -186,10 +186,7 @@ jobs:
               done < build/Testing/Temporary/LastTestsFailed.log
             fi
             if [ -f build/Testing/Temporary/LastTest.log ]; then
-              echo "================ CTest LastTest.log ================"
-              cat build/Testing/Temporary/LastTest.log || true
-              echo "===================================================="
-              python3 -c 'import sys; [print("::error title=OfficeFail::" + l.strip()) for l in open("build/Testing/Temporary/LastTest.log", errors="ignore") if "test_office_parser" in l or "CHECK FAILED" in l]' 2>/dev/null || true
+              python3 -c 'import sys; [print("::error title=OfficeFail::" + l.strip()) for l in open("build/Testing/Temporary/LastTest.log", errors="ignore") if "CHECK FAILED" in l]' 2>/dev/null || true
             fi
             if grep -q "test_office_parser" build/Testing/Temporary/LastTestsFailed.log 2>/dev/null; then
               echo ">>> Diagnostic direct run of test_office_parser.exe:"
@@ -210,7 +207,7 @@ jobs:
 
       - name: Package Windows Artifacts
         run: |
-          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
+          QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
           VERSION="${GITHUB_REF_NAME#v}"
           if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
             VERSION="0.3.0"
