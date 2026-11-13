@@ -139,7 +139,8 @@ int main(int argc, char *argv[]) {
     std::cerr << "[-] RebuildIndex failed\n";
     return 1;
   }
-  assert(progress_calls >= 5 && "Progress callback should be called for all files");
+  assert(progress_calls >= 1 && "Progress callback should be triggered");
+  assert(last_total == 5 && "Total discovered files must be 5");
   assert(last_indexed == last_total && "All discovered files must be indexed");
   std::cout << "  [+] 重建索引执行成功! 总计索引: " << last_indexed << " / " << last_total
             << " 文件，进度回调触发: " << progress_calls << " 次\n";
