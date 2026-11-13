@@ -1,0 +1,4 @@
+// Copyright 2026 SoEasy Team. All rights reserved.
+// Windows application icon resource
+
+IDI_ICON1 ICON DISCARDABLE "icons/soeasy.ico"

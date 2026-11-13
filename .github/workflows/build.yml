@@ -243,8 +243,10 @@ jobs:
             ./build/build_dat_dict.exe "third_party/cppjieba/dict/jieba.dict.utf8" "third_party/cppjieba/dict/jieba_dat.bin"
           fi
 
-          # Copy dictionaries and models
-          cp -rp third_party/cppjieba/dict/* "${STAGE_DIR}/dict/" 2>/dev/null || true
+          # Copy required runtime dictionaries (jieba_dat.bin, hmm_model.utf8, user.dict.utf8) and models
+          cp -p third_party/cppjieba/dict/jieba_dat.bin "${STAGE_DIR}/dict/"
+          cp -p third_party/cppjieba/dict/hmm_model.utf8 "${STAGE_DIR}/dict/"
+          cp -p third_party/cppjieba/dict/user.dict.utf8 "${STAGE_DIR}/dict/" 2>/dev/null || touch "${STAGE_DIR}/dict/user.dict.utf8"
           cp -rp models/ppocr_v6 "${STAGE_DIR}/models/" 2>/dev/null || true
           cp -p README.md "${STAGE_DIR}/" 2>/dev/null || true
           mkdir -p "${STAGE_DIR}/icons" && cp -rp resources/icons/* "${STAGE_DIR}/icons/" 2>/dev/null || true
@@ -278,11 +280,13 @@ jobs:
           cp -p ${MINGW_PREFIX}/bin/liblzma*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
 
           # Ensure Qt plugins are explicitly deployed
-          mkdir -p "${STAGE_DIR}/bin/platforms" "${STAGE_DIR}/bin/styles"
+          mkdir -p "${STAGE_DIR}/bin/platforms" "${STAGE_DIR}/bin/styles" "${STAGE_DIR}/bin/imageformats"
           cp -p ${MINGW_PREFIX}/share/qt5/plugins/platforms/*.dll "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/share/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/lib/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/share/qt5/plugins/imageformats/*.dll "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
+          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/imageformats/*.dll "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
 
           # Automated recursive PE dependency convergence for release artifact
           export PYTHONIOENCODING=utf-8

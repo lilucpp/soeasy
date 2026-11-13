@@ -54,6 +54,17 @@ int main(int argc, char *argv[]) {
     }
     FreeLibrary(user32);
   }
+
+  // Set explicit AppUserModelID so Windows Taskbar correctly associates the taskbar button and icon
+  HMODULE shell32 = LoadLibraryA("shell32.dll");
+  if (shell32) {
+    typedef HRESULT(WINAPI *SetAppIDFunc)(PCWSTR);
+    auto set_app_id = reinterpret_cast<SetAppIDFunc>(GetProcAddress(shell32, "SetCurrentProcessExplicitAppUserModelID"));
+    if (set_app_id) {
+      set_app_id(L"SoEasy.DesktopSearch.Client.v1");
+    }
+    FreeLibrary(shell32);
+  }
 #endif
 
   // High DPI scaling attributes for Qt5

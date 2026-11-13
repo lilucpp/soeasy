@@ -471,8 +471,14 @@ target_link_libraries(soeasy_gui PUBLIC
     soeasy_storage
 )
 
-add_executable(soeasy-gui
+set(SOEASY_GUI_WIN32_RESOURCES "")
+if(WIN32)
+    set(SOEASY_GUI_WIN32_RESOURCES resources/soeasy.rc)
+endif()
+
+add_executable(soeasy-gui WIN32
     src/gui/main.cpp
+    ${SOEASY_GUI_WIN32_RESOURCES}
 )
 target_link_libraries(soeasy-gui PRIVATE
     soeasy_gui

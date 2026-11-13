@@ -64,8 +64,10 @@ mkdir -p "${STAGE_DIR}/dict"
 mkdir -p "${STAGE_DIR}/models"
 mkdir -p "${STAGE_DIR}/icons"
 
-# 拷贝结巴分词词典、PP-OCRv6 模型、图标与文档
-cp -rp "${PROJECT_ROOT}/third_party/cppjieba/dict/"* "${STAGE_DIR}/dict/" 2>/dev/null || true
+# 拷贝结巴分词核心词典（剔除冗余 txt 字典）、PP-OCRv6 模型、图标与文档
+cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" "${STAGE_DIR}/dict/"
+cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/hmm_model.utf8" "${STAGE_DIR}/dict/"
+cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/user.dict.utf8" "${STAGE_DIR}/dict/" 2>/dev/null || touch "${STAGE_DIR}/dict/user.dict.utf8"
 cp -rp "${PROJECT_ROOT}/models/ppocr_v6" "${STAGE_DIR}/models/" 2>/dev/null || true
 cp -p "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/" 2>/dev/null || true
 cp -rp "${PROJECT_ROOT}/resources/icons/"* "${STAGE_DIR}/icons/" 2>/dev/null || true
