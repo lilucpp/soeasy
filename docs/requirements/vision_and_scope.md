@@ -73,4 +73,4 @@
 2. **内存物理天花板契约 (CON-MEM)**：
    * 主进程常驻物理内存必须控制在 60MB 以内，通过 mmap 共享内存与 DAT 紧凑双数组字典树消除动态堆内存开销。
 3. **跨平台兼容契约 (CON-OS)**：
-   * 源码严格兼容 Linux (GCC 9+, glibc) 与 Windows 10/11 (MSVC 2019+, Windows CRT)。
+   * 源码严格兼容 Linux (GCC 9+, glibc) 与 Windows 10/11 (MSYS2 MinGW-w64 GCC, Windows CRT)。

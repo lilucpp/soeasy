@@ -79,11 +79,12 @@ flowchart TD
 | **Plain Text & Source Code** | `.txt`, `.md`, `.log`, `.csv`, `.json`, `.xml`, `.html`, `.c`, `.cpp`, `.py`, `.go`, `.rs`, `.java`, `.ts`, `.sh`, etc. | L1 Native parser + uchardet auto-sniffing |
 | **Microsoft Office (OOXML)** | `.docx`, `.xlsx`, `.pptx` | L2 DocToText / Fast stream extraction |
 | **Microsoft Office Binary** | `.doc`, `.xls`, `.ppt`, `.xlsb` | L2 DocToText binary extractors |
+| **WPS Office Suite** | `.wps`, `.et`, `.dps` | L2 DocToText |
 | **OpenDocument (ODF)** | `.odt`, `.ods`, `.odp`, `.odg`, `.fodt`, `.fods`, `.fodp` | L2 DocToText |
 | **Portable Documents** | `.pdf` (text layer + automatic scan queueing) | L2 Poppler natural flow + OCR fallback |
 | **Apple iWork** | `.pages`, `.numbers`, `.key`, `.keynote` | L2 DocToText |
 | **Rich Text & Emails** | `.rtf`, `.eml` | L2 DocToText |
-| **Images & Scanned Documents** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.jfif`, `.pnm` | L3 PP-OCRv6 deep learning OCR |
+| **Images & Vector Graphics** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.jfif`, `.pnm`, `.svg` | L3 PP-OCRv6 deep learning OCR + SVG Parser |
 | **Compressed Archives (Roadmap)** | `.zip`, `.tar`, `.gz`, `.7z`, `.rar`, `.bz2`, `.xz` *(UI greyed out)* | Planned: Recursive streaming pipeline |
 
 ---
@@ -91,9 +92,9 @@ flowchart TD
 ## Building from Source
 
 ### Prerequisites
-- **Compiler**: GCC 8+, Clang 9+, or MSVC 2019+ supporting C++17
+- **Compiler**: GCC 8+ or Clang 9+ supporting C++17 (MSYS2 MinGW-w64 recommended on Windows)
 - **CMake**: 3.16 or higher
-- **Dependencies**: Qt5 (`Widgets`, `Gui`, `Core`), Cap'n Proto, uchardet, zlib, libxml2, OpenCV
+- **Dependencies**: Qt5 (`Widgets`, `Gui`, `Core`), Cap'n Proto, uchardet, zlib, libxml2, OpenCV, Boost
 
 ### Linux Quick Start
 
@@ -111,13 +112,33 @@ ctest --test-dir build --output-on-failure
 ./build/soeasy-gui
 ```
 
-### Windows Build (MSVC 2019+)
+### Windows Build (MSYS2 MinGW-w64)
 
-```powershell
-cmake -B build -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release -j
-ctest --test-dir build -C Release --output-on-failure
-.\build\Release\soeasy-gui.exe
+> 💡 Aligned with official GitHub Actions CI: MSYS2 MINGW64 environment is recommended:
+
+```bash
+# 1. Open MSYS2 MINGW64 terminal and install toolchain & dependencies
+pacman -S --noconfirm \
+  git base-devel \
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-ninja \
+  mingw-w64-x86_64-qt5-base \
+  mingw-w64-x86_64-opencv \
+  mingw-w64-x86_64-libxml2 \
+  mingw-w64-x86_64-zlib \
+  mingw-w64-x86_64-uchardet \
+  mingw-w64-x86_64-boost
+
+# 2. Configure and build with Ninja
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# 3. Run full automated tests
+ctest --test-dir build --output-on-failure
+
+# 4. Launch executable
+./build/soeasy-gui.exe
 ```
 
 ---

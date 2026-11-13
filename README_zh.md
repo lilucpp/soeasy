@@ -79,11 +79,12 @@ flowchart TD
 | **纯文本与源代码** | `.txt`, `.md`, `.log`, `.csv`, `.json`, `.xml`, `.html`, `.c`, `.cpp`, `.py`, `.go`, `.rs`, `.java`, `.ts`, `.sh` 等 | L1 原生解析器 + uchardet 编码嗅探 |
 | **Microsoft Office (OOXML)** | `.docx`, `.xlsx`, `.pptx` | L2 DocToText / 快速流解压抽取 |
 | **Microsoft Office 经典二进制** | `.doc`, `.xls`, `.ppt`, `.xlsb` | L2 DocToText 专有提取器 |
+| **金山 WPS 办公套件** | `.wps`, `.et`, `.dps` | L2 DocToText |
 | **开放文档格式 (ODF)** | `.odt`, `.ods`, `.odp`, `.odg`, `.fodt`, `.fods`, `.fodp` | L2 DocToText |
 | **便携式版式文档** | `.pdf` (原生文本层 + 纯图片扫描件排队) | L2 Poppler 自然排版提取 + 转入 OCR |
 | **苹果办公套件 (Apple iWork)** | `.pages`, `.numbers`, `.key`, `.keynote` | L2 DocToText |
 | **富文本与电子邮件** | `.rtf`, `.eml` | L2 DocToText |
-| **独立图像与扫描介质** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.jfif`, `.pnm` | L3 PP-OCRv6 深度学习 OCR |
+| **独立图像与矢量图** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.jfif`, `.pnm`, `.svg` | L3 PP-OCRv6 深度学习 OCR + SVG 原生解析 |
 | **压缩归档格式 (规划中)** | `.zip`, `.tar`, `.gz`, `.7z`, `.rar`, `.bz2`, `.xz` *(界面暂置灰待支持)* | 待实现：递归解包检索流水线 |
 
 ---
@@ -91,9 +92,9 @@ flowchart TD
 ## 编译与快速开始
 
 ### 依赖环境
-- **编译器**：支持 C++17 的 GCC 8+、Clang 9+ 或 MSVC 2019+
+- **编译器**：支持 C++17 的 GCC 8+ 或 Clang 9+（Windows 推荐 MSYS2 MinGW-w64 环境）
 - **CMake**：3.16 及以上版本
-- **核心依赖**：Qt5 (`Widgets`, `Gui`, `Core`)、Cap'n Proto、uchardet、zlib、libxml2、OpenCV
+- **核心依赖**：Qt5 (`Widgets`, `Gui`, `Core`)、Cap'n Proto、uchardet、zlib、libxml2、OpenCV、Boost
 
 ### Linux 构建与运行
 
@@ -111,13 +112,33 @@ ctest --test-dir build --output-on-failure
 ./build/soeasy-gui
 ```
 
-### Windows 构建 (MSVC 2019+)
+### Windows 构建 (MSYS2 MinGW-w64)
 
-```powershell
-cmake -B build -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release -j
-ctest --test-dir build -C Release --output-on-failure
-.\build\Release\soeasy-gui.exe
+> 💡 与官方 GitHub Actions CI 构建流程保持严格一致，推荐使用 MSYS2 MINGW64 环境：
+
+```bash
+# 1. 打开 MSYS2 MINGW64 终端，安装核心编译工具链与依赖库
+pacman -S --noconfirm \
+  git base-devel \
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-ninja \
+  mingw-w64-x86_64-qt5-base \
+  mingw-w64-x86_64-opencv \
+  mingw-w64-x86_64-libxml2 \
+  mingw-w64-x86_64-zlib \
+  mingw-w64-x86_64-uchardet \
+  mingw-w64-x86_64-boost
+
+# 2. 生成 Ninja 构建配置并编译
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# 3. 运行全量自动化测试
+ctest --test-dir build --output-on-failure
+
+# 4. 运行可执行程序
+./build/soeasy-gui.exe
 ```
 
 ---

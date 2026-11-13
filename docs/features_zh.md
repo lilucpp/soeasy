@@ -92,31 +92,33 @@ $$\text{Base}[s] + c = t, \quad \text{Check}[t] = s$$
 SoEasy 严守“零云端上传、零数据遥测”的隐私底线。为了防止本地索引库被未授权脱机拷贝窃取，设计了工业级的 **一机一密硬件信封加密体系**。
 
 ```
-                   宿主硬件指纹
-    Linux: /etc/machine-id + CPU/主板 DMI
-    Windows: DPAPI (Data Protection API)
+                   宿主硬件机器指纹
+    Linux: /etc/machine-id (/var/lib/dbus/machine-id)
+    Windows: HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid
                          |
                          v
               [ MachineKeyProvider ]
                          |
-             PBKDF2-HMAC-SHA256 (10,000轮)
+         派生 KEK 密钥加密密钥 (SHA-256 + 16字节高熵Salt)
                          |
                          v
-              256位高熵物理密钥 (Master Key)
+          两级信封加密与校验 (Envelope Encryption)
+   - DEK (数据密钥): 系统级强随机 256 位 AES-128-CBC 数据库主密匙
+   - 封包保护: KEK 掩码加密 DEK + SHA-256 HMAC 标签 + 0600 严格权限
                          |
                          v
 +--------------------------------------------------------------+
-|             SQLite3MultipleCiphers (页级 AES-128)            |
-|  - 透明加密: 每一页索引和元数据在写入磁盘前完成密态转换      |
+|             SQLite3MultipleCiphers (页级 AES-128-CBC)        |
+|  - 透明加密: 32KB 页级索引和元数据在写入磁盘前完成密态转换    |
 |  - 脱机拷贝防护: 脱离本机启动直接报 file is not a database   |
 |  - 实时压缩: Facebook Zstd (Level 3) 实时流式压缩 (> 5.8GB/s) |
 +--------------------------------------------------------------+
 ```
 
 ### 安全特性
-1. **彻底拔除硬编码密钥**：代码库与二进制文件中不存在任何硬编码口令或固定盐值，密钥完全在运行时根据宿主机硬件指纹派生。
-2. **防冷拷贝与脱机窃密**：若攻击者直接将 `.soeasy.db` 拷贝至其他计算机，由于宿主机器码不匹配，解密验证直接失败，报错 `file is not a database`。
-3. **存量数据库无感迁移**：启动时自动感知数据库加密头，平滑兼容旧版本数据库并在初次加载时完成透明加固。
+1. **彻底拔除硬编码密钥**：代码库与二进制文件中不存在任何硬编码口令或固定盐值，密钥信封完全在运行时根据宿主机硬件生命周期指纹动态解封。
+2. **防冷拷贝与脱机窃密**：若攻击者直接将 `.soeasy.db` 拷贝至其他计算机，由于宿主机器码不匹配，解密验证直接失败，底层抛出 `file is not a database`。
+3. **存量数据库无感迁移**：启动时自动探测数据库加密头，平滑兼容旧版本数据库并在初次加载时完成透明加固。
 
 ---
 

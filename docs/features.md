@@ -70,9 +70,9 @@ Integrated with PP-OCRv6 deep learning models, engineered for desktop responsive
 
 SoEasy upholds absolute local privacy with zero telemetry and zero cloud dependencies.
 
-- **Envelope Encryption (`MachineKeyProvider`)**: Derives 256-bit high-entropy master keys from host hardware fingerprints (`/etc/machine-id` on Linux, Windows DPAPI), eliminating hardcoded secrets.
+- **Envelope Encryption (`MachineKeyProvider`)**: Derives Key Encryption Keys (KEK) via SHA-256 and high-entropy salt from host machine lifecycle IDs (`/etc/machine-id` on Linux, registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` on Windows). The 256-bit database Data Encryption Key (DEK) is sealed under KEK masking with SHA-256 HMAC authentication and 0600 file permissions.
 - **Offline Theft Defense**: Transferring the `.soeasy.db` file to another device causes instant decryption rejection (`file is not a database`).
-- **Transparent Page-Level Encryption**: Full page-level AES-128 protection via SQLite3MultipleCiphers, compressed on disk with Facebook Zstandard (Level 3).
+- **Transparent Page-Level Encryption**: Full page-level AES-128-CBC protection via SQLite3MultipleCiphers on 32KB pages, compressed on disk with Facebook Zstandard (Level 3).
 
 ---
 
