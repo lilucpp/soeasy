@@ -34,40 +34,52 @@ SoEasy 是一款追求极速、安全与稳定的原生跨平台桌面全文检�
 
 ```mermaid
 flowchart TD
-    subgraph UI ["前端界面 (Qt5 / ThemeManager)"]
-        MainWindow["主窗口 (单行检索与双栏交互)"]
-        ResultView["搜索列表 (视口懒加载 + 复合行呈现)"]
-        PreviewPanel["即时预览面板 (异步线程池防抖)"]
+    subgraph UI ["前端界面 (soeasy-gui / Qt5)"]
+        MainWindow["MainWindow (单行检索与双栏交互)"]
+        ResultView["ResultView (虚拟视口 + 复合行委托 + 悬浮预览)"]
+        PreviewPanel["PreviewPanel (异步防抖解密)"]
         DocViewer["DocumentViewerWidget (高亮与精准跳转)"]
     end
 
     subgraph Core ["核心服务 (soeasy-service)"]
-        IndexPipeline["索引流水线 / 规则中心"]
-        WatchEngine["目录变动监听 (efsw)"]
-        WorkerGuard["沙箱守卫 / 看门狗监控 (reproc++)"]
-        MachineKey["MachineKeyProvider (一机一密硬件绑定)"]
+        IndexPipeline["IndexPipeline (服务门面)"]
+        Orchestrator["IndexOrchestrator (并发扫描调度)"]
+        SearchCoord["SearchCoordinator (全文/文件名联合检索)"]
+        NameIndex["NameIndex (内存文件名秒索引)"]
+        WriteQueue["AsyncWriteQueue (异步批量入库队列)"]
+        WatchEngine["WatchEngine & EventDebouncer (efsw 监听防抖)"]
+        WorkerGuard["WorkerGuard (reproc++ 沙箱看门狗)"]
     end
 
     subgraph Sandbox ["解析沙箱 (soeasy-worker)"]
-        L1["L1: 纯文本与源码解析 (uchardet)"]
-        L2["L2: Office / PDF / DocToText 增强版"]
-        L3["L3: 图像与扫描件 OCR (PP-OCRv6)"]
+        L1["L1TextParser (纯文本/代码 + uchardet)"]
+        L2["L2OfficeParser (DocToText 增强版 / PDF)"]
+        L3["L3ImageParser (PP-OCRv6 懒加载 + 空闲自动释放)"]
     end
 
-    subgraph Storage ["加密存储底座 (SQLite3MC + Zstd)"]
-        FTS5["倒排索引 (CppJieba DAT + BM25)"]
-        CompressedCache["正文压缩缓存 (Zstd Level 3)"]
+    subgraph Storage ["加密存储与基础设施 (soeasy-storage / common)"]
+        StorageEngine["StorageEngine (SQLite3MC AES-128 + Zstd)"]
+        ReaderPool["ReaderConnectionPool (WAL 多读连接池)"]
+        FTS5["Fts5JiebaTokenizer (DAT + mmap 分词)"]
+        MachineKey["MachineKeyProvider (一机一密硬件绑定)"]
     end
 
     MainWindow --> IndexPipeline
     PreviewPanel --> DocViewer
-    IndexPipeline --> WatchEngine
-    IndexPipeline --> WorkerGuard
-    WorkerGuard -- 共享内存 / IPC --> Sandbox
-    MachineKey -.-> Storage
-    IndexPipeline --> Storage
-    ResultView --> Storage
-    PreviewPanel -.-> Storage
+    IndexPipeline --> Orchestrator
+    IndexPipeline --> SearchCoord
+    Orchestrator --> WatchEngine
+    Orchestrator --> WorkerGuard
+    Orchestrator --> WriteQueue
+    SearchCoord --> NameIndex
+    SearchCoord --> ReaderPool
+    WorkerGuard -- "Cap'n Proto / 共享内存 / IPC" --> Sandbox
+    MachineKey -.-> StorageEngine
+    WriteQueue --> StorageEngine
+    StorageEngine --> FTS5
+    ReaderPool -.-> StorageEngine
+    ResultView -.-> ReaderPool
+    PreviewPanel -.-> ReaderPool
 ```
 
 ---
@@ -85,16 +97,18 @@ flowchart TD
 | **苹果办公套件 (Apple iWork)** | `.pages`, `.numbers`, `.key`, `.keynote` | L2 DocToText |
 | **富文本与电子邮件** | `.rtf`, `.eml` | L2 DocToText |
 | **独立图像与矢量图** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.jfif`, `.pnm`, `.svg` | L3 PP-OCRv6 深度学习 OCR + SVG 原生解析 |
-| **压缩归档格式 (规划中)** | `.zip`, `.tar`, `.gz`, `.7z`, `.rar`, `.bz2`, `.xz` *(界面暂置灰待支持)* | 待实现：递归解包检索流水线 |
+
+> 📌 **路线图规划**：压缩归档文件（`.zip`, `.tar`, `.gz`, `.7z`, `.rar`, `.bz2`, `.xz`）递归解包与流式检索功能排期演进中（当前设置界面中呈置灰禁用状态）。
 
 ---
 
 ## 编译与快速开始
 
 ### 依赖环境
+- **源码克隆**：请使用 `git clone --recursive` 拉取完整子模块
 - **编译器**：支持 C++17 的 GCC 8+ 或 Clang 9+（Windows 推荐 MSYS2 MinGW-w64 环境）
 - **CMake**：3.16 及以上版本
-- **核心依赖**：Qt5 (`Widgets`, `Gui`, `Core`)、Cap'n Proto、uchardet、zlib、libxml2、OpenCV、Boost
+- **核心依赖**：Qt5 (`Widgets`, `Gui`, `Core`)、Cap'n Proto、uchardet、zlib、libxml2、libiconv、OpenCV、Boost
 
 ### Linux 构建与运行
 
@@ -124,8 +138,10 @@ pacman -S --noconfirm \
   mingw-w64-x86_64-cmake \
   mingw-w64-x86_64-ninja \
   mingw-w64-x86_64-qt5-base \
+  mingw-w64-x86_64-capnproto \
   mingw-w64-x86_64-opencv \
   mingw-w64-x86_64-libxml2 \
+  mingw-w64-x86_64-libiconv \
   mingw-w64-x86_64-zlib \
   mingw-w64-x86_64-uchardet \
   mingw-w64-x86_64-boost

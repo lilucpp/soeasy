@@ -34,40 +34,52 @@ Zero Electron bloat, zero cloud telemetry, and complete crash resilience through
 
 ```mermaid
 flowchart TD
-    subgraph UI ["Front-End (Qt5 / ThemeManager)"]
-        MainWindow["Main Window (Single-Line Bar & Dual-Pane)"]
-        ResultView["Search Table (Virtual Viewport & Composite Rows)"]
-        PreviewPanel["Live Preview (Async ThreadPool Debounce)"]
+    subgraph UI ["Front-End (soeasy-gui / Qt5)"]
+        MainWindow["MainWindow (Single-Line Bar & Dual-Pane)"]
+        ResultView["ResultView (Virtual Viewport, Composite Delegate & Hover Popup)"]
+        PreviewPanel["PreviewPanel (Async ThreadPool Debounce)"]
         DocViewer["DocumentViewerWidget (Highlight & Traversal)"]
     end
 
     subgraph Core ["Core Service (soeasy-service)"]
-        IndexPipeline["Index Pipeline & Rules Engine"]
-        WatchEngine["Filesystem Watcher (efsw)"]
-        WorkerGuard["Sandbox Guard / Watchdog (reproc++)"]
-        MachineKey["MachineKeyProvider (Hardware Envelope Encryption)"]
+        IndexPipeline["IndexPipeline (Service Facade)"]
+        Orchestrator["IndexOrchestrator (Concurrent Scan Scheduler)"]
+        SearchCoord["SearchCoordinator (Fulltext & Filename Query)"]
+        NameIndex["NameIndex (In-Memory Instant Filename Index)"]
+        WriteQueue["AsyncWriteQueue (Batched Async DB Writer)"]
+        WatchEngine["WatchEngine & EventDebouncer (efsw)"]
+        WorkerGuard["WorkerGuard (reproc++ Sandbox Watchdog)"]
     end
 
     subgraph Sandbox ["Parser Sandbox (soeasy-worker)"]
-        L1["L1: Plain Text & Code (uchardet)"]
-        L2["L2: Office / PDF / DocToText Enhanced"]
-        L3["L3: Images & Scans (PP-OCRv6)"]
+        L1["L1TextParser (Plain Text & Code + uchardet)"]
+        L2["L2OfficeParser (DocToText Enhanced / PDF)"]
+        L3["L3ImageParser (PP-OCRv6 Lazy-Load & Idle Unload)"]
     end
 
-    subgraph Storage ["Encrypted Storage (SQLite3MC + Zstd)"]
-        FTS5["Inverted Index (DAT Tokenizer + BM25)"]
-        CompressedCache["Text Cache (Zstd Level 3)"]
+    subgraph Storage ["Encrypted Storage & Common (soeasy-storage / common)"]
+        StorageEngine["StorageEngine (SQLite3MC AES-128 + Zstd)"]
+        ReaderPool["ReaderConnectionPool (WAL Concurrent Read Pool)"]
+        FTS5["Fts5JiebaTokenizer (DAT + mmap)"]
+        MachineKey["MachineKeyProvider (Hardware Envelope Encryption)"]
     end
 
     MainWindow --> IndexPipeline
     PreviewPanel --> DocViewer
-    IndexPipeline --> WatchEngine
-    IndexPipeline --> WorkerGuard
-    WorkerGuard -- Shared Memory / IPC --> Sandbox
-    MachineKey -.-> Storage
-    IndexPipeline --> Storage
-    ResultView --> Storage
-    PreviewPanel -.-> Storage
+    IndexPipeline --> Orchestrator
+    IndexPipeline --> SearchCoord
+    Orchestrator --> WatchEngine
+    Orchestrator --> WorkerGuard
+    Orchestrator --> WriteQueue
+    SearchCoord --> NameIndex
+    SearchCoord --> ReaderPool
+    WorkerGuard -- "Cap'n Proto / Shared Memory / IPC" --> Sandbox
+    MachineKey -.-> StorageEngine
+    WriteQueue --> StorageEngine
+    StorageEngine --> FTS5
+    ReaderPool -.-> StorageEngine
+    ResultView -.-> ReaderPool
+    PreviewPanel -.-> ReaderPool
 ```
 
 ---
@@ -85,16 +97,18 @@ flowchart TD
 | **Apple iWork** | `.pages`, `.numbers`, `.key`, `.keynote` | L2 DocToText |
 | **Rich Text & Emails** | `.rtf`, `.eml` | L2 DocToText |
 | **Images & Vector Graphics** | `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.jfif`, `.pnm`, `.svg` | L3 PP-OCRv6 deep learning OCR + SVG Parser |
-| **Compressed Archives (Roadmap)** | `.zip`, `.tar`, `.gz`, `.7z`, `.rar`, `.bz2`, `.xz` *(UI greyed out)* | Planned: Recursive streaming pipeline |
+
+> 📌 **Roadmap**: Recursive extraction and streaming search for compressed archives (`.zip`, `.tar`, `.gz`, `.7z`, `.rar`, `.bz2`, `.xz`) are planned for future releases (currently greyed out in settings).
 
 ---
 
 ## Building from Source
 
 ### Prerequisites
+- **Clone**: Use `git clone --recursive` to initialize all submodules
 - **Compiler**: GCC 8+ or Clang 9+ supporting C++17 (MSYS2 MinGW-w64 recommended on Windows)
 - **CMake**: 3.16 or higher
-- **Dependencies**: Qt5 (`Widgets`, `Gui`, `Core`), Cap'n Proto, uchardet, zlib, libxml2, OpenCV, Boost
+- **Dependencies**: Qt5 (`Widgets`, `Gui`, `Core`), Cap'n Proto, uchardet, zlib, libxml2, libiconv, OpenCV, Boost
 
 ### Linux Quick Start
 
@@ -124,8 +138,10 @@ pacman -S --noconfirm \
   mingw-w64-x86_64-cmake \
   mingw-w64-x86_64-ninja \
   mingw-w64-x86_64-qt5-base \
+  mingw-w64-x86_64-capnproto \
   mingw-w64-x86_64-opencv \
   mingw-w64-x86_64-libxml2 \
+  mingw-w64-x86_64-libiconv \
   mingw-w64-x86_64-zlib \
   mingw-w64-x86_64-uchardet \
   mingw-w64-x86_64-boost
