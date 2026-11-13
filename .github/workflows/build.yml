@@ -97,8 +97,6 @@ jobs:
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-qt5-base
-            mingw-w64-x86_64-qt5-tools
             mingw-w64-x86_64-opencv
             mingw-w64-x86_64-libxml2
             mingw-w64-x86_64-zlib
@@ -108,6 +106,15 @@ jobs:
             mingw-w64-x86_64-python
             zip
           update: true
+
+      - name: Install Official Qt 5.15.2 (MinGW 64-bit, No ICU)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw81'
+          cache: 'true'
 
       - name: Build and Install Cap'n Proto
         run: |
@@ -120,50 +127,31 @@ jobs:
 
       - name: Build SoEasy and Test Suite (Windows x64)
         run: |
+          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTS=ON
+            -DBUILD_TESTS=ON \
+            -DCMAKE_PREFIX_PATH="${QT_UNIX_DIR}"
           cmake --build build -j4
 
       - name: Deploy Runtime DLLs to Build Directory
         run: |
+          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
           # Copy third-party runtime DLLs to build directory (same directory as test executables)
           cp -p third_party/doctotext/lib/*.dll build/ 2>/dev/null || true
           cp -p third_party/onnxruntime/lib/*.dll build/ 2>/dev/null || true
-          
-          # Copy MinGW system runtime libraries to build directory
-          cp -p ${MINGW_PREFIX}/bin/libopencv*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libuchardet*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libxml2*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libiconv*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/zlib1.dll build/ 2>/dev/null || true
+
+          # Deploy Official Qt dependencies and plugins into build directory
+          "${QT_UNIX_DIR}/bin/windeployqt.exe" --release --no-translations --no-opengl-sw build/soeasy-gui.exe || true
+
+          # Ensure headless offscreen platform plugin is also deployed for CI testing
+          mkdir -p build/platforms
+          cp -p "${QT_UNIX_DIR}/plugins/platforms/"*.dll build/platforms/ 2>/dev/null || true
+
+          # Ensure MSYS2 GCC newer C++ runtime overrides any older runtime copied by windeployqt
           cp -p ${MINGW_PREFIX}/bin/libgcc*.dll build/ 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll build/ 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libdouble-conversion*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libicu*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libharfbuzz*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libpcre2*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libzstd*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libfreetype*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libpng*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libgraphite2*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libbrotli*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libbz2*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libglib*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libintl*.dll build/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/liblzma*.dll build/ 2>/dev/null || true
-
-          # Deploy Qt dependencies and plugins into build directory
-          WINDEPLOYQT=$(command -v windeployqt-qt5 || command -v windeployqt || true)
-          if [ -n "${WINDEPLOYQT}" ]; then
-            "${WINDEPLOYQT}" --release --no-translations build/soeasy-gui.exe || true
-          fi
-          # Ensure headless offscreen platform plugin is also deployed for CI testing
-          mkdir -p build/platforms
-          cp -p ${MINGW_PREFIX}/share/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll build/platforms/ 2>/dev/null || true
 
           # Automated recursive PE dependency convergence for test executables
           export PYTHONIOENCODING=utf-8
@@ -171,6 +159,7 @@ jobs:
             --target-dir build \
             --search-dirs \
               "${MINGW_PREFIX}/bin" \
+              "${QT_UNIX_DIR}/bin" \
               third_party/doctotext/lib \
               third_party/onnxruntime/lib
 
@@ -184,7 +173,8 @@ jobs:
           QT_PLUGIN_PATH: ${{ github.workspace }}/build
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
-          export QT_PLUGIN_PATH="$(pwd)/build:${MINGW_PREFIX}/share/qt5/plugins:${MINGW_PREFIX}/lib/qt5/plugins:${QT_PLUGIN_PATH}"
+          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
+          export QT_PLUGIN_PATH="$(pwd)/build:${QT_UNIX_DIR}/plugins:${QT_PLUGIN_PATH}"
           if ! ctest --test-dir build --output-on-failure --timeout 180 -j1; then
             STEP_SUMMARY_PATH=$(cygpath -u "${GITHUB_STEP_SUMMARY:-/tmp/step_summary.md}" 2>/dev/null || echo "${GITHUB_STEP_SUMMARY}")
             echo "### ❌ Windows CTest Failure Report" >> "${STEP_SUMMARY_PATH}"
@@ -220,9 +210,10 @@ jobs:
 
       - name: Package Windows Artifacts
         run: |
+          QT_UNIX_DIR=$(cygpath -u "${Qt5_DIR}")
           VERSION="${GITHUB_REF_NAME#v}"
           if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
-            VERSION="0.2.1"
+            VERSION="0.3.0"
           fi
           DIST_NAME="soeasy-v${VERSION}-windows-x64"
           STAGE_DIR="dist/${DIST_NAME}"
@@ -232,11 +223,8 @@ jobs:
           cp -p build/soeasy-gui.exe "${STAGE_DIR}/bin/"
           cp -p build/soeasy-worker.exe "${STAGE_DIR}/bin/"
           
-          # Deploy Qt dependencies using windeployqt
-          WINDEPLOYQT=$(command -v windeployqt-qt5 || command -v windeployqt || true)
-          if [ -n "${WINDEPLOYQT}" ]; then
-            "${WINDEPLOYQT}" --release --no-translations "${STAGE_DIR}/bin/soeasy-gui.exe" || true
-          fi
+          # Deploy Official Qt dependencies and plugins using windeployqt
+          "${QT_UNIX_DIR}/bin/windeployqt.exe" --release --no-translations --no-opengl-sw "${STAGE_DIR}/bin/soeasy-gui.exe" || true
           
           # Ensure jieba_dat.bin exists
           if [ ! -f "third_party/cppjieba/dict/jieba_dat.bin" ]; then
@@ -254,39 +242,18 @@ jobs:
           # Bundle third-party runtime libraries
           cp -p third_party/doctotext/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p third_party/onnxruntime/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          
-          # MinGW system libraries that might be dynamically linked
-          cp -p ${MINGW_PREFIX}/bin/libopencv*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libuchardet*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libxml2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libiconv*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/zlib1.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+
+          # Ensure Qt plugins are explicitly deployed from Official Qt
+          mkdir -p "${STAGE_DIR}/bin/platforms" "${STAGE_DIR}/bin/styles" "${STAGE_DIR}/bin/imageformats"
+          cp -p "${QT_UNIX_DIR}/plugins/platforms/qwindows.dll" "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
+          cp -p "${QT_UNIX_DIR}/plugins/styles/"*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
+          cp -p "${QT_UNIX_DIR}/plugins/imageformats/qico.dll" "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
+          cp -p "${QT_UNIX_DIR}/plugins/imageformats/qjpeg.dll" "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
+
+          # Ensure MSYS2 GCC newer C++ runtime overrides any older runtime copied by windeployqt
           cp -p ${MINGW_PREFIX}/bin/libgcc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
           cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libboost_nowide*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libdouble-conversion*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libicu*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libharfbuzz*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libpcre2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libzstd*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libfreetype*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libpng*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libgraphite2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libbrotli*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libbz2*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libglib*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libintl*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/liblzma*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-
-          # Ensure Qt plugins are explicitly deployed
-          mkdir -p "${STAGE_DIR}/bin/platforms" "${STAGE_DIR}/bin/styles" "${STAGE_DIR}/bin/imageformats"
-          cp -p ${MINGW_PREFIX}/share/qt5/plugins/platforms/*.dll "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/platforms/*.dll "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/share/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/styles/*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/share/qt5/plugins/imageformats/*.dll "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/lib/qt5/plugins/imageformats/*.dll "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
 
           # Automated recursive PE dependency convergence for release artifact
           export PYTHONIOENCODING=utf-8
@@ -294,6 +261,7 @@ jobs:
             --target-dir "${STAGE_DIR}/bin" \
             --search-dirs \
               "${MINGW_PREFIX}/bin" \
+              "${QT_UNIX_DIR}/bin" \
               third_party/doctotext/lib \
               third_party/onnxruntime/lib
           
