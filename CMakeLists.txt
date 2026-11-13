@@ -491,6 +491,17 @@ if(BUILD_TESTS)
   )
   add_soeasy_test(test_gui_smoke 30)
 
+  # Automated Product Hero Showcase Snapshot Generator
+  add_executable(render_hero_shot
+      tests/render_hero_shot.cpp
+  )
+  target_link_libraries(render_hero_shot PRIVATE
+      soeasy_gui
+      Qt5::Widgets
+      Qt5::Gui
+      Qt5::Core
+  )
+
   # Stage 4 Performance & Scale Test: 10,000+ Viewport Scroll, Snippet & Memory Stress
   add_executable(test_large_scale_perf
       tests/test_large_scale_perf.cpp
