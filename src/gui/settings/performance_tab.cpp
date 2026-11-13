@@ -34,6 +34,12 @@ void PerformanceTab::SetupUi() {
   label_max_size_ = new QLabel(this);
   form_perf->addRow(label_max_size_, max_size_spin_);
 
+  workers_spin_ = new QSpinBox(this);
+  workers_spin_->setRange(1, 16);
+  workers_spin_->setSingleStep(1);
+  label_workers_ = new QLabel(this);
+  form_perf->addRow(label_workers_, workers_spin_);
+
   filter_thumbs_check_ = new QCheckBox(this);
   form_perf->addRow("", filter_thumbs_check_);
 
@@ -71,6 +77,7 @@ void PerformanceTab::SetupUi() {
 void PerformanceTab::PopulateFromConfig(const service::IndexConfig &config) {
   debounce_spin_->setValue(static_cast<int>(config.debounce_ms()));
   max_size_spin_->setValue(static_cast<int>(config.max_file_size() / (1024 * 1024)));
+  workers_spin_->setValue(static_cast<int>(config.worker_count()));
   filter_thumbs_check_->setChecked(config.filter_cache_thumbnails());
 
   int idx = log_level_combo_->findData(QString::fromStdString(config.log_level()));
@@ -91,6 +98,7 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
 
   config->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
   config->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
+  config->set_worker_count(static_cast<size_t>(workers_spin_->value()));
   config->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
 
   config->set_log_level(log_level_combo_->currentData().toString().toStdString());
@@ -103,6 +111,8 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
 void PerformanceTab::RetranslateUi() {
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
   if (label_max_size_) label_max_size_->setText(Tr("label_max_size"));
+  if (label_workers_) label_workers_->setText(Tr("label_workers"));
+  if (workers_spin_) workers_spin_->setSuffix(Tr("suffix_workers"));
   if (filter_thumbs_check_) filter_thumbs_check_->setText(Tr("filter_thumbs_check"));
 
   if (label_log_level_) label_log_level_->setText(Tr("label_log_level"));

@@ -37,6 +37,8 @@ class PerformanceTab : public ISettingsTab {
   QSpinBox *debounce_spin_ = nullptr;
   QLabel *label_max_size_ = nullptr;
   QSpinBox *max_size_spin_ = nullptr;
+  QLabel *label_workers_ = nullptr;
+  QSpinBox *workers_spin_ = nullptr;
   QCheckBox *filter_thumbs_check_ = nullptr;
 
   QLabel *label_log_level_ = nullptr;

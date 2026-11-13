@@ -357,30 +357,68 @@ size_t IndexOrchestrator::PerformInitialScan(ScanProgressCallback progress_cb) {
   size_t total_files = files_to_index.size();
   LOG_INFO("[IndexOrchestrator] Found {} candidate files to inspect/index.", total_files);
 
-  size_t indexed_count = 0;
-  for (size_t i = 0; i < total_files; ++i) {
-    if (cancel_scan_.load()) {
-      LOG_INFO("[IndexOrchestrator] Initial scan cancelled by user at file {}/{}.", i, total_files);
-      break;
-    }
+  if (storage_engine_) {
+    storage_engine_->SetBulkMode(true);
+  }
 
-    const auto &file_path = files_to_index[i];
-    if (progress_cb) {
-      progress_cb(indexed_count, total_files, file_path);
-    }
+  const size_t worker_concurrency = std::max<size_t>(1, config_ ? config_->worker_count() : 1);
+  const size_t num_threads = std::min<size_t>(worker_concurrency, total_files > 0 ? total_files : 1);
+  std::atomic<size_t> file_idx{0};
+  std::atomic<size_t> indexed_count{0};
+  std::atomic<size_t> processed_count{0};
+  std::mutex progress_mutex;
+  auto last_progress_report = std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
 
-    if (IndexSingleFile(file_path)) {
-      indexed_count++;
+  std::vector<std::thread> workers;
+  workers.reserve(num_threads);
+  for (size_t t = 0; t < num_threads; ++t) {
+    workers.emplace_back([&]() {
+      while (!cancel_scan_.load(std::memory_order_acquire)) {
+        const size_t idx = file_idx.fetch_add(1, std::memory_order_relaxed);
+        if (idx >= total_files) {
+          break;
+        }
+        const auto &file_path = files_to_index[idx];
+        if (IndexSingleFile(file_path)) {
+          indexed_count.fetch_add(1, std::memory_order_relaxed);
+        }
+        const size_t processed = processed_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (progress_cb) {
+          std::lock_guard<std::mutex> lock(progress_mutex);
+          const auto now = std::chrono::steady_clock::now();
+          if (processed == total_files ||
+              std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 80) {
+            last_progress_report = now;
+            progress_cb(indexed_count.load(std::memory_order_relaxed), total_files, file_path);
+          }
+        }
+      }
+    });
+  }
+
+  for (auto &th : workers) {
+    if (th.joinable()) {
+      th.join();
     }
   }
 
+  if (cancel_scan_.load(std::memory_order_acquire)) {
+    LOG_INFO("[IndexOrchestrator] Initial scan cancelled by user at {}/{} files.",
+             processed_count.load(std::memory_order_relaxed), total_files);
+  }
+
+  const size_t final_indexed = indexed_count.load(std::memory_order_relaxed);
   if (progress_cb) {
-    progress_cb(indexed_count, total_files, "");
+    progress_cb(final_indexed, total_files, "");
   }
 
   FlushWriteQueue();
-  LOG_INFO("[IndexOrchestrator] Initial scan completed. Indexed {}/{} files.", indexed_count, total_files);
-  return indexed_count;
+  if (storage_engine_) {
+    storage_engine_->SetBulkMode(false);
+  }
+  LOG_INFO("[IndexOrchestrator] Initial scan completed. Indexed {}/{} files (concurrency={}).", final_indexed,
+           total_files, num_threads);
+  return final_indexed;
 }
 
 bool IndexOrchestrator::RebuildIndex(ScanProgressCallback progress_cb) {

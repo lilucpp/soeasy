@@ -732,8 +732,9 @@ void MainWindow::OnSettingsApplied() {
   // Trigger background indexing for newly added or modified directories
   StartBackgroundInitialIndex(true);
 
-  // Re-trigger current search only if there is an active search query
-  if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {
+  // Re-trigger current search only if idle and there is an active search query
+  if (!is_indexing_.load() && !pending_reindex_.load() && search_bar_ &&
+      (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {
     OnSearchTriggered(search_bar_->query(), search_bar_->mode(), search_bar_->path_scope());
   }
 }
