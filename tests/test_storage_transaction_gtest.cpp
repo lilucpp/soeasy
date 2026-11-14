@@ -145,44 +145,40 @@ TEST_F(StorageTransactionTest, MultipleOperationsAtomicRollback) {
 
 class MockStorageEngineContract : public IStorageEngine {
  public:
-  MOCK_METHOD(bool, Open, (const std::string &, const std::string &, const std::string &), (override));
-  MOCK_METHOD(void, Close, (), (override));
-  MOCK_METHOD(bool, is_open, (), (const, override));
-  MOCK_METHOD(bool, BeginTransaction, (), (override));
-  MOCK_METHOD(bool, CommitTransaction, (), (override));
-  MOCK_METHOD(bool, RollbackTransaction, (), (override));
-  MOCK_METHOD(bool, IsInTransaction, (), (const, override));
-  MOCK_METHOD(size_t, GetUncommittedCount, (), (const, override));
-  MOCK_METHOD(bool, OptimizeFtsIndex, (), (override));
-  MOCK_METHOD(bool, SetBulkMode, (bool), (override));
-  MOCK_METHOD(bool, CheckpointWal, (), (override));
-  MOCK_METHOD(bool, GetFragmentation, (StorageFragmentation *), (override));
-  MOCK_METHOD(bool, IncrementalVacuum, (int), (override));
-  MOCK_METHOD(bool, Vacuum, (), (override));
-  MOCK_METHOD(bool, IndexDocument, (const DocumentIndexEntry &), (override));
-  MOCK_METHOD(bool, IndexDocument,
-              (int64_t, const std::string &, const std::string &, const std::string &, uint64_t, int64_t, int,
-               const std::string &),
+  MOCK_METHOD(bool, DoOpen, (const std::string &, const std::string &, const std::string &), (override));
+  MOCK_METHOD(void, DoClose, (), (override));
+  MOCK_METHOD(bool, DoIsOpen, (), (const, override));
+  MOCK_METHOD(bool, DoBeginTransaction, (), (override));
+  MOCK_METHOD(bool, DoCommitTransaction, (), (override));
+  MOCK_METHOD(bool, DoRollbackTransaction, (), (override));
+  MOCK_METHOD(bool, DoIsInTransaction, (), (const, override));
+  MOCK_METHOD(size_t, DoGetUncommittedCount, (), (const, override));
+  MOCK_METHOD(bool, DoOptimizeFtsIndex, (), (override));
+  MOCK_METHOD(bool, DoSetBulkMode, (bool), (override));
+  MOCK_METHOD(bool, DoCheckpointWal, (), (override));
+  MOCK_METHOD(bool, DoGetFragmentation, (StorageFragmentation *), (override));
+  MOCK_METHOD(bool, DoIncrementalVacuum, (int), (override));
+  MOCK_METHOD(bool, DoVacuum, (), (override));
+  MOCK_METHOD(bool, DoIndexDocument, (const DocumentIndexEntry &), (override));
+  MOCK_METHOD(bool, DoDeleteDocument, (int64_t), (override));
+  MOCK_METHOD(int64_t, DoDeleteDirectory, (const std::string &, std::vector<int64_t> *), (override));
+  MOCK_METHOD(bool, DoClearAll, (), (override));
+  MOCK_METHOD(std::vector<SearchResultItem>, DoSearch, (const std::string &, int, int, const std::string &, int *),
               (override));
-  MOCK_METHOD(bool, DeleteDocument, (int64_t), (override));
-  MOCK_METHOD(int64_t, DeleteDirectory, (const std::string &, std::vector<int64_t> *), (override));
-  MOCK_METHOD(bool, ClearAll, (), (override));
-  MOCK_METHOD(std::vector<SearchResultItem>, Search,
-              (const std::string &, int, int, const std::string &, int *), (override));
-  MOCK_METHOD(bool, GetDocumentContent, (int64_t, std::string *), (override));
-  MOCK_METHOD(bool, GetFileMetadata, (int64_t, uint64_t *, int64_t *, int *), (override));
-  MOCK_METHOD(std::vector<FileMetaRecord>, GetAllFilesMetadata, (), (override));
-  MOCK_METHOD(ScopedReadConnection, AcquireReadConnection, (), (override));
-  MOCK_METHOD(bool, Rekey, (const std::string &), (override));
-  MOCK_METHOD(std::string, GetLastError, (), (const, override));
+  MOCK_METHOD(bool, DoGetDocumentContent, (int64_t, std::string *), (override));
+  MOCK_METHOD(bool, DoGetFileMetadata, (int64_t, uint64_t *, int64_t *, int *), (override));
+  MOCK_METHOD(std::vector<FileMetaRecord>, DoGetAllFilesMetadata, (), (override));
+  MOCK_METHOD(ScopedReadConnection, DoAcquireReadConnection, (), (override));
+  MOCK_METHOD(bool, DoRekey, (const std::string &), (override));
+  MOCK_METHOD(std::string, DoGetLastError, (), (const, override));
 };
 
 TEST(TransactionGuardMockTest, EnforcesRollbackOnExceptionPath) {
   // Arrange: Set up StrictMock expectation
   StrictMock<MockStorageEngineContract> mock_engine;
 
-  EXPECT_CALL(mock_engine, BeginTransaction()).WillOnce(Return(true));
-  EXPECT_CALL(mock_engine, RollbackTransaction()).Times(1).WillOnce(Return(true));
+  EXPECT_CALL(mock_engine, DoBeginTransaction()).WillOnce(Return(true));
+  EXPECT_CALL(mock_engine, DoRollbackTransaction()).Times(1).WillOnce(Return(true));
 
   // Act: Simulate an unexpected failure before commit
   try {

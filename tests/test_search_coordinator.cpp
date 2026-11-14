@@ -36,8 +36,10 @@ int main() {
   auto name_index = std::make_shared<soeasy::service::NameIndex>();
 
   // 1. Seed NameIndex with sample files
-  soeasy::service::NameRecord r1{101, "机器学习实战指南.pdf", "/data/docs/机器学习实战指南.pdf", ".pdf", 2048, 1600000001};
-  soeasy::service::NameRecord r2{102, "人工智能系统架构.docx", "/data/docs/人工智能系统架构.docx", ".docx", 4096, 1600000002};
+  soeasy::service::NameRecord r1{101,       "机器学习实战指南.pdf", "/data/docs/机器学习实战指南.pdf", ".pdf", 2048,
+                                 1600000001};
+  soeasy::service::NameRecord r2{102,       "人工智能系统架构.docx", "/data/docs/人工智能系统架构.docx", ".docx", 4096,
+                                 1600000002};
   soeasy::service::NameRecord r3{103, "数据库索引优化.txt", "/data/docs/数据库索引优化.txt", ".txt", 1024, 1600000003};
   name_index->Upsert(r1);
   name_index->Upsert(r2);
@@ -70,14 +72,29 @@ int main() {
   assert(sub_hits[0].doc_id == 101);
   std::cout << "[+] Substring match '实战指南' matched: " << sub_hits[0].file_name << "\n";
 
+  // Boundary checks: negative offset is clamped to 0, non-positive limit returns empty slice
+  // while still reporting total_count where supported.
+  auto neg_offset_hits = coordinator.SearchFilename("机器学习", 10, -5, "", &total_count);
+  assert(neg_offset_hits.size() == 1);
+  auto zero_limit_hits = coordinator.SearchFilename("机器学习", 0, 0, "", &total_count);
+  assert(zero_limit_hits.empty());
+  assert(total_count == 1);
+  auto neg_hybrid_hits = coordinator.SearchHybrid("人工智能", -1, -1, "", &total_count);
+  assert(neg_hybrid_hits.empty());
+  std::cout << "[+] Negative offset / zero limit pagination sanitized correctly\n";
+
   // -------------------------------------------------------------
-  // Test 2: Full-text Search
+  // Test 2: Full-text Search & Batch Snippet Generation
   // -------------------------------------------------------------
   std::cout << "\n[Test 2] Full-text Search via SearchCoordinator\n";
   auto ft_hits = coordinator.SearchFulltext("神经网络", 10, 0, "", &total_count);
   assert(ft_hits.size() == 1);
   assert(ft_hits[0].doc_id == 101);
   assert(!ft_hits[0].snippet.empty());
+  auto batch_snippets = coordinator.GenerateDocumentSnippets({101, 102}, "神经网络 人工智能", 140);
+  assert(batch_snippets.size() == 2);
+  assert(batch_snippets[0].doc_id == 101 && batch_snippets[0].snippet.find("<mark>") != std::string::npos);
+  assert(batch_snippets[1].doc_id == 102 && batch_snippets[1].snippet.find("<mark>") != std::string::npos);
   std::cout << "[+] Full-text hit doc_id: " << ft_hits[0].doc_id << " | snippet: " << ft_hits[0].snippet << "\n";
 
   // -------------------------------------------------------------
@@ -91,8 +108,8 @@ int main() {
   assert(hybrid_hits[0].is_filename_match);
   assert(hybrid_hits[0].is_fulltext_match);
   assert(hybrid_hits[0].score > 60.0);  // Boosted double match
-  std::cout << "[+] Hybrid hit #1: " << hybrid_hits[0].file_name << " (score: "
-            << hybrid_hits[0].score << ", snippet: " << hybrid_hits[0].snippet << ")\n";
+  std::cout << "[+] Hybrid hit #1: " << hybrid_hits[0].file_name << " (score: " << hybrid_hits[0].score
+            << ", snippet: " << hybrid_hits[0].snippet << ")\n";
 
   // -------------------------------------------------------------
   // Test 4: QueryToken Versioning & Cancellation

@@ -319,6 +319,7 @@ add_library(soeasy_service STATIC
     src/service/index_pipeline.cpp
     src/service/worker_guard.cpp
     src/service/async_write_queue.cpp
+    src/service/dictionary_service.cpp
 )
 target_include_directories(soeasy_service PUBLIC
     src
@@ -335,8 +336,6 @@ if(WIN32)
     target_link_libraries(soeasy_service PUBLIC
         soeasy_common
         soeasy_schema
-        soeasy_worker_lib
-        soeasy_storage
         efsw-static
         reproc++
         capnp
@@ -346,18 +345,22 @@ if(WIN32)
         ws2_32
         Iconv::Iconv
     )
+    target_link_libraries(soeasy_service PRIVATE
+        soeasy_storage
+    )
 else()
     target_link_libraries(soeasy_service PUBLIC
         soeasy_common
         soeasy_schema
-        soeasy_worker_lib
-        soeasy_storage
         efsw-static
         reproc++
         capnp
         kj
         pthread
         rt
+    )
+    target_link_libraries(soeasy_service PRIVATE
+        soeasy_storage
     )
 endif()
 
@@ -468,7 +471,6 @@ target_link_libraries(soeasy_gui PUBLIC
     Qt5::Core
     Qt5::Network
     soeasy_service
-    soeasy_storage
 )
 
 set(SOEASY_GUI_WIN32_RESOURCES "")
@@ -482,6 +484,7 @@ add_executable(soeasy-gui WIN32
 )
 target_link_libraries(soeasy-gui PRIVATE
     soeasy_gui
+    soeasy_storage
 )
 
 if(BUILD_TESTS)
@@ -491,6 +494,7 @@ if(BUILD_TESTS)
   )
   target_link_libraries(test_gui_smoke PRIVATE
       soeasy_gui
+      soeasy_storage
       Qt5::Widgets
       Qt5::Gui
       Qt5::Core

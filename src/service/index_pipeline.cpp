@@ -3,14 +3,23 @@
 
 #include "service/index_pipeline.h"
 
+#include "service/index_orchestrator.h"
+#include "service/search_coordinator.h"
+#include "service/worker_guard.h"
+#include "storage/istorage_engine.h"
+
 namespace soeasy {
 namespace service {
 
+int64_t IndexPipeline::GenerateDocId(const std::string &path) {
+  return IndexOrchestrator::GenerateDocId(path);
+}
+
 IndexPipeline::IndexPipeline(std::shared_ptr<IndexConfig> config, std::shared_ptr<WorkerGuard> worker_guard,
-                             std::shared_ptr<storage::StorageEngine> storage_engine)
-    : config_(std::move(config)),
-      worker_guard_(std::move(worker_guard)),
-      storage_engine_(std::move(storage_engine)) {}
+                             std::shared_ptr<storage::IStorageEngine> storage_engine)
+    : config_(std::move(config)), worker_guard_(std::move(worker_guard)), storage_engine_(std::move(storage_engine)) {}
+
+IndexPipeline::~IndexPipeline() = default;
 
 bool IndexPipeline::Init() {
   if (!config_ || !worker_guard_ || !storage_engine_) {
@@ -64,8 +73,7 @@ bool IndexPipeline::HandleFileChange(const DebouncedEvent &event) {
 }
 
 std::vector<NameMatchResult> IndexPipeline::SearchFilename(const std::string &query, int limit, int offset,
-                                                           const std::string &path_prefix,
-                                                           int *out_total_count) const {
+                                                           const std::string &path_prefix, int *out_total_count) const {
   if (!search_coordinator_) {
     if (out_total_count) *out_total_count = 0;
     return {};
@@ -73,9 +81,9 @@ std::vector<NameMatchResult> IndexPipeline::SearchFilename(const std::string &qu
   return search_coordinator_->SearchFilename(query, limit, offset, path_prefix, out_total_count);
 }
 
-std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(const std::string &query, int limit, int offset,
-                                                                     const std::string &path_prefix, bool sync_flush,
-                                                                     int *out_total_count) {
+std::vector<SearchResultItem> IndexPipeline::SearchFulltext(const std::string &query, int limit, int offset,
+                                                            const std::string &path_prefix, bool sync_flush,
+                                                            int *out_total_count) {
   if (sync_flush && orchestrator_) {
     orchestrator_->FlushWriteQueue();
   }
@@ -86,10 +94,49 @@ std::vector<storage::SearchResultItem> IndexPipeline::SearchFulltext(const std::
   return search_coordinator_->SearchFulltext(query, limit, offset, path_prefix, out_total_count);
 }
 
+bool IndexPipeline::GetDocumentContent(int64_t doc_id, std::string *out_content) const {
+  if (!search_coordinator_) {
+    return false;
+  }
+  return search_coordinator_->GetDocumentContent(doc_id, out_content);
+}
+
 void IndexPipeline::FlushWriteQueue() {
   if (orchestrator_) {
     orchestrator_->FlushWriteQueue();
   }
+}
+
+void IndexPipeline::ApplyRuntimeConfig() {
+  if (orchestrator_) {
+    orchestrator_->ApplyRuntimeConfig();
+  }
+}
+
+void IndexPipeline::SyncWatchedDirectories() {
+  if (orchestrator_) {
+    orchestrator_->SyncWatchedDirectories();
+  }
+}
+
+void IndexPipeline::StartBackgroundTask(bool rebuild, bool force_incremental, BackgroundIndexCallbacks callbacks) {
+  if (orchestrator_) {
+    orchestrator_->StartBackgroundTask(rebuild, force_incremental, std::move(callbacks));
+  }
+}
+
+void IndexPipeline::ClearBackgroundCallbacks() {
+  if (orchestrator_) {
+    orchestrator_->ClearBackgroundCallbacks();
+  }
+}
+
+bool IndexPipeline::IsIndexing() const {
+  return orchestrator_ ? orchestrator_->IsIndexing() : false;
+}
+
+size_t IndexPipeline::IndexedFileCount() const {
+  return orchestrator_ ? orchestrator_->IndexedFileCount() : 0;
 }
 
 void IndexPipeline::CancelScan() {

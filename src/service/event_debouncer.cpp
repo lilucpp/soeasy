@@ -94,6 +94,11 @@ void EventDebouncer::PushEvent(const std::string &path, FileChangeAction action,
   cv_.notify_one();
 }
 
+void EventDebouncer::ClearPending() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  pending_events_.clear();
+}
+
 void EventDebouncer::Flush() {
   std::vector<DebouncedEvent> ready_to_flush;
   ChangeCallback cb;

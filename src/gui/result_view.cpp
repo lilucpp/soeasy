@@ -4,12 +4,17 @@
 #include "gui/result_view.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QFontMetrics>
 #include <QHeaderView>
 #include <QItemSelectionModel>
+#include <QMetaObject>
 #include <QPainter>
+#include <QPointer>
 #include <QScrollBar>
 #include <QStyledItemDelegate>
+#include <algorithm>
+#include <utility>
 
 namespace soeasy {
 namespace gui {
@@ -20,8 +25,7 @@ class FileNameAndPathDelegate : public QStyledItemDelegate {
  public:
   explicit FileNameAndPathDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
 
-  void paint(QPainter *painter, const QStyleOptionViewItem &option,
-             const QModelIndex &index) const override {
+  void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
 
@@ -65,8 +69,7 @@ class FileNameAndPathDelegate : public QStyledItemDelegate {
       QFontMetrics fm_name(name_font);
       QString elided_name = fm_name.elidedText(file_name, Qt::ElideRight, text_w);
       int top_y = opt.rect.top() + 5;
-      painter->drawText(QRect(text_x, top_y, text_w, fm_name.height()),
-                       Qt::AlignLeft | Qt::AlignVCenter, elided_name);
+      painter->drawText(QRect(text_x, top_y, text_w, fm_name.height()), Qt::AlignLeft | Qt::AlignVCenter, elided_name);
 
       // 2. File Path (Bottom Line)
       QFont path_font = opt.font;
@@ -78,8 +81,8 @@ class FileNameAndPathDelegate : public QStyledItemDelegate {
       QFontMetrics fm_path(path_font);
       QString elided_path = fm_path.elidedText(file_path, Qt::ElideMiddle, text_w);
       int bottom_y = top_y + fm_name.height() + 2;
-      painter->drawText(QRect(text_x, bottom_y, text_w, fm_path.height()),
-                       Qt::AlignLeft | Qt::AlignVCenter, elided_path);
+      painter->drawText(QRect(text_x, bottom_y, text_w, fm_path.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                        elided_path);
     }
 
     painter->restore();
@@ -93,6 +96,7 @@ class FileNameAndPathDelegate : public QStyledItemDelegate {
 }  // namespace
 
 ResultView::ResultView(QWidget *parent) : QTableView(parent) {
+  snippet_pool_.setMaxThreadCount(2);
   model_ = new SearchTableModel(this);
   setModel(model_);
 
@@ -102,6 +106,11 @@ ResultView::ResultView(QWidget *parent) : QTableView(parent) {
   hover_timer_ = new QTimer(this);
   hover_timer_->setSingleShot(true);
   connect(hover_timer_, &QTimer::timeout, this, &ResultView::OnHoverTimerFired);
+}
+
+ResultView::~ResultView() {
+  query_epoch_->fetch_add(1, std::memory_order_relaxed);
+  snippet_pool_.waitForDone(2000);
 }
 
 void ResultView::SetupTable() {
@@ -281,18 +290,25 @@ void ResultView::OnCurrentChanged(const QModelIndex &current, const QModelIndex 
   }
 }
 
-void ResultView::SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage) {
-  storage_ = std::move(storage);
+void ResultView::SetSearchCoordinator(std::shared_ptr<service::ISearchCoordinator> coordinator) {
+  query_epoch_->fetch_add(1, std::memory_order_relaxed);
+  in_flight_snippet_ids_.clear();
+  snippet_lru_cache_.clear();
+  search_coordinator_ = std::move(coordinator);
 }
 
 void ResultView::SetCurrentQuery(const QString &query) {
   if (current_query_ != query) {
     current_query_ = query;
+    query_epoch_->fetch_add(1, std::memory_order_relaxed);
+    in_flight_snippet_ids_.clear();
     snippet_lru_cache_.clear();
   }
 }
 
 void ResultView::ClearResults() {
+  query_epoch_->fetch_add(1, std::memory_order_relaxed);
+  in_flight_snippet_ids_.clear();
   hover_popup_->HidePopup();
   hover_timer_->stop();
   if (scroll_timer_) {
@@ -304,8 +320,12 @@ void ResultView::ClearResults() {
   }
 }
 
+void ResultView::WaitForSnippetTasks(int timeout_ms) {
+  snippet_pool_.waitForDone(timeout_ms);
+}
+
 void ResultView::OnScrollIdle() {
-  if (!model_ || model_->items().empty() || !storage_ || current_query_.isEmpty()) {
+  if (!model_ || model_->items().empty() || !search_coordinator_ || current_query_.isEmpty()) {
     return;
   }
   int top_row = rowAt(4);
@@ -319,18 +339,23 @@ void ResultView::OnScrollIdle() {
 }
 
 void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
-  if (!model_ || !storage_ || current_query_.isEmpty() || model_->items().empty()) {
+  if (!model_ || !search_coordinator_ || current_query_.isEmpty() || model_->items().empty()) {
     return;
   }
   start_row = std::max(0, start_row);
   end_row = std::min(model_->rowCount() - 1, end_row);
+  if (start_row > end_row) {
+    return;
+  }
 
-  auto keywords = storage::StorageEngine::ExtractKeywordsFromQuery(current_query_.toStdString());
-  if (keywords.empty()) return;
+  std::vector<int64_t> missing_doc_ids;
+  missing_doc_ids.reserve(static_cast<size_t>(end_row) - static_cast<size_t>(start_row) + 1);
 
   for (int r = start_row; r <= end_row; ++r) {
     auto *item = model_->GetItemMutable(r);
-    if (!item || item->has_body_snippet) continue;
+    if (!item || item->has_body_snippet) {
+      continue;
+    }
 
     auto it = snippet_lru_cache_.find(item->doc_id);
     if (it != snippet_lru_cache_.end()) {
@@ -339,19 +364,75 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
       continue;
     }
 
-    std::string full_text;
-    if (storage_->GetDocumentContent(item->doc_id, &full_text) && !full_text.empty()) {
-      std::string snip = storage::StorageEngine::GenerateSnippet(full_text, keywords, 140);
-      if (!snip.empty()) {
-        if (snippet_lru_cache_.size() >= 300) {
-          snippet_lru_cache_.erase(snippet_lru_cache_.begin());
-        }
-        snippet_lru_cache_[item->doc_id] = snip;
-        item->snippet_html = QString::fromStdString(snip);
-        item->has_body_snippet = true;
-      }
+    if (in_flight_snippet_ids_.insert(item->doc_id).second) {
+      missing_doc_ids.push_back(item->doc_id);
     }
   }
+
+  if (missing_doc_ids.empty()) {
+    return;
+  }
+
+  QPointer<ResultView> self(this);
+  auto coordinator = search_coordinator_;
+  auto epoch_holder = query_epoch_;
+  const uint64_t req_epoch = epoch_holder->load(std::memory_order_relaxed);
+  std::string query_std = current_query_.toStdString();
+
+  snippet_pool_.start([self, coordinator, epoch_holder, req_epoch, query_std = std::move(query_std),
+                       doc_ids = std::move(missing_doc_ids)]() mutable {
+    if (epoch_holder->load(std::memory_order_relaxed) != req_epoch) {
+      return;
+    }
+
+    std::vector<service::DocumentSnippetItem> generated;
+    try {
+      generated = coordinator->GenerateDocumentSnippets(doc_ids, query_std, 140);
+    } catch (...) {
+      generated.clear();
+    }
+
+    if (epoch_holder->load(std::memory_order_relaxed) != req_epoch) {
+      return;
+    }
+
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app) {
+      return;
+    }
+    QMetaObject::invokeMethod(
+        app,
+        [self, epoch_holder, req_epoch, doc_ids = std::move(doc_ids), generated = std::move(generated)]() {
+          if (!self || epoch_holder->load(std::memory_order_relaxed) != req_epoch || !self->model_) {
+            return;
+          }
+
+          for (int64_t doc_id : doc_ids) {
+            self->in_flight_snippet_ids_.erase(doc_id);
+          }
+
+          for (const auto &entry : generated) {
+            if (entry.snippet.empty()) {
+              continue;
+            }
+            if (self->snippet_lru_cache_.size() >= 300) {
+              self->snippet_lru_cache_.erase(self->snippet_lru_cache_.begin());
+            }
+            self->snippet_lru_cache_[entry.doc_id] = entry.snippet;
+            self->model_->UpdateSnippet(entry.doc_id, QString::fromStdString(entry.snippet));
+          }
+
+          if (self->hover_popup_ && self->hover_popup_->isVisible() && self->hover_row_ >= 0) {
+            const auto *hovered = self->model_->GetItem(self->hover_row_);
+            if (hovered && hovered->has_body_snippet) {
+              self->hover_popup_->ShowSnippet(self->hover_pos_, hovered->file_name, hovered->file_path,
+                                              hovered->snippet_html, hovered->file_size, hovered->mtime,
+                                              hovered->score);
+            }
+          }
+        },
+        Qt::QueuedConnection);
+  });
 }
 
 void ResultView::SetResults(const std::vector<DisplayResultItem> &items) {

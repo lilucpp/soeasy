@@ -11,14 +11,14 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "common/logger.h"
+#include "common/snippet_highlighter.h"
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
 
@@ -28,31 +28,75 @@ namespace gui {
 namespace {
 
 std::vector<std::string> SplitQueryKeywords(const std::string &query) {
-  std::vector<std::string> kws;
-  std::istringstream iss(query);
-  std::string word;
-  while (iss >> word) {
-    if (word == "AND" || word == "OR" || word == "NOT") {
-      continue;
-    }
-    // Strip quotes or wildcards
-    while (!word.empty() && (word.front() == '"' || word.front() == '\'')) {
-      word.erase(word.begin());
-    }
-    while (!word.empty() && (word.back() == '"' || word.back() == '\'' || word.back() == '*')) {
-      word.pop_back();
-    }
-    if (!word.empty()) {
-      kws.push_back(word);
-    }
+  return common::SnippetHighlighter::ExtractKeywordsFromQuery(query);
+}
+
+QString IndexTaskBadge(int task_type) {
+  if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {
+    return Tr("status_badge_rebuild");
   }
-  return kws;
+  if (task_type == static_cast<int>(service::IndexTaskKind::kInitial)) {
+    return Tr("status_badge_initial");
+  }
+  return Tr("status_badge_incremental");
+}
+
+std::vector<DisplayResultItem> BuildFulltextDisplayItems(const std::vector<service::SearchResultItem> &hits,
+                                                         const std::vector<std::string> &keywords) {
+  std::vector<DisplayResultItem> items;
+  items.reserve(hits.size());
+  for (const auto &hit : hits) {
+    DisplayResultItem item;
+    item.doc_id = hit.doc_id;
+    item.file_name = QString::fromStdString(hit.file_name);
+    item.file_path = QString::fromStdString(hit.file_path);
+    item.ext = QString::fromStdString(hit.ext);
+    item.file_size = hit.file_size;
+    item.mtime = hit.mtime;
+    item.score = (hit.rank < 0) ? -hit.rank : hit.rank;
+
+    std::string snippet_raw = hit.snippet;
+    item.has_body_snippet = hit.has_body_snippet;
+    if (snippet_raw.empty()) {
+      snippet_raw = common::SnippetHighlighter::GenerateSnippet(hit.file_name, keywords, 100);
+    }
+    if (snippet_raw.empty()) {
+      snippet_raw = hit.file_name;
+    }
+    item.snippet_html = QString::fromStdString(snippet_raw);
+    items.push_back(std::move(item));
+  }
+  return items;
+}
+
+std::vector<DisplayResultItem> BuildFilenameDisplayItems(const std::vector<service::NameMatchResult> &name_hits,
+                                                         const std::vector<std::string> &keywords) {
+  std::vector<DisplayResultItem> items;
+  items.reserve(name_hits.size());
+  for (const auto &nh : name_hits) {
+    DisplayResultItem item;
+    item.doc_id = nh.doc_id;
+    item.file_name = QString::fromStdString(nh.file_name);
+    item.file_path = QString::fromStdString(nh.file_path);
+    item.ext = QString::fromStdString(nh.ext);
+    item.file_size = nh.file_size;
+    item.mtime = nh.mtime;
+    item.score = nh.score;
+    std::string name_snippet = common::SnippetHighlighter::GenerateSnippet(nh.file_name, keywords, 100);
+    if (name_snippet.empty()) {
+      name_snippet = nh.file_name;
+    }
+    item.snippet_html = Tr("filename_match_prefix").arg(QString::fromStdString(name_snippet));
+    items.push_back(std::move(item));
+  }
+  return items;
 }
 
 }  // namespace
 
 MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget *parent)
-    : QMainWindow(parent), pipeline_(std::move(pipeline)) {
+    : QMainWindow(parent), pipeline_(std::move(pipeline)), callback_target_(std::make_shared<CallbackTarget>()) {
+  callback_target_->window = this;
   if (pipeline_ && pipeline_->config()) {
     I18n::Instance().SetLanguage(pipeline_->config()->ui_language());
   }
@@ -63,6 +107,7 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget
   SetupUi();
   SetupTrayIcon();
 
+  connect(this, &MainWindow::IndexTaskStarted, this, &MainWindow::OnIndexTaskStarted, Qt::QueuedConnection);
   connect(this, &MainWindow::IndexProgressUpdated, this, &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
   connect(this, &MainWindow::IndexFinished, this, &MainWindow::OnIndexFinished, Qt::QueuedConnection);
 
@@ -75,10 +120,12 @@ MainWindow::~MainWindow() {
     tray_icon_->hide();
   }
   if (pipeline_) {
+    pipeline_->ClearBackgroundCallbacks();
     pipeline_->CancelScan();
   }
-  if (background_index_thread_.joinable()) {
-    background_index_thread_.join();
+  if (callback_target_) {
+    std::lock_guard<std::mutex> lock(callback_target_->mutex);
+    callback_target_->window = nullptr;
   }
 }
 
@@ -163,8 +210,8 @@ void MainWindow::SetupUi() {
   result_view_ = new ResultView(splitter_);
   preview_panel_ = new PreviewPanel(splitter_);
   if (pipeline_) {
-    result_view_->SetStorageEngine(pipeline_->storage_engine());
-    preview_panel_->SetStorageEngine(pipeline_->storage_engine());
+    result_view_->SetSearchCoordinator(pipeline_->search_coordinator());
+    preview_panel_->SetSearchCoordinator(pipeline_->search_coordinator());
   }
 
   splitter_->addWidget(result_view_);
@@ -206,9 +253,9 @@ void MainWindow::SetupUi() {
       "}");
   status_progress_bar_->setVisible(false);
 
-  status_cancel_btn_ = new QPushButton("✕ 取消", this);
+  status_cancel_btn_ = new QPushButton(Tr("btn_cancel_index"), this);
   status_cancel_btn_->setObjectName("statusCancelBtn");
-  status_cancel_btn_->setToolTip("取消当前正在进行的索引任务");
+  status_cancel_btn_->setToolTip(Tr("tip_cancel_index"));
   status_cancel_btn_->setCursor(Qt::PointingHandCursor);
   status_cancel_btn_->setStyleSheet(
       "QPushButton#statusCancelBtn {"
@@ -340,7 +387,9 @@ void MainWindow::SetupUi() {
 
 void MainWindow::SetupTrayIcon() {
   if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-    LOG_WARN("[MainWindow] System tray is not currently reported as available by the desktop environment; attempting initialization anyway.");
+    LOG_WARN(
+        "[MainWindow] System tray is not currently reported as available by the desktop environment; attempting "
+        "initialization anyway.");
   }
 
   tray_icon_ = new QSystemTrayIcon(this);
@@ -384,15 +433,7 @@ void MainWindow::SetupTrayIcon() {
 
 void MainWindow::OnTrayActivated(QSystemTrayIcon::ActivationReason reason) {
   if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
-    if (isHidden() || isMinimized()) {
-      showNormal();
-      raise();
-      activateWindow();
-    } else {
-      showNormal();
-      raise();
-      activateWindow();
-    }
+    ShowAndActivate();
   }
 }
 
@@ -472,10 +513,7 @@ void MainWindow::RetranslateUi() {
 }
 
 void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
-  size_t indexed_files = 0;
-  if (pipeline_ && pipeline_->name_index()) {
-    indexed_files = pipeline_->name_index()->size();
-  }
+  const size_t indexed_files = pipeline_ ? pipeline_->IndexedFileCount() : 0;
 
   status_stats_label_->setText(Tr("status_stats").arg(indexed_files).arg(total_matches));
 
@@ -517,60 +555,21 @@ void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString
   auto t0 = std::chrono::high_resolution_clock::now();
 
   int total_count = 0;
+  auto keywords = SplitQueryKeywords(query_std);
   if (mode == kModeFulltext) {
     // 1. Full-text inverted search (asynchronous non-blocking search on UI thread)
     auto hits = pipeline_->SearchFulltext(query_std, kPageSize, 0, scope_std, /*sync_flush=*/false, &total_count);
     if (static_cast<int>(hits.size()) >= kPageSize && total_count > kPageSize) {
       has_more_results_ = true;
     }
-    auto keywords = SplitQueryKeywords(query_std);
-
-    for (const auto &hit : hits) {
-      DisplayResultItem item;
-      item.doc_id = hit.doc_id;
-      item.file_name = QString::fromStdString(hit.file_name);
-      item.file_path = QString::fromStdString(hit.file_path);
-      item.ext = QString::fromStdString(hit.ext);
-      item.file_size = hit.file_size;
-      item.mtime = hit.mtime;
-      item.score = (hit.rank < 0) ? -hit.rank : hit.rank;
-
-      // Extract snippet
-      std::string snippet_raw = hit.snippet;
-      item.has_body_snippet = hit.has_body_snippet;
-      if (snippet_raw.empty()) {
-        snippet_raw = storage::StorageEngine::GenerateSnippet(hit.file_name, keywords, 100);
-      }
-      if (snippet_raw.empty()) {
-        snippet_raw = hit.file_name;
-      }
-      item.snippet_html = QString::fromStdString(snippet_raw);
-      display_items.push_back(std::move(item));
-    }
+    display_items = BuildFulltextDisplayItems(hits, keywords);
   } else {
     // 2. Instantaneous filename search
     auto name_hits = pipeline_->SearchFilename(query_std, kPageSize, 0, scope_std, &total_count);
     if (static_cast<int>(name_hits.size()) >= kPageSize && total_count > kPageSize) {
       has_more_results_ = true;
     }
-    auto keywords = SplitQueryKeywords(query_std);
-
-    for (const auto &nh : name_hits) {
-      DisplayResultItem item;
-      item.doc_id = nh.doc_id;
-      item.file_name = QString::fromStdString(nh.file_name);
-      item.file_path = QString::fromStdString(nh.file_path);
-      item.ext = QString::fromStdString(nh.ext);
-      item.file_size = nh.file_size;
-      item.mtime = nh.mtime;
-      item.score = nh.score;
-      std::string name_snippet = storage::StorageEngine::GenerateSnippet(nh.file_name, keywords, 100);
-      if (name_snippet.empty()) {
-        name_snippet = nh.file_name;
-      }
-      item.snippet_html = Tr("filename_match_prefix").arg(QString::fromStdString(name_snippet));
-      display_items.push_back(std::move(item));
-    }
+    display_items = BuildFilenameDisplayItems(name_hits, keywords);
   }
 
   auto t1 = std::chrono::high_resolution_clock::now();
@@ -599,6 +598,7 @@ void MainWindow::OnLoadMoreRequested() {
   std::vector<DisplayResultItem> new_display_items;
 
   auto t0 = std::chrono::high_resolution_clock::now();
+  auto keywords = SplitQueryKeywords(query_std);
 
   if (current_search_mode_ == kModeFulltext) {
     auto hits =
@@ -607,53 +607,14 @@ void MainWindow::OnLoadMoreRequested() {
         current_search_offset_ + static_cast<int>(hits.size()) >= total_matched_count_) {
       has_more_results_ = false;
     }
-    auto keywords = SplitQueryKeywords(query_std);
-
-    for (const auto &hit : hits) {
-      DisplayResultItem item;
-      item.doc_id = hit.doc_id;
-      item.file_name = QString::fromStdString(hit.file_name);
-      item.file_path = QString::fromStdString(hit.file_path);
-      item.ext = QString::fromStdString(hit.ext);
-      item.file_size = hit.file_size;
-      item.mtime = hit.mtime;
-      item.score = (hit.rank < 0) ? -hit.rank : hit.rank;
-
-      std::string snippet_raw = hit.snippet;
-      item.has_body_snippet = hit.has_body_snippet;
-      if (snippet_raw.empty()) {
-        snippet_raw = storage::StorageEngine::GenerateSnippet(hit.file_name, keywords, 100);
-      }
-      if (snippet_raw.empty()) {
-        snippet_raw = hit.file_name;
-      }
-      item.snippet_html = QString::fromStdString(snippet_raw);
-      new_display_items.push_back(std::move(item));
-    }
+    new_display_items = BuildFulltextDisplayItems(hits, keywords);
   } else {
     auto name_hits = pipeline_->SearchFilename(query_std, kPageSize, current_search_offset_, scope_std);
     if (static_cast<int>(name_hits.size()) < kPageSize ||
         current_search_offset_ + static_cast<int>(name_hits.size()) >= total_matched_count_) {
       has_more_results_ = false;
     }
-    auto keywords = SplitQueryKeywords(query_std);
-
-    for (const auto &nh : name_hits) {
-      DisplayResultItem item;
-      item.doc_id = nh.doc_id;
-      item.file_name = QString::fromStdString(nh.file_name);
-      item.file_path = QString::fromStdString(nh.file_path);
-      item.ext = QString::fromStdString(nh.ext);
-      item.file_size = nh.file_size;
-      item.mtime = nh.mtime;
-      item.score = nh.score;
-      std::string name_snippet = storage::StorageEngine::GenerateSnippet(nh.file_name, keywords, 100);
-      if (name_snippet.empty()) {
-        name_snippet = nh.file_name;
-      }
-      item.snippet_html = Tr("filename_match_prefix").arg(QString::fromStdString(name_snippet));
-      new_display_items.push_back(std::move(item));
-    }
+    new_display_items = BuildFilenameDisplayItems(name_hits, keywords);
   }
 
   auto t1 = std::chrono::high_resolution_clock::now();
@@ -695,8 +656,8 @@ void MainWindow::OnFileOpenRequested(int64_t doc_id, const QString &file_name, c
   bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(file_path));
   if (!opened) {
     auto keywords = SplitQueryKeywords(current_query_.toStdString());
-    auto storage = pipeline_ ? pipeline_->storage_engine() : nullptr;
-    ContentPreviewDialog dlg(doc_id, file_name, file_path, keywords, storage, this);
+    auto coordinator = pipeline_ ? pipeline_->search_coordinator() : nullptr;
+    ContentPreviewDialog dlg(doc_id, file_name, file_path, keywords, coordinator, this);
     dlg.exec();
   }
 }
@@ -714,16 +675,8 @@ void MainWindow::OnOpenSettings() {
 void MainWindow::OnSettingsApplied() {
   RetranslateUi();
 
-  if (pipeline_ && pipeline_->config()) {
-    common::Logger::SetLevel(pipeline_->config()->log_level());
-    common::Logger::SetConsoleEnabled(pipeline_->config()->log_console());
-    common::Logger::SetSyncMode(pipeline_->config()->log_sync());
-    if (pipeline_->worker_guard()) {
-      pipeline_->worker_guard()->SetLoggingOptions(
-          pipeline_->config()->log_level(), pipeline_->config()->log_console(), pipeline_->config()->log_sync(),
-          pipeline_->config()->doctotext_logging(), pipeline_->config()->doctotext_log_path(),
-          pipeline_->config()->enable_embedded_image_ocr());
-    }
+  if (pipeline_) {
+    pipeline_->ApplyRuntimeConfig();
   }
 
   // Clear any temporary statusBar message so progress bar is visible immediately
@@ -733,7 +686,7 @@ void MainWindow::OnSettingsApplied() {
   StartBackgroundInitialIndex(true);
 
   // Re-trigger current search only if idle and there is an active search query
-  if (!is_indexing_.load() && !pending_reindex_.load() && search_bar_ &&
+  if (!is_task_active_ && (!pipeline_ || !pipeline_->IsIndexing()) && search_bar_ &&
       (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {
     OnSearchTriggered(search_bar_->query(), search_bar_->mode(), search_bar_->path_scope());
   }
@@ -743,212 +696,142 @@ void MainWindow::OnRebuildIndexRequested() {
   if (!pipeline_) {
     return;
   }
-
-  // Cancel any existing scan cooperatively without blocking GUI thread
-  if (is_indexing_.load()) {
-    pipeline_->CancelScan();
-    pending_reindex_.store(true);
-    return;
-  }
-  if (background_index_thread_.joinable()) {
-    background_index_thread_.join();
-  }
-
-  is_indexing_.store(true);
-  current_task_type_ = kTaskRebuild;
-  index_start_time_ = std::chrono::steady_clock::now();
-
   statusBar()->clearMessage();
-  status_stats_label_->setText(
-      "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; "
-      "border-radius:3px;\">重建索引</span> 正在清空旧缓存并扫描目录...");
-  status_progress_bar_->setValue(0);
-  status_progress_bar_->setVisible(true);
-  status_cancel_btn_->setVisible(true);
-  status_cancel_btn_->setEnabled(true);
-  status_file_label_->setText("正在初始化文件清单...");
-  status_file_label_->setVisible(true);
-  status_latency_label_->setText("<span style=\"color:#D97706;\">●</span> 重建中");
-
-  background_index_thread_ = std::thread([this]() {
-    auto t0 = std::chrono::steady_clock::now();
-    bool ok = pipeline_->RebuildIndex([this](size_t indexed, size_t total, const std::string &path) {
-      emit IndexProgressUpdated(kTaskRebuild, static_cast<int>(indexed), static_cast<int>(total),
-                                QString::fromStdString(path));
-    });
-    auto t1 = std::chrono::steady_clock::now();
-    double elapsed_sec = std::chrono::duration<double>(t1 - t0).count();
-    bool cancelled = pipeline_->is_scan_cancelled();
-    is_indexing_.store(false);
-    size_t count = (ok && pipeline_->name_index()) ? pipeline_->name_index()->size() : 0;
-    emit IndexFinished(kTaskRebuild, static_cast<int>(count), cancelled, elapsed_sec);
-  });
+  pipeline_->StartBackgroundTask(true, false, MakeBackgroundCallbacks());
 }
 
 void MainWindow::StartBackgroundInitialIndex(bool force_incremental) {
-  if (is_indexing_.load()) {
-    pending_reindex_.store(true);
-    if (pipeline_) {
-      pipeline_->CancelScan();
-    }
+  if (!pipeline_) {
     return;
   }
-  is_indexing_.store(true);
+  pipeline_->StartBackgroundTask(false, force_incremental, MakeBackgroundCallbacks());
+}
 
-  bool is_cold = !force_incremental && (!pipeline_->name_index() || pipeline_->name_index()->size() == 0);
-  int task_type = is_cold ? kTaskInitial : kTaskIncremental;
-  current_task_type_ = task_type;
-  index_start_time_ = std::chrono::steady_clock::now();
+service::BackgroundIndexCallbacks MainWindow::MakeBackgroundCallbacks() {
+  service::BackgroundIndexCallbacks callbacks;
+  const std::shared_ptr<CallbackTarget> target = callback_target_;
 
-  QString badge = is_cold ? "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; "
-                            "border-radius:3px;\">首次索引</span> "
-                          : "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; "
-                            "border-radius:3px;\">增量索引</span> ";
+  callbacks.on_started = [target](service::IndexTaskKind kind, uint64_t generation) {
+    if (!target) return;
+    std::lock_guard<std::mutex> lock(target->mutex);
+    if (target->window) {
+      emit target->window->IndexTaskStarted(static_cast<int>(kind), static_cast<quint64>(generation));
+    }
+  };
+  callbacks.on_progress = [target](service::IndexTaskKind kind, uint64_t generation, size_t indexed, size_t total,
+                                   const std::string &path) {
+    if (!target) return;
+    std::lock_guard<std::mutex> lock(target->mutex);
+    if (target->window) {
+      emit target->window->IndexProgressUpdated(static_cast<int>(kind), static_cast<int>(indexed),
+                                                static_cast<int>(total), QString::fromStdString(path),
+                                                static_cast<quint64>(generation));
+    }
+  };
+  callbacks.on_finished = [target](const service::IndexTaskResult &result) {
+    if (!target) return;
+    std::lock_guard<std::mutex> lock(target->mutex);
+    if (target->window) {
+      emit target->window->IndexFinished(static_cast<int>(result.kind), static_cast<int>(result.total_indexed),
+                                         result.cancelled, result.elapsed_sec, result.has_pending_followup,
+                                         static_cast<quint64>(result.generation));
+    }
+  };
+  return callbacks;
+}
 
-  status_stats_label_->setText(badge + "正在扫描待索引目录...");
+void MainWindow::OnIndexTaskStarted(int task_type, quint64 generation) {
+  active_generation_ = generation;
+  is_task_active_ = true;
+
+  statusBar()->clearMessage();
   status_progress_bar_->setValue(0);
   status_progress_bar_->setVisible(true);
   status_cancel_btn_->setVisible(true);
   status_cancel_btn_->setEnabled(true);
-  status_file_label_->setText("正在初始化文件清单...");
+  status_file_label_->setText(Tr("status_init_manifest"));
   status_file_label_->setVisible(true);
-  status_latency_label_->setText(is_cold ? "<span style=\"color:#0284C7;\">●</span> 初始化中"
-                                         : "<span style=\"color:#0D9488;\">●</span> 同步中");
 
-  if (background_index_thread_.joinable()) {
-    background_index_thread_.join();
+  const QString badge = IndexTaskBadge(task_type);
+  if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {
+    status_stats_label_->setText(badge + Tr("status_rebuild_scanning"));
+    status_latency_label_->setText(Tr("status_state_rebuilding"));
+  } else {
+    status_stats_label_->setText(badge + Tr("status_scanning_dirs"));
+    status_latency_label_->setText(task_type == static_cast<int>(service::IndexTaskKind::kInitial)
+                                       ? Tr("status_state_initializing")
+                                       : Tr("status_state_syncing"));
   }
-
-  background_index_thread_ = std::thread([this, task_type]() {
-    auto t0 = std::chrono::steady_clock::now();
-
-    if (!pipeline_) {
-      is_indexing_.store(false);
-      emit IndexFinished(task_type, 0, false, 0.0);
-      return;
-    }
-
-    // 1. Synchronize watch engine directories in background worker thread (non-blocking for UI)
-    if (pipeline_->watch_engine() && pipeline_->config()) {
-      auto configured_dirs = pipeline_->config()->GetIndexedDirectories();
-      auto watched_dirs = pipeline_->watch_engine()->GetWatchedDirectories();
-      std::unordered_set<std::string> active_set(configured_dirs.begin(), configured_dirs.end());
-
-      for (const auto &watched : watched_dirs) {
-        if (pipeline_->is_scan_cancelled()) break;
-        if (active_set.find(watched) == active_set.end()) {
-          pipeline_->RemoveDirectoryIndex(watched);
-        }
-      }
-      for (const auto &dir : configured_dirs) {
-        if (pipeline_->is_scan_cancelled()) break;
-        pipeline_->watch_engine()->AddWatch(dir);
-      }
-    }
-
-    // 2. Perform directory scan in background worker thread
-    size_t count = 0;
-    if (!pipeline_->is_scan_cancelled()) {
-      count = pipeline_->PerformInitialScan([this, task_type](size_t indexed, size_t total, const std::string &path) {
-        emit IndexProgressUpdated(task_type, static_cast<int>(indexed), static_cast<int>(total),
-                                  QString::fromStdString(path));
-      });
-    }
-
-    auto t1 = std::chrono::steady_clock::now();
-    double elapsed_sec = std::chrono::duration<double>(t1 - t0).count();
-    bool cancelled = pipeline_->is_scan_cancelled();
-    is_indexing_.store(false);
-    emit IndexFinished(task_type, static_cast<int>(count), cancelled, elapsed_sec);
-  });
 }
 
-void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file) {
-  QString badge;
-  if (task_type == kTaskRebuild) {
-    badge =
-        "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; "
-        "border-radius:3px;\">重建索引</span> ";
-  } else if (task_type == kTaskInitial) {
-    badge =
-        "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; "
-        "border-radius:3px;\">首次索引</span> ";
-  } else {
-    badge =
-        "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; "
-        "border-radius:3px;\">增量索引</span> ";
+void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file,
+                                        quint64 generation) {
+  if (!is_task_active_ || generation != active_generation_) {
+    // Drop late progress events from a task that already finished or was superseded.
+    return;
   }
+  const QString badge = IndexTaskBadge(task_type);
 
   if (total > 0) {
-    int pct = (indexed * 100) / total;
+    const int pct = static_cast<int>(std::clamp<int64_t>((static_cast<int64_t>(indexed) * 100) / total, 0, 100));
     status_progress_bar_->setValue(pct);
     status_progress_bar_->setVisible(true);
-    status_stats_label_->setText(badge + QString("正在构建: %1/%2 (%3%)").arg(indexed).arg(total).arg(pct));
+    status_stats_label_->setText(badge + Tr("status_building_progress").arg(indexed).arg(total).arg(pct));
   } else {
-    status_stats_label_->setText(badge + "正在扫描待索引目录...");
+    status_stats_label_->setText(badge + Tr("status_scanning_dirs"));
   }
 
   if (!current_file.isEmpty()) {
     status_file_label_->setVisible(true);
     QFontMetrics fm(status_file_label_->font());
-    QString elided = fm.elidedText("正在解析: " + current_file, Qt::ElideMiddle, 460);
+    QString elided = fm.elidedText(Tr("status_parsing_file").arg(current_file), Qt::ElideMiddle, 460);
     status_file_label_->setText(elided);
     status_file_label_->setToolTip(current_file);
   }
 }
 
-void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec) {
-  if (background_index_thread_.joinable()) {
-    background_index_thread_.join();
+void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec,
+                                 bool has_followup, quint64 generation) {
+  if (generation != active_generation_) {
+    LOG_DEBUG("[MainWindow] Ignoring stale IndexFinished (generation {} != {})", generation, active_generation_);
+    return;
+  }
+
+  is_task_active_ = false;
+
+  if (has_followup) {
+    return;
   }
 
   status_progress_bar_->setVisible(false);
   status_file_label_->setVisible(false);
   status_cancel_btn_->setVisible(false);
 
-  // If another re-index was requested while indexing was active, start it now
-  if (pending_reindex_.exchange(false)) {
-    StartBackgroundInitialIndex(true);
-    return;
-  }
-
   if (cancelled) {
-    status_stats_label_->setText(
-        "<span style=\"color:#D97706; font-weight:bold;\">! 索引任务已取消</span> 已保留已解析的数据");
-    status_latency_label_->setText("<span style=\"color:#16A34A;\">●</span> 就绪");
+    status_stats_label_->setText(Tr("status_task_cancelled_msg"));
+    status_latency_label_->setText(Tr("status_ready"));
   } else {
     QString finish_desc;
-    if (task_type == kTaskRebuild) {
-      finish_desc = QString(
-                        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 索引重建完成</span> "
-                        "共重构 %1 个文件索引 (耗时 %2s)")
-                        .arg(total_indexed)
-                        .arg(QString::number(elapsed_sec, 'f', 1));
-    } else if (task_type == kTaskInitial) {
-      finish_desc = QString(
-                        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 首次索引完成</span> "
-                        "共索引 %1 个文件 (耗时 %2s)")
-                        .arg(total_indexed)
-                        .arg(QString::number(elapsed_sec, 'f', 1));
+    if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {
+      finish_desc = Tr("status_finish_rebuild").arg(total_indexed).arg(QString::number(elapsed_sec, 'f', 1));
+    } else if (task_type == static_cast<int>(service::IndexTaskKind::kInitial)) {
+      finish_desc = Tr("status_finish_initial").arg(total_indexed).arg(QString::number(elapsed_sec, 'f', 1));
     } else {
-      finish_desc = QString(
-                        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 增量同步完成</span> "
-                        "索引已是最新 (耗时 %1s)")
-                        .arg(QString::number(elapsed_sec, 'f', 1));
+      finish_desc = Tr("status_finish_incremental").arg(QString::number(elapsed_sec, 'f', 1));
     }
     status_stats_label_->setText(finish_desc);
-    status_latency_label_->setText("<span style=\"color:#16A34A;\">●</span> 就绪");
+    status_latency_label_->setText(Tr("status_ready"));
   }
 
   // Smoothly restore normal idle statistics after 3.5 seconds
   QTimer::singleShot(3500, this, [this]() {
-    if (!is_indexing_.load()) {
+    if (!is_task_active_ && (!pipeline_ || !pipeline_->IsIndexing())) {
       UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
     }
   });
 
   // If search bar has active query, re-run search to surface newly indexed items immediately
-  if (search_bar_ && !search_bar_->query().trimmed().isEmpty()) {
+  if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {
     OnSearchTriggered(search_bar_->query(), search_bar_->mode(), search_bar_->path_scope());
   }
 }

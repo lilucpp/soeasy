@@ -23,8 +23,6 @@ struct SearchResultItem {
   uint64_t file_size = 0;
   int64_t mtime = 0;
   double rank = 0.0;
-  std::string snippet;
-  bool has_body_snippet = false;
 };
 
 struct FileMetaRecord {
@@ -116,89 +114,96 @@ class ScopedReadConnection {
  */
 class IStorageEngine {
  public:
+  IStorageEngine() = default;
   virtual ~IStorageEngine() = default;
+
+  IStorageEngine(const IStorageEngine &) = delete;
+  IStorageEngine &operator=(const IStorageEngine &) = delete;
+  IStorageEngine(IStorageEngine &&) = delete;
+  IStorageEngine &operator=(IStorageEngine &&) = delete;
 
   /**
    * @brief Open or create encrypted SQLite database, initialize schemas, and configure connection pool.
    */
-  virtual bool Open(const std::string &db_path, const std::string &key, const std::string &dict_dir) = 0;
+  bool Open(const std::string &db_path, const std::string &key, const std::string &dict_dir) {
+    return DoOpen(db_path, key, dict_dir);
+  }
 
   /**
    * @brief Close all connections and drain the reader connection pool.
    */
-  virtual void Close() = 0;
+  void Close() { DoClose(); }
 
   /**
    * @brief Check whether database engine is open and active.
    */
-  [[nodiscard]] virtual bool is_open() const = 0;
+  [[nodiscard]] bool is_open() const { return DoIsOpen(); }
 
   /**
    * @brief Begin an explicit write transaction (uses BEGIN IMMEDIATE to claim write lock instantly).
    */
-  virtual bool BeginTransaction() = 0;
+  bool BeginTransaction() { return DoBeginTransaction(); }
 
   /**
    * @brief Commit the current write transaction.
    */
-  virtual bool CommitTransaction() = 0;
+  bool CommitTransaction() { return DoCommitTransaction(); }
 
   /**
    * @brief Rollback the current write transaction.
    */
-  virtual bool RollbackTransaction() = 0;
+  bool RollbackTransaction() { return DoRollbackTransaction(); }
 
   /**
    * @brief Check whether an explicit transaction is currently active.
    */
-  [[nodiscard]] virtual bool IsInTransaction() const = 0;
+  [[nodiscard]] bool IsInTransaction() const { return DoIsInTransaction(); }
 
   /**
    * @brief Get count of uncommitted indexed documents in current transaction.
    */
-  [[nodiscard]] virtual size_t GetUncommittedCount() const = 0;
+  [[nodiscard]] size_t GetUncommittedCount() const { return DoGetUncommittedCount(); }
 
   /**
    * @brief Compact and merge FTS5 index segments.
    */
-  virtual bool OptimizeFtsIndex() = 0;
+  bool OptimizeFtsIndex() { return DoOptimizeFtsIndex(); }
 
   /**
    * @brief Toggle bulk mode for high-throughput batch operations.
    */
-  virtual bool SetBulkMode(bool enable) = 0;
+  bool SetBulkMode(bool enable) { return DoSetBulkMode(enable); }
 
   /**
    * @brief Checkpoint and truncate the WAL file back into the main database.
    */
-  virtual bool CheckpointWal() = 0;
+  bool CheckpointWal() { return DoCheckpointWal(); }
 
   /**
    * @brief Query current database page metrics, freelist count, and fragmentation ratio.
    */
-  virtual bool GetFragmentation(StorageFragmentation *out_frag) = 0;
+  bool GetFragmentation(StorageFragmentation *out_frag) { return DoGetFragmentation(out_frag); }
 
   /**
    * @brief Incrementally reclaim up to N free pages directly to the OS without full rewrite.
    */
-  virtual bool IncrementalVacuum(int pages = 500) = 0;
+  bool IncrementalVacuum(int pages = 500) { return DoIncrementalVacuum(pages); }
 
   /**
    * @brief Rebuild and shrink entire database file to reclaim 100% free space.
    */
-  virtual bool Vacuum() = 0;
+  bool Vacuum() { return DoVacuum(); }
 
   /**
    * @brief Index or re-index a single document (Write channel) using structured entry.
    */
-  virtual bool IndexDocument(const DocumentIndexEntry &entry) = 0;
+  bool IndexDocument(const DocumentIndexEntry &entry) { return DoIndexDocument(entry); }
 
   /**
    * @brief Backward-compatible overload for legacy multi-argument invocation.
    */
-  virtual bool IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
-                             const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
-                             const std::string &utf8_content) {
+  bool IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name, const std::string &ext,
+                     uint64_t file_size, int64_t mtime, int parse_level, const std::string &utf8_content) {
     DocumentIndexEntry entry;
     entry.doc_id = doc_id;
     entry.file_path = file_path;
@@ -208,50 +213,57 @@ class IStorageEngine {
     entry.mtime = mtime;
     entry.parse_level = parse_level;
     entry.utf8_content = utf8_content;
-    return IndexDocument(entry);
+    return DoIndexDocument(entry);
   }
 
   /**
    * @brief Delete document from metadata, content, and FTS5 index (Write channel).
    */
-  virtual bool DeleteDocument(int64_t doc_id) = 0;
+  bool DeleteDocument(int64_t doc_id) { return DoDeleteDocument(doc_id); }
 
   /**
    * @brief Cascade delete all files under a directory prefix (Write channel).
    */
-  virtual int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) = 0;
+  int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) {
+    return DoDeleteDirectory(dir_path, out_deleted_doc_ids);
+  }
 
   /**
    * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild (Write channel).
    */
-  virtual bool ClearAll() = 0;
+  bool ClearAll() { return DoClearAll(); }
 
   /**
    * @brief Perform full-text search against fts_docs (Read channel via ReaderConnectionPool).
    */
-  virtual std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
-                                               const std::string &path_prefix = "", int *out_total_count = nullptr) = 0;
+  std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
+                                       const std::string &path_prefix = "", int *out_total_count = nullptr) {
+    return DoSearch(query, limit, offset, path_prefix, out_total_count);
+  }
 
   /**
    * @brief Decompress and fetch original UTF-8 content from doc_contents (Read channel).
    */
-  virtual bool GetDocumentContent(int64_t doc_id, std::string *out_content) = 0;
+  bool GetDocumentContent(int64_t doc_id, std::string *out_content) {
+    return DoGetDocumentContent(doc_id, out_content);
+  }
 
   /**
    * @brief Retrieve metadata for incremental check (Read channel).
    */
-  virtual bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime,
-                               int *out_parse_stat = nullptr) = 0;
+  bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat = nullptr) {
+    return DoGetFileMetadata(doc_id, out_file_size, out_mtime, out_parse_stat);
+  }
 
   /**
    * @brief Retrieve all indexed files metadata for rapid cold-restart (Read channel).
    */
-  virtual std::vector<FileMetaRecord> GetAllFilesMetadata() = 0;
+  std::vector<FileMetaRecord> GetAllFilesMetadata() { return DoGetAllFilesMetadata(); }
 
   /**
    * @brief Acquire a dedicated read-only connection handle from the pool (Zero-lock read lease).
    */
-  virtual ScopedReadConnection AcquireReadConnection() = 0;
+  ScopedReadConnection AcquireReadConnection() { return DoAcquireReadConnection(); }
 
   /**
    * @brief Atomically rekey the database to a new encryption key using SQLite3MC.
@@ -259,12 +271,44 @@ class IStorageEngine {
    * @param new_key New encryption key to apply
    * @return true on success, false on failure (reverts to previous key)
    */
-  virtual bool Rekey(const std::string &new_key) = 0;
+  bool Rekey(const std::string &new_key) { return DoRekey(new_key); }
 
   /**
    * @brief Get low-level error message from SQLite.
    */
-  [[nodiscard]] virtual std::string GetLastError() const = 0;
+  [[nodiscard]] std::string GetLastError() const { return DoGetLastError(); }
+
+ protected:
+  virtual bool DoOpen(const std::string &db_path, const std::string &key, const std::string &dict_dir) = 0;
+  virtual void DoClose() = 0;
+  [[nodiscard]] virtual bool DoIsOpen() const = 0;
+
+  virtual bool DoBeginTransaction() = 0;
+  virtual bool DoCommitTransaction() = 0;
+  virtual bool DoRollbackTransaction() = 0;
+  [[nodiscard]] virtual bool DoIsInTransaction() const = 0;
+  [[nodiscard]] virtual size_t DoGetUncommittedCount() const = 0;
+
+  virtual bool DoOptimizeFtsIndex() = 0;
+  virtual bool DoSetBulkMode(bool enable) = 0;
+  virtual bool DoCheckpointWal() = 0;
+  virtual bool DoGetFragmentation(StorageFragmentation *out_frag) = 0;
+  virtual bool DoIncrementalVacuum(int pages) = 0;
+  virtual bool DoVacuum() = 0;
+
+  virtual bool DoIndexDocument(const DocumentIndexEntry &entry) = 0;
+  virtual bool DoDeleteDocument(int64_t doc_id) = 0;
+  virtual int64_t DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) = 0;
+  virtual bool DoClearAll() = 0;
+
+  virtual std::vector<SearchResultItem> DoSearch(const std::string &query, int limit, int offset,
+                                                 const std::string &path_prefix, int *out_total_count) = 0;
+  virtual bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) = 0;
+  virtual bool DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) = 0;
+  virtual std::vector<FileMetaRecord> DoGetAllFilesMetadata() = 0;
+  virtual ScopedReadConnection DoAcquireReadConnection() = 0;
+  virtual bool DoRekey(const std::string &new_key) = 0;
+  [[nodiscard]] virtual std::string DoGetLastError() const = 0;
 };
 
 /**

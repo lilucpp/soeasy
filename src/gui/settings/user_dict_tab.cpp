@@ -3,17 +3,16 @@
 
 #include "gui/settings/user_dict_tab.h"
 
-#include <algorithm>
 #include <QCoreApplication>
 #include <QDir>
-#include <QFile>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QMessageBox>
-#include <QRegularExpression>
 #include <QStandardPaths>
-#include <QTextStream>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <vector>
 
 #include "gui/i18n.h"
 #include "service/index_config.h"
@@ -67,39 +66,29 @@ void UserDictTab::SetupUi() {
 }
 
 void UserDictTab::PopulateFromConfig(const service::IndexConfig &config) {
-  QString dict_dir;
-  if (!config.dict_dir().empty()) {
-    dict_dir = QString::fromStdString(config.dict_dir());
-  } else {
-    dict_dir = QCoreApplication::applicationDirPath() + "/dict";
-  }
+  QString dict_dir = !config.dict_dir().empty() ? QString::fromStdString(config.dict_dir())
+                                                : QCoreApplication::applicationDirPath() + "/dict";
+  QString appdata_dict_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/dict";
 
-  if (!jieba_) {
-    jieba_ = std::make_unique<storage::DatJieba>();
-    if (!jieba_->Init(dict_dir.toStdString())) {
-      QString fallback = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/dict";
-      jieba_->Init(fallback.toStdString());
-    }
+  if (!dictionary_service_) {
+    dictionary_service_ = std::make_unique<service::DictionaryService>();
+    dictionary_service_->InitBaseDictionary({dict_dir.toStdString(), appdata_dict_dir.toStdString()});
   }
 
   user_dict_file_path_.clear();
-  QString appdata_path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/dict/user.dict.utf8";
+  QString appdata_path = appdata_dict_dir + "/user.dict.utf8";
   if (!config.dict_dir().empty()) {
     QString cfg_dict = QString::fromStdString(config.dict_dir()) + "/user.dict.utf8";
-    if (QFile::exists(cfg_dict)) {
+    if (QFileInfo::exists(cfg_dict)) {
       user_dict_file_path_ = cfg_dict;
     }
   }
   if (user_dict_file_path_.isEmpty()) {
-    if (QFile::exists(appdata_path)) {
+    if (QFileInfo::exists(appdata_path)) {
       user_dict_file_path_ = appdata_path;
     } else {
       QString appdir_path = QCoreApplication::applicationDirPath() + "/dict/user.dict.utf8";
-      if (QFile::exists(appdir_path)) {
-        user_dict_file_path_ = appdir_path;
-      } else {
-        user_dict_file_path_ = appdata_path;
-      }
+      user_dict_file_path_ = QFileInfo::exists(appdir_path) ? appdir_path : appdata_path;
     }
   }
 
@@ -124,29 +113,16 @@ void UserDictTab::RetranslateUi() {
 
 void UserDictTab::LoadUserDict() {
   user_dict_table_->setRowCount(0);
-  if (user_dict_file_path_.isEmpty() || !QFile::exists(user_dict_file_path_)) {
+  if (user_dict_file_path_.isEmpty() || !dictionary_service_ || !QFileInfo::exists(user_dict_file_path_)) {
     if (user_dict_count_label_) user_dict_count_label_->setText(Tr("label_word_count").arg(0));
     return;
   }
 
-  QFile file(user_dict_file_path_);
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    return;
-  }
-
-  QTextStream in(&file);
-  in.setCodec("UTF-8");
+  const auto words = dictionary_service_->LoadUserWords(user_dict_file_path_.toStdString());
   int row = 0;
-  while (!in.atEnd()) {
-    QString line = in.readLine().trimmed();
-    if (line.isEmpty() || line.startsWith("#")) continue;
-
-    QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-    if (parts.isEmpty()) continue;
-    QString word = parts[0];
-
+  for (const auto &word : words) {
     user_dict_table_->insertRow(row);
-    auto *item = new QTableWidgetItem(word);
+    auto *item = new QTableWidgetItem(QString::fromStdString(word));
     user_dict_table_->setItem(row, 0, item);
     row++;
   }
@@ -157,26 +133,22 @@ void UserDictTab::LoadUserDict() {
 }
 
 void UserDictTab::SaveUserDict() {
+  if (!dictionary_service_) {
+    return;
+  }
   if (user_dict_file_path_.isEmpty()) {
     user_dict_file_path_ = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/dict/user.dict.utf8";
   }
 
-  QFileInfo fi(user_dict_file_path_);
-  QDir().mkpath(fi.absolutePath());
-
-  QFile file(user_dict_file_path_);
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-    return;
-  }
-
-  QTextStream out(&file);
-  out.setCodec("UTF-8");
+  std::vector<std::string> words;
+  words.reserve(static_cast<size_t>(user_dict_table_->rowCount()));
   for (int r = 0; r < user_dict_table_->rowCount(); ++r) {
     auto *item = user_dict_table_->item(r, 0);
     if (item && !item->text().trimmed().isEmpty()) {
-      out << item->text().trimmed() << "\n";
+      words.push_back(item->text().trimmed().toStdString());
     }
   }
+  dictionary_service_->SaveUserWords(user_dict_file_path_.toStdString(), words);
 }
 
 void UserDictTab::OnAddUserWord() {
@@ -193,14 +165,11 @@ void UserDictTab::OnAddUserWord() {
     }
   }
 
-  // Check existence in Jieba DAT base dictionary
-  if (jieba_) {
-    std::string word_std = word.toStdString();
-    if (jieba_->HasWord(word_std)) {
-      QMessageBox::information(this, Tr("dlg_tip"), Tr("word_exists_base").arg(word));
-      user_word_input_->clear();
-      return;
-    }
+  // Check existence in Jieba DAT base dictionary via Service facade
+  if (dictionary_service_ && dictionary_service_->IsInBaseDictionary(word.toStdString())) {
+    QMessageBox::information(this, Tr("dlg_tip"), Tr("word_exists_base").arg(word));
+    user_word_input_->clear();
+    return;
   }
 
   int row = user_dict_table_->rowCount();

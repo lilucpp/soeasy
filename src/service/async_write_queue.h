@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-#include "storage/storage_engine.h"
+#include "storage/istorage_engine.h"
 
 namespace soeasy {
 namespace service {
@@ -58,7 +58,7 @@ class AsyncWriteQueue {
    * @param batch_timeout Max duration before committing a partial batch (default 10s)
    * @param max_queue_size High watermark for bounded backpressure (default 500)
    */
-  void Start(std::shared_ptr<storage::StorageEngine> storage_engine, size_t batch_size = 100,
+  void Start(std::shared_ptr<storage::IStorageEngine> storage_engine, size_t batch_size = 100,
              std::chrono::milliseconds batch_timeout = std::chrono::seconds(10), size_t max_queue_size = 500);
 
   /**
@@ -68,13 +68,32 @@ class AsyncWriteQueue {
 
   /**
    * @brief Enqueue a document index or deletion operation (blocks if queue is full).
+   *
+   * @return true when the operation was accepted and moved; false when the queue is shutting down
+   *         (in which case @p op is left untouched so the caller may write synchronously).
    */
-  void Enqueue(WriteOp op);
+  bool Enqueue(WriteOp *op);
 
   /**
    * @brief Block until all queued operations are written and committed to disk.
    */
   void Flush();
+
+  /**
+   * @brief Close the write barrier: block new producers, then wait until the in-flight batch
+   *        and the queue are fully committed.
+   *
+   * Used to serialize maintenance operations (ClearAll / VACUUM / directory purge) against
+   * background batch transactions on the shared writer connection.
+   *
+   * @warning Every Pause() must be paired with Resume().
+   */
+  void Pause();
+
+  /**
+   * @brief Re-open the write barrier and wake blocked producers.
+   */
+  void Resume();
 
   /**
    * @brief Return number of pending operations currently in the queue.
@@ -88,8 +107,9 @@ class AsyncWriteQueue {
 
  private:
   void WorkerLoop();
+  void ExecuteBatchTransaction(const std::vector<WriteOp> &batch);
 
-  std::shared_ptr<storage::StorageEngine> storage_engine_;
+  std::shared_ptr<storage::IStorageEngine> storage_engine_;
   size_t batch_size_ = 100;
   std::chrono::milliseconds batch_timeout_{10000};
   size_t max_queue_size_ = 500;
@@ -101,7 +121,8 @@ class AsyncWriteQueue {
 
   std::queue<WriteOp> queue_;
   bool is_writing_batch_ = false;
-  bool flush_requested_ = false;
+  size_t flush_waiters_ = 0;
+  bool paused_ = false;
   std::atomic<bool> stop_requested_{false};
   std::atomic<bool> running_{false};
   std::thread worker_thread_;

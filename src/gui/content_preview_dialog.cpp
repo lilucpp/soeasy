@@ -9,23 +9,23 @@
 #include <QPushButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <utility>
 
-#include "gui/gui_utils.h"
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
 
 namespace soeasy {
 namespace gui {
 
-ContentPreviewDialog::ContentPreviewDialog(int64_t doc_id, const QString &file_name, const QString &file_path,
-                                           const std::vector<std::string> &keywords,
-                                           std::shared_ptr<storage::StorageEngine> storage, QWidget *parent)
+ContentPreviewDialog::ContentPreviewDialog(int64_t doc_id, QString file_name, QString file_path,
+                                           std::vector<std::string> keywords,
+                                           std::shared_ptr<service::ISearchCoordinator> coordinator, QWidget *parent)
     : QDialog(parent),
       doc_id_(doc_id),
-      file_name_(file_name),
-      file_path_(file_path),
-      keywords_(keywords),
-      storage_(std::move(storage)) {
+      file_name_(std::move(file_name)),
+      file_path_(std::move(file_path)),
+      keywords_(std::move(keywords)),
+      search_coordinator_(std::move(coordinator)) {
   SetupUi();
   LoadContentAndHighlight();
 }
@@ -60,7 +60,8 @@ void ContentPreviewDialog::SetupUi() {
   auto *btn_open_file = new QPushButton(Tr("btn_open_file"), header_card);
   btn_open_file->setStyleSheet(
       "QPushButton {"
-      "  font-size: 11px; padding: 4px 10px; border: 1px solid #CBD5E1; border-radius: 4px; background-color: #F8FAFC; color: #334155;"
+      "  font-size: 11px; padding: 4px 10px; border: 1px solid #CBD5E1; border-radius: 4px; background-color: #F8FAFC; "
+      "color: #334155;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
       "QPushButton:pressed { background-color: #E2E8F0; }");
@@ -68,7 +69,8 @@ void ContentPreviewDialog::SetupUi() {
   auto *btn_open_folder = new QPushButton(Tr("btn_open_folder"), header_card);
   btn_open_folder->setStyleSheet(
       "QPushButton {"
-      "  font-size: 11px; padding: 4px 10px; border: 1px solid #CBD5E1; border-radius: 4px; background-color: #F8FAFC; color: #334155;"
+      "  font-size: 11px; padding: 4px 10px; border: 1px solid #CBD5E1; border-radius: 4px; background-color: #F8FAFC; "
+      "color: #334155;"
       "}"
       "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
       "QPushButton:pressed { background-color: #E2E8F0; }");
@@ -99,7 +101,7 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
   if (!viewer_) return;
 
   std::string decompressed_utf8;
-  bool ok = DocumentViewerWidget::ReadDocumentContent(doc_id_, file_path_, storage_, &decompressed_utf8);
+  bool ok = DocumentViewerWidget::ReadDocumentContent(doc_id_, file_path_, search_coordinator_, &decompressed_utf8);
 
   if (!ok || decompressed_utf8.empty()) {
     viewer_->SetHtml(QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_cannot_read")));

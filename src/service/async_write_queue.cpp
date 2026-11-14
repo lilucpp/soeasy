@@ -17,19 +17,25 @@ AsyncWriteQueue::~AsyncWriteQueue() {
   Stop();
 }
 
-void AsyncWriteQueue::Start(std::shared_ptr<storage::StorageEngine> storage_engine, size_t batch_size,
+void AsyncWriteQueue::Start(std::shared_ptr<storage::IStorageEngine> storage_engine, size_t batch_size,
                             std::chrono::milliseconds batch_timeout, size_t max_queue_size) {
   Stop();
 
-  storage_engine_ = std::move(storage_engine);
-  batch_size_ = (batch_size > 0) ? batch_size : 100;
-  batch_timeout_ = batch_timeout;
-  max_queue_size_ = (max_queue_size > 0) ? max_queue_size : 500;
+  {
+    // Publish configuration under the lock so a concurrently running producer can never
+    // observe a half-updated queue configuration.
+    std::lock_guard<std::mutex> lock(mutex_);
+    storage_engine_ = std::move(storage_engine);
+    batch_size_ = (batch_size > 0) ? batch_size : 100;
+    batch_timeout_ = batch_timeout;
+    max_queue_size_ = (max_queue_size > 0) ? max_queue_size : 500;
 
-  stop_requested_ = false;
-  flush_requested_ = false;
-  is_writing_batch_ = false;
-  running_ = true;
+    stop_requested_ = false;
+    flush_waiters_ = 0;
+    is_writing_batch_ = false;
+    paused_ = false;
+    running_ = true;
+  }
 
   worker_thread_ = std::thread(&AsyncWriteQueue::WorkerLoop, this);
 }
@@ -51,25 +57,58 @@ void AsyncWriteQueue::Stop() {
   }
 }
 
-void AsyncWriteQueue::Enqueue(WriteOp op) {
+bool AsyncWriteQueue::Enqueue(WriteOp *op) {
+  if (!op) {
+    return false;
+  }
   std::unique_lock<std::mutex> lock(mutex_);
-  cv_not_full_.wait(lock, [this]() { return stop_requested_ || queue_.size() < max_queue_size_; });
+  cv_not_full_.wait(lock, [this]() { return stop_requested_ || (!paused_ && queue_.size() < max_queue_size_); });
 
   if (stop_requested_) {
-    return;
+    return false;
   }
 
-  queue_.push(std::move(op));
+  queue_.push(std::move(*op));
   cv_not_empty_.notify_one();
+  return true;
 }
 
 void AsyncWriteQueue::Flush() {
   std::unique_lock<std::mutex> lock(mutex_);
-  flush_requested_ = true;
-  cv_not_empty_.notify_one();
+  struct FlushWaiterGuard {
+    explicit FlushWaiterGuard(size_t *counter) : counter_(counter) { ++(*counter_); }
+    ~FlushWaiterGuard() { --(*counter_); }
+    FlushWaiterGuard(const FlushWaiterGuard &) = delete;
+    FlushWaiterGuard &operator=(const FlushWaiterGuard &) = delete;
+    FlushWaiterGuard(FlushWaiterGuard &&) = delete;
+    FlushWaiterGuard &operator=(FlushWaiterGuard &&) = delete;
+    size_t *counter_;
+  } waiter_guard(&flush_waiters_);
 
+  cv_not_empty_.notify_one();
+  cv_drained_.wait(lock, [this]() { return (queue_.empty() && !is_writing_batch_) || stop_requested_; });
+}
+
+void AsyncWriteQueue::Pause() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (!running_) {
+    // Writer thread already stopped: nothing can be in flight and no drain is possible.
+    return;
+  }
+  paused_ = true;
+  // Wake the worker so it can start draining immediately instead of waiting for the batch timeout.
+  cv_not_empty_.notify_one();
+  // Wait until everything that was already accepted has been committed to disk.
   cv_drained_.wait(lock, [this]() { return queue_.empty() && !is_writing_batch_; });
-  flush_requested_ = false;
+}
+
+void AsyncWriteQueue::Resume() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    paused_ = false;
+  }
+  cv_not_full_.notify_all();
+  cv_not_empty_.notify_one();
 }
 
 size_t AsyncWriteQueue::PendingCount() const {
@@ -87,7 +126,7 @@ void AsyncWriteQueue::WorkerLoop() {
       std::unique_lock<std::mutex> lock(mutex_);
       cv_not_empty_.wait_for(lock, std::chrono::milliseconds(50), [this, &last_commit_time]() {
         if (stop_requested_) return true;
-        if (flush_requested_ && !queue_.empty()) return true;
+        if ((flush_waiters_ > 0 || paused_) && !queue_.empty()) return true;
         if (queue_.empty()) return false;
         if (queue_.size() >= batch_size_) return true;
         auto now = std::chrono::steady_clock::now();
@@ -112,26 +151,7 @@ void AsyncWriteQueue::WorkerLoop() {
 
     // Execute writes in StorageEngine within an outer transaction guarded by RAII
     if (!batch.empty() && storage_engine_) {
-      storage::TransactionGuard tx(*storage_engine_);
-      bool all_success = true;
-      for (const auto &op : batch) {
-        bool op_ok = false;
-        if (op.type == WriteOpType::kIndex) {
-          op_ok = storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                                 op.parse_level, op.content);
-        } else if (op.type == WriteOpType::kDelete) {
-          op_ok = storage_engine_->DeleteDocument(op.doc_id);
-        }
-        if (!op_ok) {
-          all_success = false;
-        }
-      }
-      if (all_success) {
-        tx.Commit();
-      } else {
-        LOG_WARN("[AsyncWriteQueue] Transaction rollback due to operation failure in batch size {}", batch.size());
-        tx.Rollback();
-      }
+      ExecuteBatchTransaction(batch);
       last_commit_time = std::chrono::steady_clock::now();
       batch.clear();
     }
@@ -157,32 +177,54 @@ void AsyncWriteQueue::WorkerLoop() {
   }
 
   if (!remaining.empty() && storage_engine_) {
-    storage::TransactionGuard tx(*storage_engine_);
-    bool all_success = true;
-    for (const auto &op : remaining) {
-      bool op_ok = false;
-      if (op.type == WriteOpType::kIndex) {
-        op_ok = storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                               op.parse_level, op.content);
-      } else if (op.type == WriteOpType::kDelete) {
-        op_ok = storage_engine_->DeleteDocument(op.doc_id);
-      }
-      if (!op_ok) {
-        all_success = false;
-      }
-    }
-    if (all_success) {
-      tx.Commit();
-    } else {
-      LOG_WARN("[AsyncWriteQueue] Shutdown transaction rollback due to operation failure in remaining batch");
-      tx.Rollback();
-    }
+    ExecuteBatchTransaction(remaining);
   }
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
     is_writing_batch_ = false;
     cv_drained_.notify_all();
+  }
+}
+
+void AsyncWriteQueue::ExecuteBatchTransaction(const std::vector<WriteOp> &batch) {
+  if (batch.empty() || !storage_engine_) {
+    return;
+  }
+
+  auto execute_op = [this](const WriteOp &op) {
+    if (op.type == WriteOpType::kIndex) {
+      return storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
+                                            op.parse_level, op.content);
+    }
+    if (op.type == WriteOpType::kDelete) {
+      return storage_engine_->DeleteDocument(op.doc_id);
+    }
+    return false;
+  };
+
+  storage::TransactionGuard tx(*storage_engine_);
+  bool all_success = true;
+  for (const auto &op : batch) {
+    if (!execute_op(op)) {
+      all_success = false;
+    }
+  }
+
+  if (all_success) {
+    tx.Commit();
+  } else {
+    LOG_WARN("[AsyncWriteQueue] Batch transaction failed (size={}), rolling back and replaying per-op", batch.size());
+    tx.Rollback();
+    for (const auto &op : batch) {
+      storage::TransactionGuard single_tx(*storage_engine_);
+      if (execute_op(op)) {
+        single_tx.Commit();
+      } else {
+        single_tx.Rollback();
+        LOG_ERROR("[AsyncWriteQueue] Isolated write operation failed for doc_id={} ('{}')", op.doc_id, op.file_path);
+      }
+    }
   }
 }
 

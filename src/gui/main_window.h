@@ -12,10 +12,9 @@
 #include <QStatusBar>
 #include <QSystemTrayIcon>
 #include <atomic>
-#include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "gui/content_preview_dialog.h"
@@ -28,12 +27,6 @@
 
 namespace soeasy {
 namespace gui {
-
-enum IndexTaskType {
-  kTaskInitial = 0,
-  kTaskRebuild = 1,
-  kTaskIncremental = 2,
-};
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -53,8 +46,10 @@ class MainWindow : public QMainWindow {
   void ShowAndActivate();
 
  signals:
-  void IndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file);
-  void IndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
+  void IndexTaskStarted(int task_type, quint64 generation);
+  void IndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file, quint64 generation);
+  void IndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec, bool has_followup,
+                     quint64 generation);
 
  protected:
   void changeEvent(QEvent *event) override;
@@ -71,18 +66,26 @@ class MainWindow : public QMainWindow {
   void OnSettingsApplied();
   void OnRebuildIndexRequested();
 
-  void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file);
-  void OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec);
+  void OnIndexTaskStarted(int task_type, quint64 generation);
+  void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file, quint64 generation);
+  void OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec, bool has_followup,
+                       quint64 generation);
 
   void OnTrayActivated(QSystemTrayIcon::ActivationReason reason);
   void OnTrayActionShow();
   void OnTrayActionQuit();
 
  private:
+  struct CallbackTarget {
+    std::mutex mutex;
+    MainWindow *window = nullptr;
+  };
+
   void SetupUi();
   void SetupTrayIcon();
   void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
+  [[nodiscard]] service::BackgroundIndexCallbacks MakeBackgroundCallbacks();
 
   std::shared_ptr<service::IndexPipeline> pipeline_;
 
@@ -109,11 +112,10 @@ class MainWindow : public QMainWindow {
   bool is_loading_more_ = false;
   static constexpr int kPageSize = 100;
 
-  std::thread background_index_thread_;
-  std::atomic<bool> is_indexing_{false};
-  std::atomic<bool> pending_reindex_{false};
+  std::shared_ptr<CallbackTarget> callback_target_;
+  bool is_task_active_{false};
+  quint64 active_generation_{0};
   bool splitter_initialized_{false};
-  int current_task_type_{kTaskInitial};
 
   QSystemTrayIcon *tray_icon_ = nullptr;
   QMenu *tray_menu_ = nullptr;
@@ -121,7 +123,6 @@ class MainWindow : public QMainWindow {
   QAction *action_settings_ = nullptr;
   QAction *action_quit_ = nullptr;
   bool force_quit_{false};
-  std::chrono::steady_clock::time_point index_start_time_;
 };
 
 }  // namespace gui

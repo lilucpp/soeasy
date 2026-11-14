@@ -8,6 +8,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/snippet_highlighter.h"
 #include "storage/storage_engine.h"
 #include "tests/test_helper.h"
 
@@ -137,7 +138,7 @@ int main(int argc, char *argv[]) {
     for (const auto &hit : hits) {
       std::string content;
       engine.GetDocumentContent(hit.doc_id, &content);
-      std::string snip = soeasy::storage::StorageEngine::GenerateSnippet(content, {q}, 80);
+      std::string snip = soeasy::common::SnippetHighlighter::GenerateSnippet(content, {q}, 80);
       std::cout << "     └─ [" << hit.file_name << "] (BM25评分: " << std::setprecision(4) << hit.rank << ")\n";
       std::cout << "        摘要: " << snip << "\n";
     }

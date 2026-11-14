@@ -7,6 +7,7 @@
 #include <QAbstractTableModel>
 #include <QString>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace soeasy {
@@ -51,10 +52,12 @@ class SearchTableModel : public QAbstractTableModel {
   [[nodiscard]] int rowCount(const QModelIndex &parent = QModelIndex()) const override;
   [[nodiscard]] int columnCount(const QModelIndex &parent = QModelIndex()) const override;
   [[nodiscard]] QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
-  [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
+  [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
+                                    int role = Qt::DisplayRole) const override;
 
   void SetResults(const std::vector<DisplayResultItem> &items);
   void AppendResults(const std::vector<DisplayResultItem> &items);
+  bool UpdateSnippet(int64_t doc_id, const QString &snippet_html);
   void ClearResults();
   void RetranslateUi();
   void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
@@ -64,7 +67,10 @@ class SearchTableModel : public QAbstractTableModel {
   [[nodiscard]] const std::vector<DisplayResultItem> &items() const { return items_; }
 
  private:
+  void RebuildDocIdIndex();
+
   std::vector<DisplayResultItem> items_;
+  std::unordered_map<int64_t, size_t> doc_id_to_row_;
 };
 
 }  // namespace gui

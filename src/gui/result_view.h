@@ -7,14 +7,17 @@
 #include <QHeaderView>
 #include <QMouseEvent>
 #include <QTableView>
+#include <QThreadPool>
 #include <QTimer>
+#include <atomic>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "gui/hover_preview_popup.h"
 #include "gui/search_table_model.h"
-#include "storage/storage_engine.h"
+#include "service/isearch_coordinator.h"
 
 namespace soeasy {
 namespace gui {
@@ -30,9 +33,9 @@ class ResultView : public QTableView {
 
  public:
   explicit ResultView(QWidget *parent = nullptr);
-  ~ResultView() override = default;
+  ~ResultView() override;
 
-  void SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage);
+  void SetSearchCoordinator(std::shared_ptr<service::ISearchCoordinator> coordinator);
   void SetCurrentQuery(const QString &query);
   void SetResults(const std::vector<DisplayResultItem> &items);
   void AppendResults(const std::vector<DisplayResultItem> &items);
@@ -40,6 +43,7 @@ class ResultView : public QTableView {
   void RetranslateUi();
 
   void EnsureSnippetForRows(int start_row, int end_row);
+  void WaitForSnippetTasks(int timeout_ms = 2000);
   void OpenCurrentSelectedItem();
 
   [[nodiscard]] int rowCount() const { return model_ ? model_->rowCount() : 0; }
@@ -78,9 +82,12 @@ class ResultView : public QTableView {
   QTimer *hover_timer_ = nullptr;
   QTimer *scroll_timer_ = nullptr;
 
-  std::shared_ptr<storage::StorageEngine> storage_;
+  std::shared_ptr<service::ISearchCoordinator> search_coordinator_;
   QString current_query_;
+  std::shared_ptr<std::atomic<uint64_t>> query_epoch_ = std::make_shared<std::atomic<uint64_t>>(0);
   std::unordered_map<int64_t, std::string> snippet_lru_cache_;
+  std::unordered_set<int64_t> in_flight_snippet_ids_;
+  QThreadPool snippet_pool_;
 
   int hover_row_ = -1;
   QPoint hover_pos_;

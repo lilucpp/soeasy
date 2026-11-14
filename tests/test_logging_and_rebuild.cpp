@@ -40,7 +40,8 @@ int main(int argc, char *argv[]) {
   std::cout << "========================================================\n\n";
 
   const std::string test_dir = soeasy::test::GetTestTempPath("soeasy_log_rebuild_test").string();
-  const std::string test_log = (soeasy::test::GetTestTempPath("soeasy_log_rebuild_test") / "logs" / "test_rolling.log").string();
+  const std::string test_log =
+      (soeasy::test::GetTestTempPath("soeasy_log_rebuild_test") / "logs" / "test_rolling.log").string();
   const std::string test_db = (soeasy::test::GetTestTempPath("soeasy_log_rebuild_test") / "test_index.db").string();
   const std::string passphrase = "SoEasy_Log_Test_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
@@ -107,7 +108,7 @@ int main(int argc, char *argv[]) {
   WriteFile(file3, "动态生成的新文件，用于验证实时文件监控日志输出。");
 
   // 等待去抖动与自动索引
-  std::vector<soeasy::storage::SearchResultItem> hits3;
+  std::vector<soeasy::service::SearchResultItem> hits3;
   for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     hits3 = pipeline->SearchFulltext("动态生成", 10);
@@ -152,7 +153,15 @@ int main(int argc, char *argv[]) {
 
   auto hits_rebuild2 = pipeline->SearchFulltext("分词器", 10);
   assert(!hits_rebuild2.empty() && "Rebuilt index must find case2");
-  std::cout << "  [+] 重建后全文检索命中: " << hits_rebuild2[0].file_name << "\n\n";
+  std::cout << "  [+] 重建后全文检索命中: " << hits_rebuild2[0].file_name << "\n";
+
+  // 验证重建后 CQRS 查询侧 NameIndex 未发生指针脑裂，且支持通过门面获取正文
+  auto name_hits_rebuild = pipeline->SearchFilename("rebuild_case1", 10);
+  assert(!name_hits_rebuild.empty() && "Rebuilt NameIndex must be visible to SearchCoordinator");
+  assert(pipeline->IndexedFileCount() == 5 && "Pipeline NameIndex count must reflect all 5 rebuilt files");
+  std::string rebuilt_doc_content;
+  assert(pipeline->GetDocumentContent(hits_rebuild1[0].doc_id, &rebuilt_doc_content) && !rebuilt_doc_content.empty());
+  std::cout << "  [+] 重建后文件名秒搜与正文读取验证通过 (IndexedFileCount=" << pipeline->IndexedFileCount() << ")\n\n";
 
   // [Step 6] 校验日志文件内容并确认满足所有需求
   std::cout << "[Step 6] 检验实际生成的滚动日志文件及内容...\n";

@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "common/logger.h"
-#include "common/snippet_highlighter.h"
 #include "storage/fts5_jieba_tokenizer.h"
 #include "utf8.h"
 #include "zstd.h"
@@ -113,10 +112,6 @@ std::string EscapeLikePattern(const std::string &input) {
 }
 }  // namespace
 
-std::vector<std::string> StorageEngine::ExtractKeywordsFromQuery(const std::string &query) {
-  return common::SnippetHighlighter::ExtractKeywordsFromQuery(query);
-}
-
 StorageEngine::StorageEngine() = default;
 
 StorageEngine::~StorageEngine() {
@@ -151,8 +146,13 @@ void StorageEngine::CloseInternal() {
   CloseUnlocked();
 }
 
-void StorageEngine::Close() {
+void StorageEngine::DoClose() {
   CloseInternal();
+}
+
+bool StorageEngine::DoIsOpen() const {
+  std::lock_guard<std::mutex> lock(writer_mutex_);
+  return writer_db_ != nullptr;
 }
 
 void StorageEngine::CloseUnlocked() {
@@ -163,10 +163,10 @@ void StorageEngine::CloseUnlocked() {
   uncommitted_count_ = 0;
 }
 
-bool StorageEngine::BeginTransaction() {
+bool StorageEngine::DoBeginTransaction() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   if (IsInTransactionUnlocked()) {
@@ -176,7 +176,7 @@ bool StorageEngine::BeginTransaction() {
   // Use BEGIN IMMEDIATE to eliminate lock upgrade deadlocks in WAL mode
   int rc = sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "BEGIN IMMEDIATE failed";
+    SetLastError(err ? err : "BEGIN IMMEDIATE failed");
     sqlite3_free(err);
     return false;
   }
@@ -184,14 +184,14 @@ bool StorageEngine::BeginTransaction() {
   return true;
 }
 
-bool StorageEngine::CommitTransaction() {
+bool StorageEngine::DoCommitTransaction() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   return CommitTransactionUnlocked();
 }
 
 bool StorageEngine::CommitTransactionUnlocked() {
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   if (!IsInTransactionUnlocked()) {
@@ -201,17 +201,17 @@ bool StorageEngine::CommitTransactionUnlocked() {
   int rc = sqlite3_exec(writer_db_, "COMMIT;", nullptr, nullptr, &err);
   uncommitted_count_ = 0;
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "COMMIT failed";
+    SetLastError(err ? err : "COMMIT failed");
     sqlite3_free(err);
     return false;
   }
   return true;
 }
 
-bool StorageEngine::RollbackTransaction() {
+bool StorageEngine::DoRollbackTransaction() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   if (!IsInTransactionUnlocked()) {
@@ -221,14 +221,14 @@ bool StorageEngine::RollbackTransaction() {
   int rc = sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, &err);
   uncommitted_count_ = 0;
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "ROLLBACK failed";
+    SetLastError(err ? err : "ROLLBACK failed");
     sqlite3_free(err);
     return false;
   }
   return true;
 }
 
-bool StorageEngine::IsInTransaction() const {
+bool StorageEngine::DoIsInTransaction() const {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   return IsInTransactionUnlocked();
 }
@@ -240,54 +240,54 @@ bool StorageEngine::IsInTransactionUnlocked() const {
   return sqlite3_get_autocommit(writer_db_) == 0;
 }
 
-bool StorageEngine::OptimizeFtsIndex() {
+bool StorageEngine::DoOptimizeFtsIndex() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   char *err = nullptr;
   int rc = sqlite3_exec(writer_db_, "INSERT INTO fts_docs(fts_docs) VALUES('optimize');", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "OptimizeFtsIndex failed";
+    SetLastError(err ? err : "OptimizeFtsIndex failed");
     sqlite3_free(err);
     return false;
   }
   return true;
 }
 
-bool StorageEngine::CheckpointWal() {
+bool StorageEngine::DoCheckpointWal() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   return CheckpointWalUnlocked();
 }
 
 bool StorageEngine::CheckpointWalUnlocked() {
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   char *err = nullptr;
   int rc = sqlite3_exec(writer_db_, "PRAGMA wal_checkpoint(TRUNCATE);", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "PRAGMA wal_checkpoint failed";
+    SetLastError(err ? err : "PRAGMA wal_checkpoint failed");
     sqlite3_free(err);
     return false;
   }
   return true;
 }
 
-bool StorageEngine::Rekey(const std::string &new_key) {
+bool StorageEngine::DoRekey(const std::string &new_key) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   if (IsInTransactionUnlocked()) {
-    last_error_ = "Cannot rekey while in active transaction";
+    SetLastError("Cannot rekey while in active transaction");
     return false;
   }
   if (!CheckpointWalUnlocked()) {
-    last_error_ = "Checkpoint failed before rekey: " + last_error_;
+    SetLastError("Checkpoint failed before rekey: " + LastErrorCopy());
     return false;
   }
 
@@ -297,8 +297,8 @@ bool StorageEngine::Rekey(const std::string &new_key) {
   LOG_INFO("[StorageEngine] Executing atomic database rekey with SQLite3MC...");
   int rc = sqlite3_rekey(writer_db_, new_key.c_str(), static_cast<int>(new_key.size()));
   if (rc != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(writer_db_);
-    LOG_ERROR("[StorageEngine] sqlite3_rekey failed: {}", last_error_);
+    SetLastError(sqlite3_errmsg(writer_db_));
+    LOG_ERROR("[StorageEngine] sqlite3_rekey failed: {}", LastErrorCopy());
     // Fallback: restore reader pool with old key
     reader_pool_.Init(db_path_, key_, dict_dir_, 4);
     return false;
@@ -314,7 +314,7 @@ bool StorageEngine::Rekey(const std::string &new_key) {
   return true;
 }
 
-bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
+bool StorageEngine::DoGetFragmentation(StorageFragmentation *out_frag) {
   if (!out_frag) {
     return false;
   }
@@ -328,7 +328,7 @@ bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
     target_db = writer_db_;
   }
   if (!target_db) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
 
@@ -347,7 +347,7 @@ bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
       SQLite::Statement stmt_fc(*writer_cpp_db_, "PRAGMA freelist_count;");
       if (stmt_fc.executeStep()) free_count = stmt_fc.getColumn(0).getInt64();
     } catch (const std::exception &e) {
-      last_error_ = e.what();
+      SetLastError(e.what());
       return false;
     }
   } else {
@@ -378,10 +378,10 @@ bool StorageEngine::GetFragmentation(StorageFragmentation *out_frag) {
   return true;
 }
 
-bool StorageEngine::IncrementalVacuum(int pages) {
+bool StorageEngine::DoIncrementalVacuum(int pages) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   char *err = nullptr;
@@ -393,17 +393,17 @@ bool StorageEngine::IncrementalVacuum(int pages) {
   }
   int rc = sqlite3_exec(writer_db_, sql.c_str(), nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "PRAGMA incremental_vacuum failed";
+    SetLastError(err ? err : "PRAGMA incremental_vacuum failed");
     sqlite3_free(err);
     return false;
   }
   return true;
 }
 
-bool StorageEngine::Vacuum() {
+bool StorageEngine::DoVacuum() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   if (IsInTransactionUnlocked()) {
@@ -412,7 +412,7 @@ bool StorageEngine::Vacuum() {
   char *err = nullptr;
   int rc = sqlite3_exec(writer_db_, "VACUUM;", nullptr, nullptr, &err);
   if (rc != SQLITE_OK) {
-    last_error_ = err ? err : "VACUUM failed";
+    SetLastError(err ? err : "VACUUM failed");
     sqlite3_free(err);
     return false;
   }
@@ -420,10 +420,10 @@ bool StorageEngine::Vacuum() {
   return true;
 }
 
-bool StorageEngine::SetBulkMode(bool enable) {
+bool StorageEngine::DoSetBulkMode(bool enable) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
   if (enable) {
@@ -439,10 +439,26 @@ bool StorageEngine::SetBulkMode(bool enable) {
   return true;
 }
 
-std::string StorageEngine::GetLastError() const {
+void StorageEngine::SetLastError(std::string msg) {
+  std::lock_guard<std::mutex> lock(error_mutex_);
+  last_error_ = std::move(msg);
+}
+
+std::string StorageEngine::LastErrorCopy() const {
+  std::lock_guard<std::mutex> lock(error_mutex_);
+  return last_error_;
+}
+
+void StorageEngine::ClearLastError() {
+  std::lock_guard<std::mutex> lock(error_mutex_);
+  last_error_.clear();
+}
+
+std::string StorageEngine::DoGetLastError() const {
   std::lock_guard<std::mutex> lock(writer_mutex_);
-  if (!last_error_.empty()) {
-    return last_error_;
+  std::string error = LastErrorCopy();
+  if (!error.empty()) {
+    return error;
   }
   if (writer_db_) {
     return sqlite3_errmsg(writer_db_);
@@ -450,10 +466,10 @@ std::string StorageEngine::GetLastError() const {
   return "Database not open";
 }
 
-bool StorageEngine::Open(const std::string &db_path, const std::string &key, const std::string &dict_dir) {
+bool StorageEngine::DoOpen(const std::string &db_path, const std::string &key, const std::string &dict_dir) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   CloseUnlocked();
-  last_error_.clear();
+  ClearLastError();
   db_path_ = db_path;
   key_ = key;
   dict_dir_ = dict_dir;
@@ -462,7 +478,7 @@ bool StorageEngine::Open(const std::string &db_path, const std::string &key, con
     writer_cpp_db_ = std::make_unique<SQLite::Database>(db_path, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
     writer_db_ = writer_cpp_db_->getHandle();
   } catch (const std::exception &e) {
-    last_error_ = e.what();
+    SetLastError(e.what());
     CloseUnlocked();
     return false;
   }
@@ -475,7 +491,7 @@ bool StorageEngine::Open(const std::string &db_path, const std::string &key, con
   // Register FTS5 Jieba tokenizer before compiling FTS5 tables
   int rc = RegisterFts5JiebaTokenizer(writer_db_, dict_dir);
   if (rc != SQLITE_OK) {
-    last_error_ = "Failed to register FTS5 Jieba tokenizer on writer: " + std::string(sqlite3_errmsg(writer_db_));
+    SetLastError("Failed to register FTS5 Jieba tokenizer on writer: " + std::string(sqlite3_errmsg(writer_db_)));
     CloseUnlocked();
     return false;
   }
@@ -499,21 +515,27 @@ bool StorageEngine::ExecutePragmas(sqlite3 *db, const std::string &key) {
 
   // Configure SQLite3MultipleCiphers for AES-128-CBC and 1 KDF iteration
   if (sqlite3_exec(db, "PRAGMA cipher = 'aes128cbc';", nullptr, nullptr, &err_msg) != SQLITE_OK) {
-    last_error_ = err_msg ? err_msg : "PRAGMA cipher failed";
+    SetLastError(err_msg ? err_msg : "PRAGMA cipher failed");
     sqlite3_free(err_msg);
     return false;
   }
 
   if (sqlite3_exec(db, "PRAGMA kdf_iter = 1;", nullptr, nullptr, &err_msg) != SQLITE_OK) {
-    last_error_ = err_msg ? err_msg : "PRAGMA kdf_iter failed";
+    SetLastError(err_msg ? err_msg : "PRAGMA kdf_iter failed");
     sqlite3_free(err_msg);
     return false;
   }
 
-  // Set encryption key
-  std::string key_sql = "PRAGMA key = '" + key + "';";
+  // Set encryption key (escape single quotes for SQL literal safety)
+  std::string escaped_key;
+  escaped_key.reserve(key.size());
+  for (char c : key) {
+    if (c == '\'') escaped_key.push_back('\'');
+    escaped_key.push_back(c);
+  }
+  std::string key_sql = "PRAGMA key = '" + escaped_key + "';";
   if (sqlite3_exec(db, key_sql.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK) {
-    last_error_ = err_msg ? err_msg : "PRAGMA key failed";
+    SetLastError(err_msg ? err_msg : "PRAGMA key failed");
     sqlite3_free(err_msg);
     return false;
   }
@@ -528,7 +550,7 @@ bool StorageEngine::ExecutePragmas(sqlite3 *db, const std::string &key) {
   sqlite3_stmt *check_stmt = nullptr;
   int rc = sqlite3_prepare_v2(db, "SELECT count(*) FROM sqlite_master;", -1, &check_stmt, nullptr);
   if (rc != SQLITE_OK) {
-    last_error_ = "Database key verification failed: " + std::string(sqlite3_errmsg(db));
+    SetLastError("Database key verification failed: " + std::string(sqlite3_errmsg(db)));
     return false;
   }
   sqlite3_step(check_stmt);
@@ -590,17 +612,17 @@ bool StorageEngine::InitTables() {
   char *err_msg = nullptr;
   int rc = sqlite3_exec(writer_db_, schema_sql, nullptr, nullptr, &err_msg);
   if (rc != SQLITE_OK) {
-    last_error_ = err_msg ? err_msg : "Schema initialization failed";
+    SetLastError(err_msg ? err_msg : "Schema initialization failed");
     sqlite3_free(err_msg);
     return false;
   }
   return true;
 }
 
-bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
+bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
 
@@ -612,7 +634,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   size_t compressed_size =
       ZSTD_compress(compressed.data(), max_compressed_size, entry.utf8_content.data(), raw_size, 3);
   if (ZSTD_isError(compressed_size)) {
-    last_error_ = "Zstd compression error: " + std::string(ZSTD_getErrorName(compressed_size));
+    SetLastError("Zstd compression error: " + std::string(ZSTD_getErrorName(compressed_size)));
     return false;
   }
   compressed.resize(compressed_size);
@@ -649,7 +671,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
           parse_stat=excluded.parse_stat;
     )SQL";
     if (sqlite3_prepare_v2(writer_db_, files_sql, -1, &stmt_files_insert_, nullptr) != SQLITE_OK) {
-      last_error_ = sqlite3_errmsg(writer_db_);
+      SetLastError(sqlite3_errmsg(writer_db_));
       if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
     }
@@ -670,7 +692,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_bind_int(stmt_files_insert_, 7, entry.parse_level);
 
   if (sqlite3_step(stmt_files_insert_) != SQLITE_DONE) {
-    last_error_ = sqlite3_errmsg(writer_db_);
+    SetLastError(sqlite3_errmsg(writer_db_));
     sqlite3_reset(stmt_files_insert_);
     if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
@@ -688,7 +710,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
           zstd_body=excluded.zstd_body;
     )SQL";
     if (sqlite3_prepare_v2(writer_db_, contents_sql, -1, &stmt_contents_insert_, nullptr) != SQLITE_OK) {
-      last_error_ = sqlite3_errmsg(writer_db_);
+      SetLastError(sqlite3_errmsg(writer_db_));
       if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
     }
@@ -702,7 +724,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_bind_blob(stmt_contents_insert_, 4, compressed.data(), static_cast<int>(compressed.size()), SQLITE_TRANSIENT);
 
   if (sqlite3_step(stmt_contents_insert_) != SQLITE_DONE) {
-    last_error_ = sqlite3_errmsg(writer_db_);
+    SetLastError(sqlite3_errmsg(writer_db_));
     sqlite3_reset(stmt_contents_insert_);
     if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
@@ -725,7 +747,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   if (!stmt_fts_ins_) {
     const char *fts_ins_sql = "INSERT INTO fts_docs (rowid, file_name, body) VALUES (?1, ?2, ?3);";
     if (sqlite3_prepare_v2(writer_db_, fts_ins_sql, -1, &stmt_fts_ins_, nullptr) != SQLITE_OK) {
-      last_error_ = sqlite3_errmsg(writer_db_);
+      SetLastError(sqlite3_errmsg(writer_db_));
       if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
     }
@@ -738,7 +760,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_bind_text(stmt_fts_ins_, 3, entry.utf8_content.c_str(), -1, SQLITE_TRANSIENT);
 
   if (sqlite3_step(stmt_fts_ins_) != SQLITE_DONE) {
-    last_error_ = sqlite3_errmsg(writer_db_);
+    SetLastError(sqlite3_errmsg(writer_db_));
     sqlite3_reset(stmt_fts_ins_);
     if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
@@ -753,22 +775,7 @@ bool StorageEngine::IndexDocument(const DocumentIndexEntry &entry) {
   return true;
 }
 
-bool StorageEngine::IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name,
-                                  const std::string &ext, uint64_t file_size, int64_t mtime, int parse_level,
-                                  const std::string &utf8_content) {
-  DocumentIndexEntry entry;
-  entry.doc_id = doc_id;
-  entry.file_path = file_path;
-  entry.file_name = file_name;
-  entry.ext = ext;
-  entry.file_size = file_size;
-  entry.mtime = mtime;
-  entry.parse_level = parse_level;
-  entry.utf8_content = utf8_content;
-  return IndexDocument(entry);
-}
-
-bool StorageEngine::DeleteDocument(int64_t doc_id) {
+bool StorageEngine::DoDeleteDocument(int64_t doc_id) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
     return false;
@@ -793,7 +800,7 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
       stmt3.bind(1, doc_id);
       stmt3.exec();
     } catch (const std::exception &e) {
-      last_error_ = e.what();
+      SetLastError(e.what());
       if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
     }
@@ -826,10 +833,10 @@ bool StorageEngine::DeleteDocument(int64_t doc_id) {
   return true;
 }
 
-int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) {
+int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return -1;
   }
   if (dir_path.empty()) {
@@ -854,7 +861,7 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
   SqliteStmtScope stmt_select;
   int rc = sqlite3_prepare_v2(writer_db_, query_sql, -1, stmt_select.address(), nullptr);
   if (rc != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(writer_db_);
+    SetLastError(sqlite3_errmsg(writer_db_));
     return -1;
   }
 
@@ -944,7 +951,7 @@ int64_t StorageEngine::DeleteDirectory(const std::string &dir_path, std::vector<
   return static_cast<int64_t>(doc_ids.size());
 }
 
-bool StorageEngine::ClearAll() {
+bool StorageEngine::DoClearAll() {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
     return false;
@@ -964,7 +971,7 @@ bool StorageEngine::ClearAll() {
       writer_cpp_db_->exec("VACUUM;");
       return InitTables();
     } catch (const std::exception &e) {
-      last_error_ = e.what();
+      SetLastError(e.what());
       return false;
     }
   }
@@ -981,7 +988,7 @@ bool StorageEngine::ClearAll() {
 
   int rc = sqlite3_exec(writer_db_, sql, nullptr, nullptr, &err_msg);
   if (rc != SQLITE_OK) {
-    last_error_ = err_msg ? err_msg : "ClearAll failed";
+    SetLastError(err_msg ? err_msg : "ClearAll failed");
     sqlite3_free(err_msg);
     sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     return false;
@@ -997,13 +1004,13 @@ bool StorageEngine::ClearAll() {
   return InitTables();
 }
 
-ScopedReadConnection StorageEngine::AcquireReadConnection() {
+ScopedReadConnection StorageEngine::DoAcquireReadConnection() {
   ScopedReadConnection conn = reader_pool_.Acquire(5000);
   return conn;
 }
 
-std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, int limit, int offset,
-                                                    const std::string &path_prefix, int *out_total_count) {
+std::vector<SearchResultItem> StorageEngine::DoSearch(const std::string &query, int limit, int offset,
+                                                      const std::string &path_prefix, int *out_total_count) {
   std::vector<SearchResultItem> results;
   if (out_total_count) {
     *out_total_count = 0;
@@ -1079,7 +1086,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
     SqliteStmtScope stmt;
     if (sqlite3_prepare_v2(target_db, search_sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
       if (!is_retry) return false;
-      last_error_ = sqlite3_errmsg(target_db);
+      SetLastError(sqlite3_errmsg(target_db));
       return true;
     }
 
@@ -1109,7 +1116,7 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
           results.clear();
           return false;
         }
-        last_error_ = sqlite3_errmsg(target_db);
+        SetLastError(sqlite3_errmsg(target_db));
         break;
       }
     }
@@ -1127,30 +1134,10 @@ std::vector<SearchResultItem> StorageEngine::Search(const std::string &query, in
     }
   }
 
-  // Extract snippet surrounding matched keywords from decompressed document body
-  auto keywords = ExtractKeywordsFromQuery(query);
-  const size_t max_body_snippets = std::min(results.size(), size_t(10));
-  for (size_t i = 0; i < results.size(); ++i) {
-    auto &item = results[i];
-    if (i < max_body_snippets) {
-      std::string full_text;
-      if (GetDocumentContentOnDb(target_db, item.doc_id, &full_text) && !full_text.empty()) {
-        item.snippet = GenerateSnippet(full_text, keywords, 140);
-        if (!item.snippet.empty()) {
-          item.has_body_snippet = true;
-        }
-      }
-    }
-    if (item.snippet.empty()) {
-      item.snippet = GenerateSnippet(item.file_name, keywords, 100);
-      item.has_body_snippet = false;
-    }
-  }
-
   return results;
 }
 
-bool StorageEngine::GetDocumentContent(int64_t doc_id, std::string *out_content) {
+bool StorageEngine::DoGetDocumentContent(int64_t doc_id, std::string *out_content) {
   ScopedReadConnection read_conn = AcquireReadConnection();
   sqlite3 *target_db = read_conn.get();
   std::unique_lock<std::mutex> fallback_lock;
@@ -1163,50 +1150,68 @@ bool StorageEngine::GetDocumentContent(int64_t doc_id, std::string *out_content)
 
 bool StorageEngine::GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content) {
   if (!out_content) {
-    last_error_ = "Output pointer is null";
+    SetLastError("Output pointer is null");
     return false;
   }
   if (!db) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
 
   const char *sql = "SELECT raw_size, zstd_body FROM doc_contents WHERE doc_id = ?1;";
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(db);
+    SetLastError(sqlite3_errmsg(db));
     return false;
   }
 
   sqlite3_bind_int64(stmt, 1, doc_id);
 
   if (sqlite3_step(stmt) != SQLITE_ROW) {
-    last_error_ = "Document content not found";
+    SetLastError("Document content not found");
     return false;
   }
 
-  size_t raw_size = static_cast<size_t>(sqlite3_column_int64(stmt, 0));
+  const int64_t raw_size_i64 = sqlite3_column_int64(stmt, 0);
   const void *blob_data = sqlite3_column_blob(stmt, 1);
   int blob_bytes = sqlite3_column_bytes(stmt, 1);
 
-  if (!blob_data || blob_bytes <= 0 || raw_size == 0) {
+  // Guard against corrupted/overflowed metadata: never trust the stored size for allocation.
+  constexpr int64_t kMaxDecompressedDocBytes = 512LL * 1024LL * 1024LL;
+  if (raw_size_i64 < 0 || raw_size_i64 > kMaxDecompressedDocBytes) {
+    SetLastError("Document content size out of range: " + std::to_string(raw_size_i64));
+    out_content->clear();
+    return false;
+  }
+
+  if (!blob_data || blob_bytes <= 0 || raw_size_i64 == 0) {
     out_content->clear();
     return true;
   }
 
+  const size_t raw_size = static_cast<size_t>(raw_size_i64);
   out_content->resize(raw_size);
   size_t decompressed_size = ZSTD_decompress(&(*out_content)[0], raw_size, blob_data, static_cast<size_t>(blob_bytes));
 
   if (ZSTD_isError(decompressed_size)) {
-    last_error_ = "Zstd decompression error: " + std::string(ZSTD_getErrorName(decompressed_size));
+    SetLastError("Zstd decompression error: " + std::string(ZSTD_getErrorName(decompressed_size)));
     out_content->clear();
     return false;
+  }
+
+  // ZSTD_decompress may return fewer bytes than the stored raw_size for legacy/corrupt rows;
+  // shrink so callers never see trailing NUL padding.
+  if (decompressed_size != raw_size) {
+    LOG_WARN("[StorageEngine] Decompressed size mismatch for doc {}: stored {}, actual {}", doc_id, raw_size,
+             decompressed_size);
+    out_content->resize(decompressed_size);
   }
 
   return true;
 }
 
-bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) {
+bool StorageEngine::DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime,
+                                      int *out_parse_stat) {
   ScopedReadConnection read_conn = AcquireReadConnection();
   sqlite3 *target_db = read_conn.get();
   std::unique_lock<std::mutex> fallback_lock;
@@ -1215,14 +1220,14 @@ bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int
     target_db = writer_db_;
   }
   if (!target_db) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return false;
   }
 
   const char *sql = "SELECT file_size, mtime, parse_stat FROM files WHERE doc_id = ?;";
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(target_db);
+    SetLastError(sqlite3_errmsg(target_db));
     return false;
   }
 
@@ -1243,7 +1248,7 @@ bool StorageEngine::GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int
   return found;
 }
 
-std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
+std::vector<FileMetaRecord> StorageEngine::DoGetAllFilesMetadata() {
   std::vector<FileMetaRecord> results;
   ScopedReadConnection read_conn = AcquireReadConnection();
   sqlite3 *target_db = read_conn.get();
@@ -1253,14 +1258,14 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
     target_db = writer_db_;
   }
   if (!target_db) {
-    last_error_ = "Database not open";
+    SetLastError("Database not open");
     return results;
   }
 
   const char *sql = "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat FROM files;";
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
-    last_error_ = sqlite3_errmsg(target_db);
+    SetLastError(sqlite3_errmsg(target_db));
     return results;
   }
 
@@ -1277,11 +1282,6 @@ std::vector<FileMetaRecord> StorageEngine::GetAllFilesMetadata() {
     results.push_back(std::move(r));
   }
   return results;
-}
-
-std::string StorageEngine::GenerateSnippet(const std::string &full_text, const std::vector<std::string> &keywords,
-                                           size_t max_chars) {
-  return common::SnippetHighlighter::GenerateSnippet(full_text, keywords, max_chars);
 }
 
 }  // namespace storage

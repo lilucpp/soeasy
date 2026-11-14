@@ -11,7 +11,7 @@
 #include <memory>
 
 #include "gui/settings/isettings_tab.h"
-#include "storage/dat_jieba.h"
+#include "service/dictionary_service.h"
 
 namespace soeasy {
 namespace gui {
@@ -43,7 +43,7 @@ class UserDictTab : public ISettingsTab {
   QPushButton *btn_rm_user_word_ = nullptr;
   QLabel *user_dict_count_label_ = nullptr;
 
-  std::unique_ptr<storage::DatJieba> jieba_;
+  std::unique_ptr<service::DictionaryService> dictionary_service_;
   QString user_dict_file_path_;
 };
 

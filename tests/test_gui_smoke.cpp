@@ -269,13 +269,12 @@ int main(int argc, char *argv[]) {
 
   // Wait for indexing to complete
   for (int i = 0; i < 100; ++i) {
-    if (pipeline->name_index() && pipeline->name_index()->size() >= 3) break;
+    if (pipeline->IndexedFileCount() >= 3) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   pipeline->FlushWriteQueue();
-  CHECK(pipeline->name_index());
-  CHECK(pipeline->name_index()->size() >= 2);
-  std::cout << "  -> 数据集已完成实时解析与倒排索引构建, 索引文件数: " << pipeline->name_index()->size() << "\n";
+  CHECK(pipeline->IndexedFileCount() >= 2);
+  std::cout << "  -> 数据集已完成实时解析与倒排索引构建, 索引文件数: " << pipeline->IndexedFileCount() << "\n";
 
   // -------------------------------------------------------------
   // Test 5: ContentPreviewDialog with decompressed text & keywords
@@ -285,7 +284,8 @@ int main(int argc, char *argv[]) {
     int64_t doc_id = soeasy::service::IndexPipeline::GenerateDocId(doc1);
     std::vector<std::string> kws = {"人工智能", "SoEasy"};
 
-    soeasy::gui::ContentPreviewDialog preview_dlg(doc_id, "chinese_ai.txt", QString::fromStdString(doc1), kws, storage);
+    soeasy::gui::ContentPreviewDialog preview_dlg(doc_id, "chinese_ai.txt", QString::fromStdString(doc1), kws,
+                                                  pipeline->search_coordinator());
 
     // Verify document loaded and displayed
     CHECK(preview_dlg.windowTitle().contains("chinese_ai.txt"));
@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
 
     // Trigger full-text search: "人工智能"
     pipeline->FlushWriteQueue();
-    std::vector<soeasy::storage::SearchResultItem> results_ai;
+    std::vector<soeasy::service::SearchResultItem> results_ai;
     for (int retry = 0; retry < 50; ++retry) {
       results_ai = pipeline->SearchFulltext("人工智能", 10, 0);
       if (!results_ai.empty()) break;

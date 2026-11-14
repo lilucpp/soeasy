@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "common/snippet_highlighter.h"
 #include "miniz.h"
 #include "service/worker_guard.h"
 #include "storage/storage_engine.h"
@@ -366,22 +367,30 @@ int main(int argc, char *argv[]) {
   auto hits_ai = storage->Search("人工智能", 10, 0);
   CHECK(!hits_ai.empty());
   CHECK(hits_ai[0].doc_id == 1001);
+  std::string ai_content;
+  CHECK(storage->GetDocumentContent(hits_ai[0].doc_id, &ai_content));
   std::cout << "  [+] 检索 DOCX 成功: \"人工智能\" -> 命中: " << hits_ai[0].file_name
-            << ", 摘要: " << hits_ai[0].snippet << "\n";
+            << ", 摘要: " << soeasy::common::SnippetHighlighter::GenerateSnippet(ai_content, {"人工智能"}, 100) << "\n";
 
   // Search keyword in XLSX
   auto hits_finance = storage->Search("财务报表", 10, 0);
   CHECK(!hits_finance.empty());
   CHECK(hits_finance[0].doc_id == 1002);
+  std::string finance_content;
+  CHECK(storage->GetDocumentContent(hits_finance[0].doc_id, &finance_content));
   std::cout << "  [+] 检索 XLSX 成功: \"财务报表\" -> 命中: " << hits_finance[0].file_name
-            << ", 摘要: " << hits_finance[0].snippet << "\n";
+            << ", 摘要: " << soeasy::common::SnippetHighlighter::GenerateSnippet(finance_content, {"财务报表"}, 100)
+            << "\n";
 
   // Search keyword in PPTX
   auto hits_roadshow = storage->Search("路演发布会", 10, 0);
   CHECK(!hits_roadshow.empty());
   CHECK(hits_roadshow[0].doc_id == 1003);
+  std::string roadshow_content;
+  CHECK(storage->GetDocumentContent(hits_roadshow[0].doc_id, &roadshow_content));
   std::cout << "  [+] 检索 PPTX 成功: \"路演发布会\" -> 命中: " << hits_roadshow[0].file_name
-            << ", 摘要: " << hits_roadshow[0].snippet << "\n";
+            << ", 摘要: " << soeasy::common::SnippetHighlighter::GenerateSnippet(roadshow_content, {"路演发布会"}, 100)
+            << "\n";
 
   // -------------------------------------------------------------
   // Test 8: DocToText Smart File Logging Mode (Disabled vs Enabled)

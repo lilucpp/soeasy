@@ -71,6 +71,13 @@ class EventDebouncer {
    */
   void Flush();
 
+  /**
+   * @brief Drop all currently pending (not yet delivered) events without invoking callbacks.
+   *
+   * Used when a full rescan is about to make every queued event redundant.
+   */
+  void ClearPending();
+
   void set_debounce_ms(uint32_t ms) { debounce_ms_ = ms; }
   uint32_t debounce_ms() const { return debounce_ms_; }
 

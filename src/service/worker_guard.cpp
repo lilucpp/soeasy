@@ -33,8 +33,6 @@
 #include "common/logger.h"
 #include "common/shm_pool.h"
 #include "soeasy_ipc.capnp.h"
-#include "worker/l2_office_parser.h"
-#include "worker/worker_loop.h"
 
 namespace soeasy {
 namespace service {

@@ -8,12 +8,14 @@
 #include <QPushButton>
 #include <QString>
 #include <QWidget>
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "gui/document_viewer_widget.h"
-#include "storage/storage_engine.h"
+#include "service/isearch_coordinator.h"
 
 namespace soeasy {
 namespace gui {
@@ -25,7 +27,7 @@ class PreviewPanel : public QWidget {
   explicit PreviewPanel(QWidget *parent = nullptr);
   ~PreviewPanel() override = default;
 
-  void SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage);
+  void SetSearchCoordinator(std::shared_ptr<service::ISearchCoordinator> coordinator);
 
   void LoadDocument(int64_t doc_id, const QString &file_name, const QString &file_path,
                     const std::vector<std::string> &keywords);
@@ -46,12 +48,18 @@ class PreviewPanel : public QWidget {
   void SetupUi();
   void RenderEmptyStateGuide();
 
-  uint64_t load_request_id_ = 0;
+  /**
+   * @brief Monotonic load token shared with worker tasks.
+   *
+   * Held through a shared_ptr so background workers can cheaply detect that their request has
+   * been superseded without dereferencing the widget (which may already be destroyed).
+   */
+  std::shared_ptr<std::atomic<uint64_t>> load_token_ = std::make_shared<std::atomic<uint64_t>>(0);
   int64_t current_doc_id_ = 0;
   QString current_file_name_;
   QString current_file_path_;
   std::vector<std::string> current_keywords_;
-  std::shared_ptr<storage::StorageEngine> storage_;
+  std::shared_ptr<service::ISearchCoordinator> search_coordinator_;
 
   // UI elements
   QLabel *icon_label_ = nullptr;

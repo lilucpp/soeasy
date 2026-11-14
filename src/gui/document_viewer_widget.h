@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include "storage/storage_engine.h"
+#include "service/isearch_coordinator.h"
 
 namespace soeasy {
 namespace gui {
@@ -39,10 +39,10 @@ class DocumentViewerWidget : public QWidget {
   [[nodiscard]] int match_count() const { return static_cast<int>(match_ranges_.size()); }
 
   /**
-   * @brief Reads document content from storage engine, with fallback to direct disk read (up to 1MB).
+   * @brief Reads document content via CQRS query coordinator, with fallback to direct disk read (up to 1MB).
    */
   static bool ReadDocumentContent(int64_t doc_id, const QString &file_path,
-                                  std::shared_ptr<storage::StorageEngine> storage,
+                                  const std::shared_ptr<service::ISearchCoordinator> &coordinator,
                                   std::string *out_content);
 
  public slots:
@@ -53,6 +53,7 @@ class DocumentViewerWidget : public QWidget {
   void SetupUi();
   void HighlightOccurrences();
   void UpdateHighlightSelections();
+  void UpdateMatchCountLabel();
   void JumpToMatch(int index);
 
   struct MatchRange {
@@ -70,6 +71,7 @@ class DocumentViewerWidget : public QWidget {
   std::vector<std::string> current_keywords_;
   std::vector<MatchRange> match_ranges_;
   int current_match_idx_ = -1;
+  bool highlights_truncated_ = false;
 };
 
 }  // namespace gui

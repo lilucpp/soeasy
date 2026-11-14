@@ -22,32 +22,32 @@ namespace service {
  * Coordinates read-only queries across in-memory trie (NameIndex) and SQLite WAL FTS5 (IStorageEngine).
  * Decoupled from write operations, indexing pipelines, and filesystem watcher events.
  */
-class SearchCoordinator : public ISearchCoordinator {
+class SearchCoordinator final : public ISearchCoordinator {
  public:
-  SearchCoordinator(std::shared_ptr<NameIndex> name_index,
-                    std::shared_ptr<storage::IStorageEngine> storage_engine);
+  SearchCoordinator(std::shared_ptr<NameIndex> name_index, std::shared_ptr<storage::IStorageEngine> storage_engine);
   ~SearchCoordinator() override = default;
 
-  SearchCoordinator(const SearchCoordinator &) = delete;
-  SearchCoordinator &operator=(const SearchCoordinator &) = delete;
+ protected:
+  std::vector<NameMatchResult> DoSearchFilename(const std::string &query, int limit, int offset,
+                                                const std::string &path_prefix, int *out_total_count) const override;
 
-  std::vector<NameMatchResult> SearchFilename(const std::string &query, int limit = 50, int offset = 0,
-                                              const std::string &path_prefix = "",
-                                              int *out_total_count = nullptr) const override;
+  std::vector<SearchResultItem> DoSearchFulltext(const std::string &query, int limit, int offset,
+                                                 const std::string &path_prefix, int *out_total_count) override;
 
-  std::vector<storage::SearchResultItem> SearchFulltext(const std::string &query, int limit = 50, int offset = 0,
-                                                       const std::string &path_prefix = "",
-                                                       int *out_total_count = nullptr) override;
+  std::vector<HybridSearchResultItem> DoSearchHybrid(const std::string &query, int limit, int offset,
+                                                     const std::string &path_prefix, int *out_total_count) override;
 
-  std::vector<HybridSearchResultItem> SearchHybrid(const std::string &query, int limit = 50, int offset = 0,
-                                                  const std::string &path_prefix = "",
-                                                  int *out_total_count = nullptr) override;
+  bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) const override;
 
-  uint64_t AllocateQueryToken() override;
+  [[nodiscard]] std::vector<DocumentSnippetItem> DoGenerateDocumentSnippets(const std::vector<int64_t> &doc_ids,
+                                                                            const std::string &query,
+                                                                            size_t max_len) const override;
 
-  [[nodiscard]] bool IsQueryTokenCurrent(uint64_t token) const override;
+  uint64_t DoAllocateQueryToken() override;
 
-  void InvalidateActiveQueries() override;
+  [[nodiscard]] bool DoIsQueryTokenCurrent(uint64_t token) const override;
+
+  void DoInvalidateActiveQueries() override;
 
  private:
   std::shared_ptr<NameIndex> name_index_;

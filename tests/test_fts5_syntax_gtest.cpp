@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "common/snippet_highlighter.h"
 #include "storage/storage_engine.h"
 #include "tests/test_helper.h"
 
@@ -114,7 +115,11 @@ TEST_F(Fts5SyntaxTest, EnglishSingleTermQuery) {
   EXPECT_EQ(total, 1);
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits[0].doc_id, 1);
-  EXPECT_NE(hits[0].snippet.find("<mark>database</mark>"), std::string::npos);
+  std::string content;
+  ASSERT_TRUE(engine_->GetDocumentContent(hits[0].doc_id, &content));
+  auto snippet = common::SnippetHighlighter::GenerateSnippet(
+      content, common::SnippetHighlighter::ExtractKeywordsFromQuery("database"), 140);
+  EXPECT_NE(snippet.find("<mark>database</mark>"), std::string::npos);
 }
 
 TEST_F(Fts5SyntaxTest, ChineseSingleTermQuery) {
@@ -123,7 +128,11 @@ TEST_F(Fts5SyntaxTest, ChineseSingleTermQuery) {
   EXPECT_EQ(total, 1);
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits[0].doc_id, 5);
-  EXPECT_NE(hits[0].snippet.find("<mark>内存</mark>"), std::string::npos);
+  std::string content;
+  ASSERT_TRUE(engine_->GetDocumentContent(hits[0].doc_id, &content));
+  auto snippet = common::SnippetHighlighter::GenerateSnippet(
+      content, common::SnippetHighlighter::ExtractKeywordsFromQuery("内存"), 140);
+  EXPECT_NE(snippet.find("<mark>内存</mark>"), std::string::npos);
 }
 
 // -----------------------------------------------------------------------------
@@ -264,7 +273,11 @@ TEST_F(Fts5SyntaxTest, FallbackRecoversCPlusPlusQuery) {
   auto hits = engine_->Search("C++", 10, 0, "", &total);
   EXPECT_GE(total, 2);
   EXPECT_GE(hits.size(), 2u);
-  EXPECT_NE(hits[0].snippet.find("<mark>c++</mark>"), std::string::npos);
+  std::string content;
+  ASSERT_TRUE(engine_->GetDocumentContent(hits[0].doc_id, &content));
+  auto snippet = common::SnippetHighlighter::GenerateSnippet(
+      content, common::SnippetHighlighter::ExtractKeywordsFromQuery("C++"), 140);
+  EXPECT_NE(snippet.find("<mark>c++</mark>"), std::string::npos);
 }
 
 TEST_F(Fts5SyntaxTest, FallbackRecoversHyphenatedQuery) {
@@ -275,7 +288,11 @@ TEST_F(Fts5SyntaxTest, FallbackRecoversHyphenatedQuery) {
   EXPECT_EQ(total, 1);
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits[0].doc_id, 3);
-  EXPECT_NE(hits[0].snippet.find("<mark>lock-free</mark>"), std::string::npos);
+  std::string content;
+  ASSERT_TRUE(engine_->GetDocumentContent(hits[0].doc_id, &content));
+  auto snippet = common::SnippetHighlighter::GenerateSnippet(
+      content, common::SnippetHighlighter::ExtractKeywordsFromQuery("lock-free"), 140);
+  EXPECT_NE(snippet.find("<mark>lock-free</mark>"), std::string::npos);
 }
 
 TEST_F(Fts5SyntaxTest, FallbackRecoversMixedCPlusPlusAndChinese) {

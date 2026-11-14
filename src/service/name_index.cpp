@@ -176,7 +176,7 @@ std::vector<NameMatchResult> NameIndex::Search(const std::string &query, int lim
     } else if (pos == 0) {
       score = 80.0;  // Prefix match
     } else {
-      score = 50.0 - std::min<double>(pos, 30.0);  // Substring match
+      score = 50.0 - std::min<double>(static_cast<double>(pos), 30.0);  // Substring match
     }
 
     NameMatchResult res;
@@ -202,6 +202,10 @@ std::vector<NameMatchResult> NameIndex::Search(const std::string &query, int lim
     *out_total_count = static_cast<int>(results.size());
   }
 
+  if (limit <= 0) {
+    return {};
+  }
+
   if (offset > 0) {
     if (offset >= static_cast<int>(results.size())) {
       return {};
@@ -210,7 +214,7 @@ std::vector<NameMatchResult> NameIndex::Search(const std::string &query, int lim
   }
 
   if (static_cast<int>(results.size()) > limit) {
-    results.resize(limit);
+    results.resize(static_cast<size_t>(limit));
   }
 
   return results;

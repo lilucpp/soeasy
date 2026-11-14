@@ -34,52 +34,55 @@ SoEasy 是一款追求极速、安全与稳定的原生跨平台桌面全文检�
 
 ```mermaid
 flowchart TD
-    subgraph UI ["前端界面 (soeasy-gui / Qt5)"]
+    subgraph UI ["表现层 (soeasy-gui / Qt5)"]
         MainWindow["MainWindow (单行检索与双栏交互)"]
-        ResultView["ResultView (虚拟视口 + 复合行委托 + 悬浮预览)"]
-        PreviewPanel["PreviewPanel (异步防抖解密)"]
-        DocViewer["DocumentViewerWidget (高亮与精准跳转)"]
+        ResultView["ResultView (虚拟视口 + 复合委托 + 悬浮预览)"]
+        PreviewPanel["PreviewPanel & DocumentViewerWidget"]
+        MainWindow --> ResultView
+        MainWindow --> PreviewPanel
     end
 
-    subgraph Core ["核心服务 (soeasy-service)"]
-        IndexPipeline["IndexPipeline (服务门面)"]
-        Orchestrator["IndexOrchestrator (并发扫描调度)"]
-        SearchCoord["SearchCoordinator (全文/文件名联合检索)"]
-        NameIndex["NameIndex (内存文件名秒索引)"]
-        WriteQueue["AsyncWriteQueue (异步批量入库队列)"]
-        WatchEngine["WatchEngine & EventDebouncer (efsw 监听防抖)"]
-        WorkerGuard["WorkerGuard (reproc++ 沙箱看门狗)"]
+    subgraph Core ["核心服务层 (soeasy-service / CQRS 读写分离)"]
+        IndexPipeline["IndexPipeline (统一服务门面)"]
+
+        subgraph QuerySide ["查询侧 (Read Path)"]
+            SearchCoord["ISearchCoordinator / SearchCoordinator"]
+            NameIndex["NameIndex (内存文件名秒索引)"]
+            SearchCoord --> NameIndex
+        end
+
+        subgraph CommandSide ["命令侧 (Write Path)"]
+            Orchestrator["IndexOrchestrator (并发扫描调度)"]
+            WatchEngine["WatchEngine & EventDebouncer (efsw 监听)"]
+            WorkerGuard["WorkerGuard (reproc++ 沙箱看门狗)"]
+            WriteQueue["AsyncWriteQueue (异步批量入库队列)"]
+            Orchestrator --> WatchEngine
+            Orchestrator --> WorkerGuard
+            Orchestrator --> WriteQueue
+        end
+
+        IndexPipeline --> SearchCoord
+        IndexPipeline --> Orchestrator
     end
 
-    subgraph Sandbox ["解析沙箱 (soeasy-worker)"]
-        L1["L1TextParser (纯文本/代码 + uchardet)"]
-        L2["L2OfficeParser (DocToText 增强版 / PDF)"]
-        L3["L3ImageParser (PP-OCRv6 懒加载 + 空闲自动释放)"]
+    subgraph Sandbox ["独立解析沙箱进程 (soeasy-worker)"]
+        ParserRouter["三级解析路由 (L1 文本 / L2 Office & PDF / L3 PP-OCRv6)"]
     end
 
-    subgraph Storage ["加密存储与基础设施 (soeasy-storage / common)"]
+    subgraph Storage ["加密存储与基础设施层 (soeasy-storage / common)"]
+        IStorage["«interface» IStorageEngine (依赖倒置抽象接口)"]
         StorageEngine["StorageEngine (SQLite3MC AES-128 + Zstd)"]
-        ReaderPool["ReaderConnectionPool (WAL 多读连接池)"]
-        FTS5["Fts5JiebaTokenizer (DAT + mmap 分词)"]
-        MachineKey["MachineKeyProvider (一机一密硬件绑定)"]
+        Subsystems["ReaderConnectionPool | Fts5JiebaTokenizer (DAT+mmap) | MachineKeyProvider"]
+        StorageEngine -.->|"实现"| IStorage
+        StorageEngine --> Subsystems
     end
 
     MainWindow --> IndexPipeline
-    PreviewPanel --> DocViewer
-    IndexPipeline --> Orchestrator
-    IndexPipeline --> SearchCoord
-    Orchestrator --> WatchEngine
-    Orchestrator --> WorkerGuard
-    Orchestrator --> WriteQueue
-    SearchCoord --> NameIndex
-    SearchCoord --> ReaderPool
-    WorkerGuard -- "Cap'n Proto / 共享内存 / IPC" --> Sandbox
-    MachineKey -.-> StorageEngine
-    WriteQueue --> StorageEngine
-    StorageEngine --> FTS5
-    ReaderPool -.-> StorageEngine
-    ResultView -.-> ReaderPool
-    PreviewPanel -.-> ReaderPool
+    ResultView --> SearchCoord
+    PreviewPanel --> SearchCoord
+    SearchCoord --> IStorage
+    WriteQueue --> IStorage
+    WorkerGuard ==>|"Cap'n Proto + 共享内存 IPC (物理进程隔离)"| ParserRouter
 ```
 
 ---

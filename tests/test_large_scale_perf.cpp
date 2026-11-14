@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "gui/result_view.h"
+#include "service/search_coordinator.h"
 #include "storage/storage_engine.h"
 #include "tests/test_helper.h"
 
@@ -78,11 +79,13 @@ int main(int argc, char *argv[]) {
   for (int64_t i = 1; i <= 200; ++i) {
     std::string text = "这是关于大数据检索、向量索引与神经网络架构的第 " + std::to_string(i) +
                        " 份深度报告。我们通过高效的高斯模糊与预处理过滤无关噪声，提升整体吞吐量。";
-    storage->IndexDocument(i, "/path/" + std::to_string(i), "file_" + std::to_string(i), ".pdf", 2048, 1700000000 + i, 1, text);
+    storage->IndexDocument(i, "/path/" + std::to_string(i), "file_" + std::to_string(i), ".pdf", 2048, 1700000000 + i,
+                           1, text);
   }
 
+  auto coordinator = std::make_shared<soeasy::service::SearchCoordinator>(nullptr, storage);
   soeasy::gui::ResultView view;
-  view.SetStorageEngine(storage);
+  view.SetSearchCoordinator(coordinator);
   view.SetCurrentQuery("向量索引");
   view.resize(1000, 700);
   view.show();
@@ -193,6 +196,8 @@ int main(int argc, char *argv[]) {
     auto t_hover_end = std::chrono::high_resolution_clock::now();
     total_hover_snippet_ms += std::chrono::duration<double, std::milli>(t_hover_end - t_hover_start).count();
   }
+  view.WaitForSnippetTasks();
+  QApplication::processEvents();
 
   double avg_snippet_ms = total_hover_snippet_ms / snippet_inspected_count;
   std::cout << "  - 模拟鼠标移动查看摘要次数:      " << snippet_inspected_count << " 行\n";

@@ -125,6 +125,21 @@ void I18n::InitDictionary() {
       {"btn_next", "▼ 下一个"},
       {"match_count", "匹配: %1 / %2"},
       {"no_content_extracted", "无正文提取内容或尚未建立正文索引"},
+      {"guide_title", "SoEasy 桌面搜索引擎"},
+      {"guide_subtitle", "让电脑没有难搜的文件 · 快捷操作速查"},
+      {"guide_kbd_title", "⌨️ 常用快捷键"},
+      {"guide_tips_title", "💡 高效搜索技巧"},
+      {"guide_kbd_nav", "在结果列表中切换并实时预览"},
+      {"guide_kbd_open", "以默认程序直接打开文件"},
+      {"guide_kbd_folder", "打开文件所在目录"},
+      {"guide_kbd_focus", "快速聚焦至搜索框"},
+      {"guide_kbd_preview", "显示 / 隐藏右侧预览面板"},
+      {"guide_kbd_settings", "打开系统设置"},
+      {"guide_kbd_esc", "清空搜索词 / 最小化至托盘"},
+      {"guide_tips_html",
+       "<li><b>全文检索 (FTS5)</b>：多词空格组合（如 <code>报告 2026</code>），毫秒级倒排索引</li>"
+       "<li><b>文件名秒搜</b>：点击搜索栏左侧模式下拉可秒级查找任意文件名</li>"
+       "<li><b>管理搜索目录</b>：点击右上角【⚙ 系统设置】可自由增减受索引监控的文件夹</li>"},
 
       // Status Bar
       {"status_ready", "<span style=\"color: #16A34A; font-size: 13px;\">●</span> 就绪"},
@@ -136,6 +151,31 @@ void I18n::InitDictionary() {
       {"status_indexing", "正在扫描并建立倒排索引: %1 / %2 (%3%)"},
       {"status_indexed_complete", "全量索引已完成: 共 %1 个文档，耗时 %2 秒"},
       {"status_indexed_cancel", "索引已取消: 共处理 %1 个文档，耗时 %2 秒"},
+      {"status_badge_rebuild",
+       "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; "
+       "border-radius:3px;\">重建索引</span> "},
+      {"status_badge_initial",
+       "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; "
+       "border-radius:3px;\">首次索引</span> "},
+      {"status_badge_incremental",
+       "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; "
+       "border-radius:3px;\">增量索引</span> "},
+      {"status_rebuild_scanning", "正在清空旧缓存并扫描目录..."},
+      {"status_scanning_dirs", "正在扫描待索引目录..."},
+      {"status_init_manifest", "正在初始化文件清单..."},
+      {"status_state_rebuilding", "<span style=\"color:#D97706;\">●</span> 重建中"},
+      {"status_state_initializing", "<span style=\"color:#0284C7;\">●</span> 初始化中"},
+      {"status_state_syncing", "<span style=\"color:#0D9488;\">●</span> 同步中"},
+      {"status_building_progress", "正在构建: %1/%2 (%3%)"},
+      {"status_parsing_file", "正在解析: %1"},
+      {"status_task_cancelled_msg",
+       "<span style=\"color:#D97706; font-weight:bold;\">! 索引任务已取消</span> 已保留已解析的数据"},
+      {"status_finish_rebuild",
+       "<span style=\"color:#16A34A; font-weight:bold;\">✓ 索引重建完成</span> 共重构 %1 个文件索引 (耗时 %2s)"},
+      {"status_finish_initial",
+       "<span style=\"color:#16A34A; font-weight:bold;\">✓ 首次索引完成</span> 共索引 %1 个文件 (耗时 %2s)"},
+      {"status_finish_incremental",
+       "<span style=\"color:#16A34A; font-weight:bold;\">✓ 增量同步完成</span> 索引已是最新 (耗时 %1s)"},
 
       // Tray Icon
       {"tray_show", "显示主界面"},
@@ -279,6 +319,7 @@ void I18n::InitDictionary() {
       {"preview_dlg_title", "文档正文预览 - %1"},
       {"preview_loading_content", "正在加载正文预览..."},
       {"preview_cannot_read", "无法读取文档内容或正文为空。"},
+      {"preview_content_truncated", "……（正文过长，预览已截断）"},
       {"btn_open_folder_sys", "打开所在文件夹"},
       {"btn_open_app_sys", "用系统默认程序打开"},
 
@@ -378,6 +419,21 @@ void I18n::InitDictionary() {
       {"btn_next", "▼ Next"},
       {"match_count", "Match: %1 / %2"},
       {"no_content_extracted", "No text extracted or document not yet indexed"},
+      {"guide_title", "SoEasy Desktop Search"},
+      {"guide_subtitle", "Fast, local & secure desktop search · Quick Reference"},
+      {"guide_kbd_title", "⌨️ Keyboard Shortcuts"},
+      {"guide_tips_title", "💡 Search Tips"},
+      {"guide_kbd_nav", "Navigate results with live preview"},
+      {"guide_kbd_open", "Open file with default program"},
+      {"guide_kbd_folder", "Open containing folder"},
+      {"guide_kbd_focus", "Focus search input box"},
+      {"guide_kbd_preview", "Toggle right preview panel"},
+      {"guide_kbd_settings", "Open System Settings"},
+      {"guide_kbd_esc", "Clear query / hide to tray"},
+      {"guide_tips_html",
+       "<li><b>Full-text Search (FTS5)</b>: Multi-word space combinations (e.g. <code>report 2026</code>)</li>"
+       "<li><b>Instant Filename</b>: Toggle mode to instant filename matching across all files</li>"
+       "<li><b>Manage Directories</b>: Click [⚙ System Settings] to configure monitored folders</li>"},
 
       // Status Bar
       {"status_ready", "<span style=\"color: #16A34A; font-size: 13px;\">●</span> Ready"},
@@ -389,6 +445,31 @@ void I18n::InitDictionary() {
       {"status_indexing", "Indexing in progress: %1 / %2 (%3%)"},
       {"status_indexed_complete", "Indexing completed: %1 documents in %2 s"},
       {"status_indexed_cancel", "Indexing cancelled: %1 documents processed in %2 s"},
+      {"status_badge_rebuild",
+       "<span style=\"background-color:#FEF3C7; color:#B45309; font-weight:bold; padding:1px 6px; "
+       "border-radius:3px;\">Rebuild</span> "},
+      {"status_badge_initial",
+       "<span style=\"background-color:#E0F2FE; color:#0369A1; font-weight:bold; padding:1px 6px; "
+       "border-radius:3px;\">Initial Index</span> "},
+      {"status_badge_incremental",
+       "<span style=\"background-color:#DCFCE7; color:#15803D; font-weight:bold; padding:1px 6px; "
+       "border-radius:3px;\">Incremental</span> "},
+      {"status_rebuild_scanning", "Clearing old cache and scanning directories..."},
+      {"status_scanning_dirs", "Scanning watched directories..."},
+      {"status_init_manifest", "Initializing file manifest..."},
+      {"status_state_rebuilding", "<span style=\"color:#D97706;\">●</span> Rebuilding"},
+      {"status_state_initializing", "<span style=\"color:#0284C7;\">●</span> Initializing"},
+      {"status_state_syncing", "<span style=\"color:#0D9488;\">●</span> Syncing"},
+      {"status_building_progress", "Building: %1/%2 (%3%)"},
+      {"status_parsing_file", "Parsing: %1"},
+      {"status_task_cancelled_msg",
+       "<span style=\"color:#D97706; font-weight:bold;\">! Indexing Cancelled</span> Parsed data preserved"},
+      {"status_finish_rebuild",
+       "<span style=\"color:#16A34A; font-weight:bold;\">✓ Rebuild Complete</span> %1 files indexed (%2s)"},
+      {"status_finish_initial",
+       "<span style=\"color:#16A34A; font-weight:bold;\">✓ Initial Index Complete</span> %1 files indexed (%2s)"},
+      {"status_finish_incremental",
+       "<span style=\"color:#16A34A; font-weight:bold;\">✓ Incremental Sync Complete</span> Up to date (%1s)"},
 
       // Tray Icon
       {"tray_show", "Show MainWindow"},
@@ -535,6 +616,7 @@ void I18n::InitDictionary() {
       {"preview_dlg_title", "Content Preview - %1"},
       {"preview_loading_content", "Loading content preview..."},
       {"preview_cannot_read", "Unable to read document content or content is empty."},
+      {"preview_content_truncated", "... (content too large, preview truncated)"},
       {"btn_open_folder_sys", "Open Folder"},
       {"btn_open_app_sys", "Open with Default App"},
 

@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
   WriteFile(f_new, "高新技术企业核心技术转让保密合同协议书，发文字号国发2026号。");
 
   // Wait for debounce and worker processing (with polling for reliable test convergence)
-  std::vector<soeasy::storage::SearchResultItem> hits_new;
+  std::vector<soeasy::service::SearchResultItem> hits_new;
   for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     hits_new = pipeline->SearchFulltext("技术转让", 10, 0);
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
   // 7. Test Dynamic File Modification
   std::cout << "[Step 7] 验证动态文件修改与正文更新...\n";
   WriteFile(f2, "SoEasy 桌面搜索引擎全新升级：集成 efsw 实时变动监控与事件去抖动引擎。");
-  std::vector<soeasy::storage::SearchResultItem> hits_mod;
+  std::vector<soeasy::service::SearchResultItem> hits_mod;
   for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     hits_mod = pipeline->SearchFulltext("去抖动", 10, 0);
@@ -167,7 +167,7 @@ int main(int argc, char *argv[]) {
   // 8. Test Dynamic File Deletion
   std::cout << "[Step 8] 验证文件删除后索引自动注销与清理...\n";
   std::remove(f1.c_str());
-  std::vector<soeasy::storage::SearchResultItem> hits_del;
+  std::vector<soeasy::service::SearchResultItem> hits_del;
   std::vector<soeasy::service::NameMatchResult> name_del;
   for (int retry = 0; retry < 40; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -247,7 +247,7 @@ int main(int argc, char *argv[]) {
   WriteFile(f_personal, "私人生活备忘录：关于周末家庭聚餐规划。");
 
   // Search constrained to work directory with retry loop for reliable test convergence
-  std::vector<soeasy::storage::SearchResultItem> scoped_hits;
+  std::vector<soeasy::service::SearchResultItem> scoped_hits;
   for (int retry = 0; retry < 50; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     pipeline->FlushWriteQueue();
@@ -280,7 +280,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Wait for efsw debounce and worker parse & spill pipeline with retry loop
-  std::vector<soeasy::storage::SearchResultItem> spill_hits;
+  std::vector<soeasy::service::SearchResultItem> spill_hits;
   for (int retry = 0; retry < 50; ++retry) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     spill_hits = pipeline->SearchFulltext("SoEasyPipelineSpillSuperBigDocument2026", 10, 0);

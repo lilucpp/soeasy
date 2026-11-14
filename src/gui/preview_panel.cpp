@@ -3,14 +3,18 @@
 
 #include "gui/preview_panel.h"
 
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QMetaObject>
+#include <QPointer>
 #include <QThreadPool>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <exception>
 
+#include "common/logger.h"
 #include "gui/gui_utils.h"
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
@@ -23,8 +27,8 @@ PreviewPanel::PreviewPanel(QWidget *parent) : QWidget(parent) {
   ClearPreview();
 }
 
-void PreviewPanel::SetStorageEngine(std::shared_ptr<storage::StorageEngine> storage) {
-  storage_ = std::move(storage);
+void PreviewPanel::SetSearchCoordinator(std::shared_ptr<service::ISearchCoordinator> coordinator) {
+  search_coordinator_ = std::move(coordinator);
 }
 
 void PreviewPanel::SetupUi() {
@@ -34,8 +38,7 @@ void PreviewPanel::SetupUi() {
 
   // 1. Top Card: Document Info & Direct Action Toolbar
   auto *header_card = new QWidget(this);
-  header_card->setStyleSheet(
-      "background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px;");
+  header_card->setStyleSheet("background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px;");
   auto *header_layout = new QVBoxLayout(header_card);
   header_layout->setContentsMargins(8, 8, 8, 8);
   header_layout->setSpacing(4);
@@ -149,7 +152,7 @@ void PreviewPanel::WaitForLoadFinished(int timeout_ms) {
 }
 
 void PreviewPanel::ClearPreview() {
-  ++load_request_id_;
+  load_token_->fetch_add(1, std::memory_order_relaxed);
   current_doc_id_ = 0;
   current_file_name_.clear();
   current_file_path_.clear();
@@ -181,25 +184,46 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
   btn_open_file_->setEnabled(true);
   btn_open_folder_->setEnabled(true);
 
-  uint64_t req_id = ++load_request_id_;
+  QPointer<PreviewPanel> self(this);
+  auto coordinator = search_coordinator_;
+  auto token_holder = load_token_;
+  const uint64_t req_id = token_holder->fetch_add(1, std::memory_order_relaxed) + 1;
+
   viewer_->SetHtml(QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_loading_content")));
 
-  auto storage = storage_;
-  QThreadPool::globalInstance()->start([this, req_id, doc_id, file_path, keywords, storage]() {
+  QThreadPool::globalInstance()->start([self, token_holder, req_id, doc_id, file_path, keywords, coordinator]() {
     std::string decompressed_utf8;
-    bool ok = DocumentViewerWidget::ReadDocumentContent(doc_id, file_path, storage, &decompressed_utf8);
+    bool ok = false;
 
+    // Skip the (potentially expensive) read entirely when a newer selection superseded us.
+    if (token_holder->load(std::memory_order_relaxed) == req_id) {
+      try {
+        ok = DocumentViewerWidget::ReadDocumentContent(doc_id, file_path, coordinator, &decompressed_utf8);
+      } catch (const std::exception &e) {
+        LOG_WARN("[PreviewPanel] Failed to read preview for '{}': {}", file_path.toStdString(), e.what());
+        ok = false;
+      } catch (...) {
+        LOG_WARN("[PreviewPanel] Failed to read preview for '{}': unknown error", file_path.toStdString());
+        ok = false;
+      }
+    }
+
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app) {
+      return;
+    }
     QMetaObject::invokeMethod(
-        this,
-        [this, req_id, ok, content = std::move(decompressed_utf8), keywords]() {
-          if (req_id != load_request_id_) {
+        app,
+        [self, token_holder, req_id, ok, content = std::move(decompressed_utf8), keywords]() {
+          if (!self || req_id != token_holder->load(std::memory_order_relaxed)) {
             return;
           }
           if (!ok || content.empty()) {
-            viewer_->SetHtml(QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_cannot_read")));
+            self->viewer_->SetHtml(
+                QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_cannot_read")));
             return;
           }
-          viewer_->LoadContent(QString::fromStdString(content), keywords);
+          self->viewer_->LoadContent(QString::fromStdString(content), keywords);
         },
         Qt::QueuedConnection);
   });
@@ -219,86 +243,65 @@ void PreviewPanel::OnOpenWithDefaultApp() {
 void PreviewPanel::RenderEmptyStateGuide() {
   if (!viewer_) return;
 
-  bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
-
-  QString title = is_zh ? "SoEasy 桌面搜索引擎" : "SoEasy Desktop Search";
-  QString subtitle = is_zh ? "让电脑没有难搜的文件 · 快捷操作速查" : "Fast, local & secure desktop search · Quick Reference";
-
-  QString kbd_title = is_zh ? "⌨️ 常用快捷键" : "⌨️ Keyboard Shortcuts";
-  QString tips_title = is_zh ? "💡 高效搜索技巧" : "💡 Search Tips";
-
   auto kbd = [](const QString &key) { return GenerateKbdBadgeHtml(key); };
 
-  QString shortcuts_html;
-  if (is_zh) {
-    shortcuts_html = QString(
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%1 %2</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">在结果列表中切换并实时预览</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%3</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">以默认程序直接打开文件</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%4</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">打开文件所在目录</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%5</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">快速聚焦至搜索框</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%6</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">显示 / 隐藏右侧预览面板</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">打开系统设置</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%8</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">清空搜索词 / 最小化至托盘</td></tr>")
-        .arg(kbd("↑")).arg(kbd("↓"))
-        .arg(kbd("Enter"))
-        .arg(kbd("Ctrl + O"))
-        .arg(kbd("Ctrl + F"))
-        .arg(kbd("Ctrl + P"))
-        .arg(kbd("Ctrl + ,"))
-        .arg(kbd("Esc"));
-  } else {
-    shortcuts_html = QString(
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%1 %2</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Navigate results with live preview</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%3</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Open file with default program</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%4</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Open containing folder</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%5</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Focus search input box</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%6</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Toggle right preview panel</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Open System Settings</td></tr>"
-        "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%8</td><td align=\"left\" valign=\"middle\" style=\"color:#334155; font-size:12px; padding-left:10px;\">Clear query / hide to tray</td></tr>")
-        .arg(kbd("↑")).arg(kbd("↓"))
-        .arg(kbd("Enter"))
-        .arg(kbd("Ctrl + O"))
-        .arg(kbd("Ctrl + F"))
-        .arg(kbd("Ctrl + P"))
-        .arg(kbd("Ctrl + ,"))
-        .arg(kbd("Esc"));
-  }
+  QString shortcuts_html =
+      QString(
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%1 %2</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%9</td></tr>"
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%3</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%10</td></tr>"
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%4</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%11</td></tr>"
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%5</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%12</td></tr>"
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%6</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%13</td></tr>"
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%7</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%14</td></tr>"
+          "<tr><td width=\"130\" align=\"left\" valign=\"middle\">%8</td><td align=\"left\" valign=\"middle\" "
+          "style=\"color:#334155; font-size:12px; padding-left:10px;\">%15</td></tr>")
+          .arg(kbd("↑"))
+          .arg(kbd("↓"))
+          .arg(kbd("Enter"))
+          .arg(kbd("Ctrl + O"))
+          .arg(kbd("Ctrl + F"))
+          .arg(kbd("Ctrl + P"))
+          .arg(kbd("Ctrl + ,"))
+          .arg(kbd("Esc"))
+          .arg(Tr("guide_kbd_nav"))
+          .arg(Tr("guide_kbd_open"))
+          .arg(Tr("guide_kbd_folder"))
+          .arg(Tr("guide_kbd_focus"))
+          .arg(Tr("guide_kbd_preview"))
+          .arg(Tr("guide_kbd_settings"))
+          .arg(Tr("guide_kbd_esc"));
 
-  QString tips_html;
-  if (is_zh) {
-    tips_html =
-        "<li><b>全文检索 (FTS5)</b>：多词空格组合（如 <code>报告 2026</code>），毫秒级倒排索引</li>"
-        "<li><b>文件名秒搜</b>：点击搜索栏左侧模式下拉可秒级查找任意文件名</li>"
-        "<li><b>管理搜索目录</b>：点击右上角【⚙ 系统设置】可自由增减受索引监控的文件夹</li>";
-  } else {
-    tips_html =
-        "<li><b>Full-text Search (FTS5)</b>: Multi-word space combinations (e.g. <code>report 2026</code>)</li>"
-        "<li><b>Instant Filename</b>: Toggle mode to instant filename matching across all files</li>"
-        "<li><b>Manage Directories</b>: Click [⚙ System Settings] to configure monitored folders</li>";
-  }
-
-  QString html = QString(
-      "<div style=\"font-family: 'Microsoft YaHei UI', 'Segoe UI', 'Noto Sans CJK SC', sans-serif; "
-      "color:#1E293B; padding:16px 14px; line-height:1.6;\">"
-      "  <div style=\"text-align:center; margin-bottom:18px;\">"
-      "    <div style=\"font-size:16px; font-weight:bold; color:#0284C7; letter-spacing:0.5px;\">%1</div>"
-      "    <div style=\"font-size:12px; color:#64748B; margin-top:3px;\">%2</div>"
-      "  </div>"
-      "  <table width=\"100%\" border=\"0\" cellpadding=\"5\" cellspacing=\"0\" style=\"background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; margin-bottom:14px;\">"
-      "    <tr><td colspan=\"2\" style=\"font-size:12px; font-weight:bold; color:#334155; padding:8px 8px 4px 8px;\">%3</td></tr>"
-      "    %4"
-      "  </table>"
-      "  <div style=\"background-color:#F0FDF4; border:1px solid #DCFCE7; border-radius:8px; padding:12px 14px;\">"
-      "    <div style=\"font-size:12px; font-weight:bold; color:#15803D; margin-bottom:6px;\">%5</div>"
-      "    <ul style=\"margin:0; padding-left:18px; font-size:12px; color:#166534; line-height:1.7;\">%6</ul>"
-      "  </div>"
-      "</div>")
-      .arg(title)
-      .arg(subtitle)
-      .arg(kbd_title)
-      .arg(shortcuts_html)
-      .arg(tips_title)
-      .arg(tips_html);
+  QString html =
+      QString(
+          "<div style=\"font-family: 'Microsoft YaHei UI', 'Segoe UI', 'Noto Sans CJK SC', sans-serif; "
+          "color:#1E293B; padding:16px 14px; line-height:1.6;\">"
+          "  <div style=\"text-align:center; margin-bottom:18px;\">"
+          "    <div style=\"font-size:16px; font-weight:bold; color:#0284C7; letter-spacing:0.5px;\">%1</div>"
+          "    <div style=\"font-size:12px; color:#64748B; margin-top:3px;\">%2</div>"
+          "  </div>"
+          "  <table width=\"100%\" border=\"0\" cellpadding=\"5\" cellspacing=\"0\" style=\"background-color:#F8FAFC; "
+          "border:1px solid #E2E8F0; border-radius:8px; margin-bottom:14px;\">"
+          "    <tr><td colspan=\"2\" style=\"font-size:12px; font-weight:bold; color:#334155; padding:8px 8px 4px "
+          "8px;\">%3</td></tr>"
+          "    %4"
+          "  </table>"
+          "  <div style=\"background-color:#F0FDF4; border:1px solid #DCFCE7; border-radius:8px; padding:12px 14px;\">"
+          "    <div style=\"font-size:12px; font-weight:bold; color:#15803D; margin-bottom:6px;\">%5</div>"
+          "    <ul style=\"margin:0; padding-left:18px; font-size:12px; color:#166534; line-height:1.7;\">%6</ul>"
+          "  </div>"
+          "</div>")
+          .arg(Tr("guide_title"))
+          .arg(Tr("guide_subtitle"))
+          .arg(Tr("guide_kbd_title"))
+          .arg(shortcuts_html)
+          .arg(Tr("guide_tips_title"))
+          .arg(Tr("guide_tips_html"));
 
   viewer_->SetHtml(html);
 }

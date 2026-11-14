@@ -34,52 +34,55 @@ Zero Electron bloat, zero cloud telemetry, and complete crash resilience through
 
 ```mermaid
 flowchart TD
-    subgraph UI ["Front-End (soeasy-gui / Qt5)"]
+    subgraph UI ["Presentation Layer (soeasy-gui / Qt5)"]
         MainWindow["MainWindow (Single-Line Bar & Dual-Pane)"]
-        ResultView["ResultView (Virtual Viewport, Composite Delegate & Hover Popup)"]
-        PreviewPanel["PreviewPanel (Async ThreadPool Debounce)"]
-        DocViewer["DocumentViewerWidget (Highlight & Traversal)"]
+        ResultView["ResultView (Virtual Viewport & Hover Preview)"]
+        PreviewPanel["PreviewPanel & DocumentViewerWidget"]
+        MainWindow --> ResultView
+        MainWindow --> PreviewPanel
     end
 
-    subgraph Core ["Core Service (soeasy-service)"]
+    subgraph Core ["Core Service Layer (soeasy-service / CQRS)"]
         IndexPipeline["IndexPipeline (Service Facade)"]
-        Orchestrator["IndexOrchestrator (Concurrent Scan Scheduler)"]
-        SearchCoord["SearchCoordinator (Fulltext & Filename Query)"]
-        NameIndex["NameIndex (In-Memory Instant Filename Index)"]
-        WriteQueue["AsyncWriteQueue (Batched Async DB Writer)"]
-        WatchEngine["WatchEngine & EventDebouncer (efsw)"]
-        WorkerGuard["WorkerGuard (reproc++ Sandbox Watchdog)"]
+
+        subgraph QuerySide ["Query Side (Read Path)"]
+            SearchCoord["ISearchCoordinator / SearchCoordinator"]
+            NameIndex["NameIndex (In-Memory Instant Index)"]
+            SearchCoord --> NameIndex
+        end
+
+        subgraph CommandSide ["Command Side (Write Path)"]
+            Orchestrator["IndexOrchestrator (Concurrent Scheduler)"]
+            WatchEngine["WatchEngine & EventDebouncer (efsw)"]
+            WorkerGuard["WorkerGuard (reproc++ Sandbox Watchdog)"]
+            WriteQueue["AsyncWriteQueue (Batched Writer)"]
+            Orchestrator --> WatchEngine
+            Orchestrator --> WorkerGuard
+            Orchestrator --> WriteQueue
+        end
+
+        IndexPipeline --> SearchCoord
+        IndexPipeline --> Orchestrator
     end
 
-    subgraph Sandbox ["Parser Sandbox (soeasy-worker)"]
-        L1["L1TextParser (Plain Text & Code + uchardet)"]
-        L2["L2OfficeParser (DocToText Enhanced / PDF)"]
-        L3["L3ImageParser (PP-OCRv6 Lazy-Load & Idle Unload)"]
+    subgraph Sandbox ["Isolated Parser Process (soeasy-worker)"]
+        ParserRouter["Tiered Parser Router (L1 Text / L2 Office & PDF / L3 PP-OCRv6)"]
     end
 
-    subgraph Storage ["Encrypted Storage & Common (soeasy-storage / common)"]
+    subgraph Storage ["Storage & Infrastructure Layer (soeasy-storage / common)"]
+        IStorage["«interface» IStorageEngine (DIP Boundary)"]
         StorageEngine["StorageEngine (SQLite3MC AES-128 + Zstd)"]
-        ReaderPool["ReaderConnectionPool (WAL Concurrent Read Pool)"]
-        FTS5["Fts5JiebaTokenizer (DAT + mmap)"]
-        MachineKey["MachineKeyProvider (Hardware Envelope Encryption)"]
+        Subsystems["ReaderConnectionPool | Fts5JiebaTokenizer (DAT+mmap) | MachineKeyProvider"]
+        StorageEngine -.->|"implements"| IStorage
+        StorageEngine --> Subsystems
     end
 
     MainWindow --> IndexPipeline
-    PreviewPanel --> DocViewer
-    IndexPipeline --> Orchestrator
-    IndexPipeline --> SearchCoord
-    Orchestrator --> WatchEngine
-    Orchestrator --> WorkerGuard
-    Orchestrator --> WriteQueue
-    SearchCoord --> NameIndex
-    SearchCoord --> ReaderPool
-    WorkerGuard -- "Cap'n Proto / Shared Memory / IPC" --> Sandbox
-    MachineKey -.-> StorageEngine
-    WriteQueue --> StorageEngine
-    StorageEngine --> FTS5
-    ReaderPool -.-> StorageEngine
-    ResultView -.-> ReaderPool
-    PreviewPanel -.-> ReaderPool
+    ResultView --> SearchCoord
+    PreviewPanel --> SearchCoord
+    SearchCoord --> IStorage
+    WriteQueue --> IStorage
+    WorkerGuard ==>|"Cap'n Proto + Shared Memory IPC (Process Isolation)"| ParserRouter
 ```
 
 ---

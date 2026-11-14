@@ -3,7 +3,6 @@
 
 #include "gui/document_viewer_widget.h"
 
-#include <algorithm>
 #include <QFile>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -11,7 +10,10 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <exception>
 
+#include "common/logger.h"
 #include "gui/i18n.h"
 
 namespace soeasy {
@@ -139,20 +141,27 @@ void DocumentViewerWidget::RetranslateUi() {
   if (current_keywords_.empty()) {
     if (keyword_tag_label_) keyword_tag_label_->setText(Tr("no_keywords"));
   }
-  if (match_count_label_) {
-    if (match_ranges_.empty()) {
-      match_count_label_->setText(Tr("match_count").arg(0).arg(0));
-    } else {
-      int cur = (current_match_idx_ >= 0) ? current_match_idx_ + 1 : 1;
-      match_count_label_->setText(Tr("match_count").arg(cur).arg(match_ranges_.size()));
-    }
+  UpdateMatchCountLabel();
+}
+
+void DocumentViewerWidget::UpdateMatchCountLabel() {
+  if (!match_count_label_) {
+    return;
   }
+  if (match_ranges_.empty()) {
+    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+    return;
+  }
+  const int cur = (current_match_idx_ >= 0) ? current_match_idx_ + 1 : 1;
+  const QString total_text = QString("%1%2").arg(match_ranges_.size()).arg(highlights_truncated_ ? "+" : "");
+  match_count_label_->setText(Tr("match_count").arg(cur).arg(total_text));
 }
 
 void DocumentViewerWidget::Clear() {
   current_keywords_.clear();
   match_ranges_.clear();
   current_match_idx_ = -1;
+  highlights_truncated_ = false;
 
   if (text_viewer_) {
     text_viewer_->clear();
@@ -228,10 +237,11 @@ void DocumentViewerWidget::LoadContent(const QString &text, const std::vector<st
 void DocumentViewerWidget::HighlightOccurrences() {
   match_ranges_.clear();
   current_match_idx_ = -1;
+  highlights_truncated_ = false;
 
   if (current_keywords_.empty() || text_viewer_->toPlainText().isEmpty()) {
     text_viewer_->setExtraSelections({});
-    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+    UpdateMatchCountLabel();
     btn_prev_->setEnabled(false);
     btn_next_->setEnabled(false);
     return;
@@ -251,6 +261,7 @@ void DocumentViewerWidget::HighlightOccurrences() {
 
       match_ranges_.push_back({cursor.selectionStart(), cursor.selectionEnd()});
       if (match_ranges_.size() >= kMaxHighlights) {
+        highlights_truncated_ = true;
         break;
       }
     }
@@ -269,17 +280,12 @@ void DocumentViewerWidget::HighlightOccurrences() {
 
     btn_prev_->setEnabled(true);
     btn_next_->setEnabled(true);
-    match_count_label_->setText(Tr("match_count")
-                                    .arg(1)
-                                    .arg(QString("%1%2")
-                                             .arg(match_ranges_.size())
-                                             .arg(match_ranges_.size() >= kMaxHighlights ? "+" : "")));
     JumpToMatch(0);
   } else {
     text_viewer_->setExtraSelections({});
     btn_prev_->setEnabled(false);
     btn_next_->setEnabled(false);
-    match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+    UpdateMatchCountLabel();
   }
 }
 
@@ -332,7 +338,7 @@ void DocumentViewerWidget::JumpToMatch(int index) {
   }
 
   current_match_idx_ = index;
-  match_count_label_->setText(Tr("match_count").arg(current_match_idx_ + 1).arg(match_ranges_.size()));
+  UpdateMatchCountLabel();
 
   UpdateHighlightSelections();
 
@@ -346,42 +352,106 @@ void DocumentViewerWidget::JumpToMatch(int index) {
 
 void DocumentViewerWidget::FindNext() {
   if (match_ranges_.empty()) return;
-  int next_idx = (current_match_idx_ + 1) % match_ranges_.size();
+  const int count = static_cast<int>(match_ranges_.size());
+  const int next_idx = (current_match_idx_ + 1) % count;
   JumpToMatch(next_idx);
 }
 
 void DocumentViewerWidget::FindPrev() {
   if (match_ranges_.empty()) return;
-  int prev_idx = (current_match_idx_ - 1 + static_cast<int>(match_ranges_.size())) % match_ranges_.size();
+  const int count = static_cast<int>(match_ranges_.size());
+  const int prev_idx = (current_match_idx_ - 1 + count) % count;
   JumpToMatch(prev_idx);
 }
 
+namespace {
+
+constexpr size_t kMaxPreviewContentBytes = size_t{4} * 1024 * 1024;
+
+bool FallbackReadFromDisk(const QString &file_path, std::string *out_content) {
+  constexpr qint64 kMaxDirectDiskReadBytes = 1024LL * 1024LL;
+  QFileInfo fi(file_path);
+  if (fi.isFile() && fi.size() > 0) {
+    QFile f(file_path);
+    if (f.open(QIODevice::ReadOnly)) {
+      QByteArray bytes = f.read(kMaxDirectDiskReadBytes);
+      const int sample_len = std::min(bytes.size(), 4096);
+      for (int i = 0; i < sample_len; ++i) {
+        if (bytes[i] == '\0') {
+          return false;
+        }
+      }
+      size_t valid_len = static_cast<size_t>(bytes.size());
+      if (fi.size() > kMaxDirectDiskReadBytes && valid_len > 0) {
+        size_t pos = valid_len - 1;
+        size_t back = 0;
+        while (pos > 0 && back < 3 && (static_cast<unsigned char>(bytes[static_cast<int>(pos)]) & 0xC0) == 0x80) {
+          --pos;
+          ++back;
+        }
+        const unsigned char lead = static_cast<unsigned char>(bytes[static_cast<int>(pos)]);
+        size_t expected_len = 1;
+        if ((lead & 0xE0) == 0xC0) {
+          expected_len = 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+          expected_len = 3;
+        } else if ((lead & 0xF8) == 0xF0) {
+          expected_len = 4;
+        }
+        if ((expected_len > 1 && (valid_len - pos) < expected_len) || (lead & 0xC0) == 0x80) {
+          valid_len = pos;
+        }
+      }
+      out_content->assign(bytes.constData(), valid_len);
+      return !out_content->empty();
+    }
+  }
+  return false;
+}
+
+void TruncatePreviewContent(std::string *content) {
+  if (!content || content->size() <= kMaxPreviewContentBytes) {
+    return;
+  }
+  size_t cut = kMaxPreviewContentBytes;
+  // Never cut in the middle of a UTF-8 multi-byte sequence.
+  while (cut > 0 && (static_cast<unsigned char>((*content)[cut]) & 0xC0) == 0x80) {
+    --cut;
+  }
+  content->resize(cut);
+  content->append("\n\n");
+  content->append(Tr("preview_content_truncated").toStdString());
+}
+
+}  // namespace
+
 bool DocumentViewerWidget::ReadDocumentContent(int64_t doc_id, const QString &file_path,
-                                               std::shared_ptr<storage::StorageEngine> storage,
+                                               const std::shared_ptr<service::ISearchCoordinator> &coordinator,
                                                std::string *out_content) {
   if (!out_content) return false;
   out_content->clear();
 
-  bool ok = false;
-  if (storage && doc_id > 0) {
-    ok = storage->GetDocumentContent(doc_id, out_content);
-  }
-
-  // Fallback: direct disk read capped at 1MB to prevent memory/UI hangs
-  if (!ok || out_content->empty()) {
-    constexpr uint64_t kMaxDirectDiskReadBytes = 1024 * 1024;
-    QFileInfo fi(file_path);
-    if (fi.size() > 0) {
-      QFile f(file_path);
-      if (f.open(QIODevice::ReadOnly)) {
-        QByteArray bytes = f.read(kMaxDirectDiskReadBytes);
-        *out_content = std::string(bytes.constData(), bytes.size());
-        ok = !out_content->empty();
-      }
+  try {
+    bool ok = false;
+    if (coordinator && doc_id > 0) {
+      ok = coordinator->GetDocumentContent(doc_id, out_content);
     }
+    if (!ok || out_content->empty()) {
+      ok = FallbackReadFromDisk(file_path, out_content);
+    }
+    if (!ok || out_content->empty()) {
+      return false;
+    }
+    TruncatePreviewContent(out_content);
+    return true;
+  } catch (const std::exception &e) {
+    LOG_WARN("[DocumentViewer] Failed to read content for '{}': {}", file_path.toStdString(), e.what());
+  } catch (...) {
+    LOG_WARN("[DocumentViewer] Failed to read content for '{}': unknown error", file_path.toStdString());
   }
 
-  return ok && !out_content->empty();
+  out_content->clear();
+  return false;
 }
 
 }  // namespace gui

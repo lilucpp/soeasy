@@ -3,11 +3,11 @@
 
 #include "gui/search_table_model.h"
 
-#include <algorithm>
 #include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFont>
+#include <algorithm>
 
 #include "gui/gui_utils.h"
 #include "gui/i18n.h"
@@ -87,7 +87,6 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const {
       case kColScore:
         return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
       case kColMtime:
-        return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
       default:
         return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
     }
@@ -139,12 +138,21 @@ QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation, 
   return QVariant();
 }
 
+void SearchTableModel::RebuildDocIdIndex() {
+  doc_id_to_row_.clear();
+  doc_id_to_row_.reserve(items_.size());
+  for (size_t i = 0; i < items_.size(); ++i) {
+    doc_id_to_row_[items_[i].doc_id] = i;
+  }
+}
+
 void SearchTableModel::SetResults(const std::vector<DisplayResultItem> &items) {
   beginResetModel();
   items_ = items;
   for (size_t i = 0; i < items_.size(); ++i) {
     items_[i].initial_order = static_cast<int>(i);
   }
+  RebuildDocIdIndex();
   endResetModel();
 }
 
@@ -159,13 +167,29 @@ void SearchTableModel::AppendResults(const std::vector<DisplayResultItem> &items
   items_.insert(items_.end(), items.begin(), items.end());
   for (size_t i = start_idx; i < items_.size(); ++i) {
     items_[i].initial_order = static_cast<int>(i);
+    doc_id_to_row_[items_[i].doc_id] = i;
   }
   endInsertRows();
+}
+
+bool SearchTableModel::UpdateSnippet(int64_t doc_id, const QString &snippet_html) {
+  auto it = doc_id_to_row_.find(doc_id);
+  if (it == doc_id_to_row_.end() || it->second >= items_.size()) {
+    return false;
+  }
+  DisplayResultItem &item = items_[it->second];
+  if (item.doc_id != doc_id) {
+    return false;
+  }
+  item.snippet_html = snippet_html;
+  item.has_body_snippet = true;
+  return true;
 }
 
 void SearchTableModel::ClearResults() {
   beginResetModel();
   items_.clear();
+  doc_id_to_row_.clear();
   endResetModel();
 }
 
@@ -206,6 +230,7 @@ void SearchTableModel::sort(int column, Qt::SortOrder order) {
     return (order == Qt::AscendingOrder) ? less : !less;
   });
 
+  RebuildDocIdIndex();
   layoutChanged();
 }
 

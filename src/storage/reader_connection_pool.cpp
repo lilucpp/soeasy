@@ -76,8 +76,14 @@ sqlite3 *ReaderConnectionPool::CreateReaderConnection() {
     return nullptr;
   }
 
-  // 2. Set encryption passphrase
-  std::string key_sql = "PRAGMA key = '" + key_ + "';";
+  // 2. Set encryption passphrase (escape single quotes for SQL literal safety)
+  std::string escaped_key;
+  escaped_key.reserve(key_.size());
+  for (char c : key_) {
+    if (c == '\'') escaped_key.push_back('\'');
+    escaped_key.push_back(c);
+  }
+  std::string key_sql = "PRAGMA key = '" + escaped_key + "';";
   if (sqlite3_exec(db, key_sql.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK) {
     last_error_ = err_msg ? err_msg : "PRAGMA key failed";
     sqlite3_free(err_msg);
@@ -133,9 +139,7 @@ void ReaderConnectionPool::Close() {
 
   // Wait for all in-use connections to be returned (with timeout to prevent hang)
   if (in_use_count_ > 0) {
-    close_cv_.wait_for(lock, std::chrono::milliseconds(3000), [this] {
-      return in_use_count_ == 0;
-    });
+    close_cv_.wait_for(lock, std::chrono::milliseconds(3000), [this] { return in_use_count_ == 0; });
   }
 
   all_connections_.clear();
@@ -144,9 +148,8 @@ void ReaderConnectionPool::Close() {
 
 ScopedReadConnection ReaderConnectionPool::Acquire(uint32_t wait_timeout_ms) {
   std::unique_lock<std::mutex> lock(mutex_);
-  bool acquired = cv_.wait_for(lock, std::chrono::milliseconds(wait_timeout_ms), [this] {
-    return is_closed_ || !available_connections_.empty();
-  });
+  bool acquired = cv_.wait_for(lock, std::chrono::milliseconds(wait_timeout_ms),
+                               [this] { return is_closed_ || !available_connections_.empty(); });
 
   if (is_closed_ || !acquired || available_connections_.empty()) {
     return ScopedReadConnection(nullptr, nullptr);
@@ -156,9 +159,7 @@ ScopedReadConnection ReaderConnectionPool::Acquire(uint32_t wait_timeout_ms) {
   available_connections_.pop();
   ++in_use_count_;
 
-  return ScopedReadConnection(conn, [this](sqlite3 *c) {
-    this->Release(c);
-  });
+  return ScopedReadConnection(conn, [this](sqlite3 *c) { this->Release(c); });
 }
 
 void ReaderConnectionPool::Release(sqlite3 *conn) {
