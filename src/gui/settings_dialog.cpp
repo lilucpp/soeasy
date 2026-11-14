@@ -15,7 +15,6 @@
 #include "gui/settings/general_tab.h"
 #include "gui/settings/patterns_tab.h"
 #include "gui/settings/performance_tab.h"
-// #include "gui/settings/user_dict_tab.h"
 
 namespace soeasy {
 namespace gui {
@@ -187,38 +186,29 @@ void SettingsDialog::SetupUi() {
   nav_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   nav_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
-  auto add_nav_item = [this](const QString &text) {
-    auto *item = new QListWidgetItem(text, nav_list_);
-    item->setSizeHint(QSize(175, 42));
-    item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    return item;
-  };
-
-  add_nav_item(Tr("tab_general"));
-  add_nav_item(Tr("tab_dirs"));
-  add_nav_item(Tr("tab_patterns"));
-  add_nav_item(Tr("tab_exts"));
-  // Disabled in UI: FTS5 phrase matching covers compound words cleanly; UserDictTab code kept for future use.
-  // add_nav_item(Tr("tab_user_dict"));
-  add_nav_item(Tr("tab_perf"));
-
   page_stack_ = new QStackedWidget(body_widget);
   page_stack_->setObjectName("settings_page_stack");
 
-  // Create and register modular tab pages
+  nav_title_keys_.clear();
+  tabs_.clear();
+  auto register_tab = [this](const char *title_key, ISettingsTab *tab) {
+    auto *item = new QListWidgetItem(Tr(title_key), nav_list_);
+    item->setSizeHint(QSize(175, 42));
+    item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    nav_title_keys_.push_back(title_key);
+    tabs_.push_back(tab);
+    page_stack_->addWidget(tab);
+  };
+
+  // Create and register modular tab pages (UserDictTab is kept in codebase for reuse; omitted from UI
+  // because FTS5 native phrase matching covers compound words).
   auto *general_tab = new GeneralTab(page_stack_);
   connect(general_tab, &GeneralTab::LanguageChanged, this, &SettingsDialog::OnLanguageChanged);
-  auto *dirs_tab = new DirectoriesTab(page_stack_);
-  auto *patterns_tab = new PatternsTab(page_stack_);
-  auto *extensions_tab = new ExtensionsTab(page_stack_);
-  // auto *user_dict_tab = new UserDictTab(page_stack_);
-  auto *performance_tab = new PerformanceTab(page_stack_);
-
-  tabs_ = {general_tab, dirs_tab, patterns_tab, extensions_tab, performance_tab};
-
-  for (auto *tab : tabs_) {
-    page_stack_->addWidget(tab);
-  }
+  register_tab("tab_general", general_tab);
+  register_tab("tab_dirs", new DirectoriesTab(page_stack_));
+  register_tab("tab_patterns", new PatternsTab(page_stack_));
+  register_tab("tab_exts", new ExtensionsTab(page_stack_));
+  register_tab("tab_perf", new PerformanceTab(page_stack_));
 
   body_layout->addWidget(nav_list_);
   body_layout->addWidget(page_stack_, 1);
@@ -276,12 +266,11 @@ void SettingsDialog::PopulateFromConfig() {
 void SettingsDialog::RetranslateUi() {
   setWindowTitle(Tr("settings_title"));
 
-  if (nav_list_ && nav_list_->count() >= 5) {
-    nav_list_->item(0)->setText(Tr("tab_general"));
-    nav_list_->item(1)->setText(Tr("tab_dirs"));
-    nav_list_->item(2)->setText(Tr("tab_patterns"));
-    nav_list_->item(3)->setText(Tr("tab_exts"));
-    nav_list_->item(4)->setText(Tr("tab_perf"));
+  if (nav_list_) {
+    const int count = std::min<int>(nav_list_->count(), static_cast<int>(nav_title_keys_.size()));
+    for (int i = 0; i < count; ++i) {
+      nav_list_->item(i)->setText(Tr(nav_title_keys_[i]));
+    }
   }
 
   if (btn_rebuild_) btn_rebuild_->setText(Tr("btn_rebuild"));

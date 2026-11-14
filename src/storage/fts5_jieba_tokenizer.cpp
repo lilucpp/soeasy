@@ -42,6 +42,14 @@ std::shared_ptr<DatJieba> AcquireSharedJieba(const std::string &dict_dir) {
   auto &registry = GetSharedJiebaRegistry();
   std::lock_guard<std::mutex> lock(registry.mutex);
 
+  for (auto it = registry.by_dir.begin(); it != registry.by_dir.end();) {
+    if (it->second.expired()) {
+      it = registry.by_dir.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
   auto it = registry.by_dir.find(key);
   if (it != registry.by_dir.end()) {
     if (auto existing = it->second.lock()) {

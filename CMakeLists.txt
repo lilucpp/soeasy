@@ -769,6 +769,28 @@ if(BUILD_TESTS)
       TIMEOUT 20
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
   )
+
+  # Modern Unit Test & Benchmark Suite: SoA + Arena NameIndex
+  add_executable(test_name_index_gtest
+      tests/test_name_index_gtest.cpp
+  )
+  target_include_directories(test_name_index_gtest PRIVATE
+      src
+  )
+  target_link_libraries(test_name_index_gtest PRIVATE
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_name_index_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 30
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
 endif()
 
 # -------------------------------------------------------------

@@ -2,10 +2,8 @@
 #define SOEASY_SRC_SERVICE_NAME_INDEX_H_
 
 #include <cstdint>
-#include <mutex>
-#include <shared_mutex>
+#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace soeasy {
@@ -32,8 +30,8 @@ struct NameMatchResult {
 
 class NameIndex {
  public:
-  NameIndex() = default;
-  ~NameIndex() = default;
+  NameIndex();
+  ~NameIndex();
 
   // Disallow copy and assign
   NameIndex(const NameIndex &) = delete;
@@ -92,13 +90,14 @@ class NameIndex {
    */
   void Clear();
 
- private:
-  static std::string ToLower(const std::string &s);
-  static bool StartsWith(const std::string &str, const std::string &prefix);
+  /**
+   * @brief Estimate live heap memory (in bytes) consumed by internal index structures.
+   */
+  size_t ApproximateMemoryUsage() const;
 
-  mutable std::shared_mutex rw_mutex_;
-  std::unordered_map<int64_t, NameRecord> records_by_id_;
-  std::unordered_map<std::string, int64_t> id_by_path_;
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace service

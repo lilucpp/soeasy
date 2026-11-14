@@ -127,6 +127,7 @@ class ShmSlotPool {
    * @brief Return physical pages backing idle payload regions to the OS (Linux tmpfs MADV_REMOVE).
    * Safe no-op if any slot is still in use or not owned by creator.
    *
+   * @note Caller must serialize calls with AllocateSlot() (e.g., via WorkerGuard::pool_mutex_).
    * @return true if all slots are idle and reclamation succeeded (or already clean)
    */
   bool ReclaimIdlePages();

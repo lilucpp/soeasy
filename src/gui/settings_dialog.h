@@ -49,6 +49,7 @@ class SettingsDialog : public QDialog {
 
   QListWidget *nav_list_ = nullptr;
   QStackedWidget *page_stack_ = nullptr;
+  std::vector<const char *> nav_title_keys_;
   std::vector<ISettingsTab *> tabs_;
 
   QPushButton *btn_rebuild_ = nullptr;
