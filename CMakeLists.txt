@@ -449,8 +449,6 @@ add_library(soeasy_gui STATIC
     src/gui/content_preview_dialog.cpp
     src/gui/preview_panel.cpp
     src/gui/settings/general_tab.cpp
-    src/gui/settings/directories_tab.cpp
-    src/gui/settings/patterns_tab.cpp
     src/gui/settings/extensions_tab.cpp
     src/gui/settings/user_dict_tab.cpp
     src/gui/settings/performance_tab.cpp

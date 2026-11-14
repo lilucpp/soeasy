@@ -197,12 +197,17 @@ void I18n::InitDictionary() {
 
       // Settings Dialog
       {"settings_title", "系统设置"},
-      {"tab_general", "常规与语言"},
+      {"tab_general", "常规与索引范围"},
       {"tab_dirs", "索引目录"},
       {"tab_patterns", "排除目录规则"},
       {"tab_exts", "文件格式与解析"},
       {"tab_user_dict", "分词词库"},
       {"tab_perf", "性能与日志"},
+      {"group_appearance", "界面与外观"},
+      {"group_indexed_dirs", "索引目录"},
+      {"group_exclusions", "排除与过滤规则"},
+      {"group_perf_strategy", "索引与资源策略"},
+      {"group_diagnostics", "运行日志与排障"},
 
       // Settings - User Dict Tab
       {"label_user_dict_hint", "自定义专有关键词，修改并保存后需重启程序并在需要时“重建索引”以全量生效："},
@@ -510,12 +515,17 @@ void I18n::InitDictionary() {
 
       // Settings Dialog
       {"settings_title", "System Settings"},
-      {"tab_general", "General && Language"},
+      {"tab_general", "General & Scope"},
       {"tab_dirs", "Indexed Directories"},
       {"tab_patterns", "Excluded Patterns"},
       {"tab_exts", "File Formats"},
       {"tab_user_dict", "User Dictionary"},
-      {"tab_perf", "Performance && Logs"},
+      {"tab_perf", "Performance & Logs"},
+      {"group_appearance", "Appearance && Language"},
+      {"group_indexed_dirs", "Indexed Directories"},
+      {"group_exclusions", "Exclusions && Filters"},
+      {"group_perf_strategy", "Indexing && Resource Policy"},
+      {"group_diagnostics", "Logging && Diagnostics"},
 
       // Settings - User Dict Tab
       {"label_user_dict_hint",
@@ -590,7 +600,7 @@ void I18n::InitDictionary() {
        "Low Disk Write: larger write queue and commit batching to reduce SSD writes (slightly slower full rebuild)."},
       {"label_min_ocr_chars", "Min OCR valid character count:"},
       {"suffix_min_chars", " chars (0 = unlimited)"},
-      {"check_filter_thumbs", "Filter out cache thumbnails & icons (e.g. WeAppIcon, Thumb)"},
+      {"check_filter_thumbs", "Filter out cache thumbnails && icons (e.g. WeAppIcon, Thumb)"},
       {"label_log_level", "Runtime log verbosity level:"},
       {"log_debug", "DEBUG (Verbose trace & timing)"},
       {"log_info", "INFO  (Standard operational logs, default)"},
@@ -642,7 +652,7 @@ void I18n::InitDictionary() {
       {"btn_add_ext", "Add Format"},
       {"btn_rm_custom_ext", "Remove Selected"},
       {"label_max_size", "Max indexable file size:"},
-      {"filter_thumbs_check", "Filter out cache thumbnails & icons (e.g. WeAppIcon, Thumb)"},
+      {"filter_thumbs_check", "Filter out cache thumbnails && icons (e.g. WeAppIcon, Thumb)"},
       {"label_console_out", "Console output:"},
       {"chk_console_out", "Mirror logs to console stdout (terminal debugging)"},
       {"label_sync_flush", "Disk sync mode:"},

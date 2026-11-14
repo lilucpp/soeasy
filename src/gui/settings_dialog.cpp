@@ -8,12 +8,11 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QVBoxLayout>
+#include <algorithm>
 
 #include "gui/i18n.h"
-#include "gui/settings/directories_tab.h"
 #include "gui/settings/extensions_tab.h"
 #include "gui/settings/general_tab.h"
-#include "gui/settings/patterns_tab.h"
 #include "gui/settings/performance_tab.h"
 
 namespace soeasy {
@@ -168,7 +167,21 @@ void SettingsDialog::SetupUi() {
       "  border-color: #0369A1;"
       "  color: #FFFFFF;"
       "}"
-      "QPushButton:default:hover { background-color: #0369A1; }");
+      "QPushButton:default:hover { background-color: #0369A1; }"
+      "QGroupBox {"
+      "  border: 1px solid #E2E8F0;"
+      "  border-radius: 6px;"
+      "  margin-top: 10px;"
+      "  padding: 12px 10px 8px 10px;"
+      "  font-weight: 600;"
+      "  color: #334155;"
+      "}"
+      "QGroupBox::title {"
+      "  subcontrol-origin: margin;"
+      "  left: 10px;"
+      "  padding: 0 6px;"
+      "  background-color: #FFFFFF;"
+      "}");
 
   auto *main_layout = new QVBoxLayout(this);
   main_layout->setContentsMargins(0, 0, 0, 0);
@@ -181,7 +194,7 @@ void SettingsDialog::SetupUi() {
 
   nav_list_ = new QListWidget(body_widget);
   nav_list_->setObjectName("settings_nav_list");
-  nav_list_->setFixedWidth(175);
+  nav_list_->setFixedWidth(214);
   nav_list_->setFocusPolicy(Qt::NoFocus);
   nav_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   nav_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -193,20 +206,21 @@ void SettingsDialog::SetupUi() {
   tabs_.clear();
   auto register_tab = [this](const char *title_key, ISettingsTab *tab) {
     auto *item = new QListWidgetItem(Tr(title_key), nav_list_);
-    item->setSizeHint(QSize(175, 42));
+    item->setSizeHint(QSize(198, 42));
     item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     nav_title_keys_.push_back(title_key);
     tabs_.push_back(tab);
     page_stack_->addWidget(tab);
   };
 
-  // Create and register modular tab pages (UserDictTab is kept in codebase for reuse; omitted from UI
-  // because FTS5 native phrase matching covers compound words).
+  // Consolidated 3-tab structure:
+  // 0: General & Indexing Scope (Language + Directories + Exclusions + Thumbnail cache filter)
+  // 1: File Formats & Parsing (Embedded OCR + Extension tree)
+  // 2: Performance & Diagnostics (Resource tuning + Logging)
+  // Note: UserDictTab is kept in codebase for reuse; omitted from UI.
   auto *general_tab = new GeneralTab(page_stack_);
   connect(general_tab, &GeneralTab::LanguageChanged, this, &SettingsDialog::OnLanguageChanged);
   register_tab("tab_general", general_tab);
-  register_tab("tab_dirs", new DirectoriesTab(page_stack_));
-  register_tab("tab_patterns", new PatternsTab(page_stack_));
   register_tab("tab_exts", new ExtensionsTab(page_stack_));
   register_tab("tab_perf", new PerformanceTab(page_stack_));
 

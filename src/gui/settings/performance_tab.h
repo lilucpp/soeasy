@@ -6,6 +6,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -33,6 +34,7 @@ class PerformanceTab : public ISettingsTab {
  private:
   void SetupUi();
 
+  QGroupBox *group_perf_strategy_ = nullptr;
   QLabel *label_debounce_ = nullptr;
   QSpinBox *debounce_spin_ = nullptr;
   QLabel *label_max_size_ = nullptr;
@@ -41,8 +43,8 @@ class PerformanceTab : public ISettingsTab {
   QSpinBox *workers_spin_ = nullptr;
   QLabel *label_resource_profile_ = nullptr;
   QComboBox *resource_profile_combo_ = nullptr;
-  QCheckBox *filter_thumbs_check_ = nullptr;
 
+  QGroupBox *group_diagnostics_ = nullptr;
   QLabel *label_log_level_ = nullptr;
   QComboBox *log_level_combo_ = nullptr;
   QCheckBox *log_console_check_ = nullptr;

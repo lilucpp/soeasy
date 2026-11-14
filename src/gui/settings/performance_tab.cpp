@@ -6,6 +6,7 @@
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 
 #include "common/resource_profile.h"
 #include "gui/i18n.h"
@@ -19,64 +20,82 @@ PerformanceTab::PerformanceTab(QWidget *parent) : ISettingsTab(parent) {
 }
 
 void PerformanceTab::SetupUi() {
-  auto *form_perf = new QFormLayout(this);
-  form_perf->setContentsMargins(16, 16, 16, 16);
-  form_perf->setSpacing(12);
+  auto *outer_layout = new QVBoxLayout(this);
+  outer_layout->setContentsMargins(16, 14, 16, 14);
+  outer_layout->setSpacing(12);
 
-  debounce_spin_ = new QSpinBox(this);
+  // Section 1: Indexing & Resource Policy
+  group_perf_strategy_ = new QGroupBox(this);
+  auto *form_perf = new QFormLayout(group_perf_strategy_);
+  form_perf->setContentsMargins(12, 12, 12, 12);
+  form_perf->setSpacing(10);
+
+  debounce_spin_ = new QSpinBox(group_perf_strategy_);
   debounce_spin_->setRange(50, 5000);
   debounce_spin_->setSingleStep(50);
-  label_debounce_ = new QLabel(this);
+  label_debounce_ = new QLabel(group_perf_strategy_);
   form_perf->addRow(label_debounce_, debounce_spin_);
 
-  max_size_spin_ = new QSpinBox(this);
+  max_size_spin_ = new QSpinBox(group_perf_strategy_);
   max_size_spin_->setRange(1, 1024);
   max_size_spin_->setSingleStep(10);
-  label_max_size_ = new QLabel(this);
+  label_max_size_ = new QLabel(group_perf_strategy_);
   form_perf->addRow(label_max_size_, max_size_spin_);
 
-  workers_spin_ = new QSpinBox(this);
+  workers_spin_ = new QSpinBox(group_perf_strategy_);
   workers_spin_->setRange(1, 16);
   workers_spin_->setSingleStep(1);
-  label_workers_ = new QLabel(this);
+  label_workers_ = new QLabel(group_perf_strategy_);
   form_perf->addRow(label_workers_, workers_spin_);
 
-  resource_profile_combo_ = new QComboBox(this);
+  resource_profile_combo_ = new QComboBox(group_perf_strategy_);
   resource_profile_combo_->addItem(
       "", QString::fromStdString(common::ResourceProfileToString(common::ResourceProfile::kLowMemory)));
   resource_profile_combo_->addItem(
       "", QString::fromStdString(common::ResourceProfileToString(common::ResourceProfile::kLowWrite)));
-  label_resource_profile_ = new QLabel(this);
+  label_resource_profile_ = new QLabel(group_perf_strategy_);
   form_perf->addRow(label_resource_profile_, resource_profile_combo_);
 
-  filter_thumbs_check_ = new QCheckBox(this);
-  form_perf->addRow("", filter_thumbs_check_);
+  outer_layout->addWidget(group_perf_strategy_);
 
-  log_level_combo_ = new QComboBox(this);
+  // Section 2: Logging & Diagnostics
+  group_diagnostics_ = new QGroupBox(this);
+  auto *diag_layout = new QVBoxLayout(group_diagnostics_);
+  diag_layout->setContentsMargins(12, 12, 12, 12);
+  diag_layout->setSpacing(10);
+
+  auto *form_log_level = new QFormLayout();
+  form_log_level->setSpacing(10);
+  log_level_combo_ = new QComboBox(group_diagnostics_);
   log_level_combo_->addItem("DEBUG", "debug");
   log_level_combo_->addItem("INFO", "info");
   log_level_combo_->addItem("WARN", "warn");
   log_level_combo_->addItem("ERROR", "error");
-  label_log_level_ = new QLabel(this);
-  form_perf->addRow(label_log_level_, log_level_combo_);
+  label_log_level_ = new QLabel(group_diagnostics_);
+  form_log_level->addRow(label_log_level_, log_level_combo_);
+  diag_layout->addLayout(form_log_level);
 
-  log_console_check_ = new QCheckBox(this);
-  form_perf->addRow(Tr("label_console_out"), log_console_check_);
+  log_console_check_ = new QCheckBox(group_diagnostics_);
+  log_sync_check_ = new QCheckBox(group_diagnostics_);
+  doctotext_log_check_ = new QCheckBox(group_diagnostics_);
+  diag_layout->addWidget(log_console_check_);
+  diag_layout->addWidget(log_sync_check_);
+  diag_layout->addWidget(doctotext_log_check_);
 
-  log_sync_check_ = new QCheckBox(this);
-  form_perf->addRow(Tr("label_sync_flush"), log_sync_check_);
-
-  doctotext_log_check_ = new QCheckBox(this);
-  form_perf->addRow(Tr("label_dt_log"), doctotext_log_check_);
-
+  auto *form_dt_path = new QFormLayout();
+  form_dt_path->setSpacing(10);
   auto *dt_path_layout = new QHBoxLayout();
-  doctotext_log_path_edit_ = new QLineEdit(this);
-  dt_browse_btn_ = new QPushButton(this);
-  dt_browse_btn_->setFixedWidth(70);
+  doctotext_log_path_edit_ = new QLineEdit(group_diagnostics_);
+  dt_browse_btn_ = new QPushButton(group_diagnostics_);
+  dt_browse_btn_->setMinimumWidth(84);
   dt_path_layout->addWidget(doctotext_log_path_edit_);
   dt_path_layout->addWidget(dt_browse_btn_);
-  label_dt_path_ = new QLabel(this);
-  form_perf->addRow(label_dt_path_, dt_path_layout);
+  label_dt_path_ = new QLabel(group_diagnostics_);
+  form_dt_path->addRow(label_dt_path_, dt_path_layout);
+  diag_layout->addLayout(form_dt_path);
+
+  outer_layout->addWidget(group_diagnostics_);
+  outer_layout->addStretch();
 
   connect(dt_browse_btn_, &QPushButton::clicked, this, &PerformanceTab::OnBrowseDocToTextLogPath);
 
@@ -90,14 +109,9 @@ void PerformanceTab::PopulateFromConfig(const service::IndexConfig &config) {
   const QString profile_val = QString::fromStdString(common::ResourceProfileToString(config.resource_profile()));
   const int profile_idx = resource_profile_combo_->findData(profile_val);
   resource_profile_combo_->setCurrentIndex(profile_idx >= 0 ? profile_idx : 0);
-  filter_thumbs_check_->setChecked(config.filter_cache_thumbnails());
 
-  int idx = log_level_combo_->findData(QString::fromStdString(config.log_level()));
-  if (idx >= 0) {
-    log_level_combo_->setCurrentIndex(idx);
-  } else {
-    log_level_combo_->setCurrentIndex(1);  // default INFO
-  }
+  const int idx = log_level_combo_->findData(QString::fromStdString(config.log_level()));
+  log_level_combo_->setCurrentIndex(idx >= 0 ? idx : 1);
   log_console_check_->setChecked(config.log_console());
   log_sync_check_->setChecked(config.log_sync());
 
@@ -113,7 +127,6 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
   config->set_worker_count(static_cast<size_t>(workers_spin_->value()));
   config->set_resource_profile(
       common::ParseResourceProfile(resource_profile_combo_->currentData().toString().toStdString()));
-  config->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
 
   config->set_log_level(log_level_combo_->currentData().toString().toStdString());
   config->set_log_console(log_console_check_->isChecked());
@@ -123,6 +136,7 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
 }
 
 void PerformanceTab::RetranslateUi() {
+  if (group_perf_strategy_) group_perf_strategy_->setTitle(Tr("group_perf_strategy"));
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
   if (debounce_spin_) debounce_spin_->setSuffix(Tr("suffix_ms"));
   if (label_max_size_) label_max_size_->setText(Tr("label_max_size"));
@@ -134,8 +148,8 @@ void PerformanceTab::RetranslateUi() {
     resource_profile_combo_->setItemText(1, Tr("profile_low_write"));
     resource_profile_combo_->setToolTip(Tr("tooltip_resource_profile"));
   }
-  if (filter_thumbs_check_) filter_thumbs_check_->setText(Tr("filter_thumbs_check"));
 
+  if (group_diagnostics_) group_diagnostics_->setTitle(Tr("group_diagnostics"));
   if (label_log_level_) label_log_level_->setText(Tr("label_log_level"));
   if (log_level_combo_) {
     log_level_combo_->setItemText(0, Tr("log_debug"));
@@ -153,7 +167,8 @@ void PerformanceTab::RetranslateUi() {
 }
 
 void PerformanceTab::OnBrowseDocToTextLogPath() {
-  QString file = QFileDialog::getSaveFileName(this, Tr("dlg_choose_log_file"), "", "Log Files (*.log);;All Files (*)");
+  const QString file =
+      QFileDialog::getSaveFileName(this, Tr("dlg_choose_log_file"), "", "Log Files (*.log);;All Files (*)");
   if (!file.isEmpty()) {
     doctotext_log_path_edit_->setText(file);
   }

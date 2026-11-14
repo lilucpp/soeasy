@@ -26,6 +26,7 @@
 #include "gui/main_window.h"
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
+#include "gui/settings/general_tab.h"
 #include "gui/settings/performance_tab.h"
 #include "gui/settings_dialog.h"
 #include "service/async_write_queue.h"
@@ -166,12 +167,15 @@ int main(int argc, char *argv[]) {
     config->set_ui_language("en");
     CHECK(config->ui_language() == "en");
 
-    // Test SettingsDialog rendering in English on Tab 3 (File Formats)
+    // Test SettingsDialog rendering in English on Tab 0 (General & Scope) and Tab 1 (File Formats)
     {
       soeasy::gui::SettingsDialog dlg_en(config);
-      dlg_en.resize(800, 600);
+      dlg_en.resize(860, 600);
       dlg_en.show();
-      dlg_en.SetCurrentTab(3);
+      dlg_en.SetCurrentTab(0);
+      app.processEvents();
+      dlg_en.grab().save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_tab0_en.png").string()));
+      dlg_en.SetCurrentTab(1);
       app.processEvents();
       QPixmap pix = dlg_en.grab();
       bool ok = pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_en.png").string()));
@@ -179,14 +183,14 @@ int main(int argc, char *argv[]) {
                 << pix.height() << "\n";
     }
 
-    // Verify Tab 4 (Performance & Logs) Combobox rendering
+    // Verify Tab 2 (Performance & Logs) Combobox rendering
     {
-      soeasy::gui::SettingsDialog dlg_tab4(config);
-      dlg_tab4.resize(800, 600);
-      dlg_tab4.show();
-      dlg_tab4.SetCurrentTab(4);
+      soeasy::gui::SettingsDialog dlg_perf(config);
+      dlg_perf.resize(860, 600);
+      dlg_perf.show();
+      dlg_perf.SetCurrentTab(2);
       app.processEvents();
-      dlg_tab4.grab().save("/tmp/tab5_combo_fixed.png");
+      dlg_perf.grab().save("/tmp/tab5_combo_fixed.png");
     }
 
     std::string test_cfg_file = soeasy::test::GetTestTempPath("soeasy_i18n_test_config.json").string();
@@ -204,15 +208,42 @@ int main(int argc, char *argv[]) {
     CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office 新版格式 (OOXML)");
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "Word 2007+ 文本文档") == "Word 2007+ 文本文档");
 
-    // Test SettingsDialog rendering in Chinese on Tab 3
+    // Test SettingsDialog rendering in Chinese on Tab 0 and Tab 1
     {
       soeasy::gui::SettingsDialog dlg_zh(config);
-      dlg_zh.resize(800, 600);
+      dlg_zh.resize(860, 600);
       dlg_zh.show();
-      dlg_zh.SetCurrentTab(3);
+      dlg_zh.SetCurrentTab(0);
+      app.processEvents();
+      dlg_zh.grab().save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_tab0_zh.png").string()));
+      dlg_zh.SetCurrentTab(1);
       app.processEvents();
       QPixmap pix = dlg_zh.grab();
       pix.save(QString::fromStdString(soeasy::test::GetTestTempPath("soeasy_settings_dlg_zh.png").string()));
+    }
+
+    // Verify consolidated GeneralTab populates and applies directories, patterns, and thumbnail filter
+    {
+      auto gen_cfg = std::make_shared<soeasy::service::IndexConfig>();
+      gen_cfg->AddIndexedDirectory(test_dir);
+      gen_cfg->AddExcludedPattern(".tmp_ignore");
+      gen_cfg->set_filter_cache_thumbnails(false);
+
+      soeasy::gui::GeneralTab gen_tab;
+      gen_tab.PopulateFromConfig(*gen_cfg);
+      auto lists = gen_tab.findChildren<QListWidget *>();
+      auto checks = gen_tab.findChildren<QCheckBox *>();
+      CHECK(lists.size() == 2);
+      CHECK(lists[0]->count() == 1);
+      CHECK(lists[1]->count() == static_cast<int>(gen_cfg->GetExcludedPatterns().size()));
+      CHECK(checks.size() == 1);
+      CHECK(!checks[0]->isChecked());
+
+      checks[0]->setChecked(true);
+      auto apply_cfg = std::make_shared<soeasy::service::IndexConfig>();
+      gen_tab.ApplyToConfig(apply_cfg.get());
+      CHECK(apply_cfg->GetIndexedDirectories().size() == 1);
+      CHECK(apply_cfg->filter_cache_thumbnails());
     }
 
     std::cout << "  -> 中英双语即时翻译、文件格式说明、配置持久化与切换验证完全通过!\n";
