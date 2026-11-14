@@ -285,16 +285,23 @@ int main(int argc, char *argv[]) {
 
   std::cout << "    • 200ms 闲置淘汰生效后活跃 Worker 数: " << guard.active_worker_count() << "\n";
   assert(guard.active_worker_count() == 0);  // All workers evicted to 0 RAM!
+  assert(!guard.shm_pool()->has_dirty_pages());  // Idle SHM payload pages reclaimed cleanly
 
-  // Send new task to test seamless respawn
+  // Send new task to test seamless respawn & SHM demand page re-fault
   soeasy::service::ParseTask resume_task{301, large_doc_path, "txt", 1};
   soeasy::service::ParseTaskResult resume_res;
   bool resume_ok = guard.ExecuteTask(resume_task, &resume_res);
   assert(resume_ok);
   (void)resume_ok;
   assert(resume_res.status == soeasy::service::TaskStatus::kSuccess);
+  assert(guard.shm_pool()->has_dirty_pages());
+  // Reclaim must refuse while a slot is still held by Master reader (kSlotWritten)
+  assert(!guard.shm_pool()->ReclaimIdlePages());
   guard.shm_pool()->ReleaseSlot(resume_res.slot_id);
-  std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count() << " (成功瞬时拉起并完成解析)!\n";
+  // Once slot is released and no worker is active, explicit reclaim succeeds cleanly
+  assert(guard.shm_pool()->ReclaimIdlePages());
+  assert(!guard.shm_pool()->has_dirty_pages());
+  std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count() << " (成功瞬时拉起并验证 SHM 回收/重用)!\n";
   assert(guard.active_worker_count() > 0);
   std::cout << "[+] Worker 懒加载、闲置归零与无缝拉起验证 100% 通过!\n\n";
 

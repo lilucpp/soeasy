@@ -528,6 +528,19 @@ void WorkerGuard::WatchdogLoop() {
         }
       }
     }
+
+    if (!workers_.empty() && shm_pool_.has_dirty_pages()) {
+      bool any_active = false;
+      for (const auto &inst : workers_) {
+        if (inst.pid > 0 || inst.is_busy()) {
+          any_active = true;
+          break;
+        }
+      }
+      if (!any_active && shm_pool_.ReclaimIdlePages()) {
+        LOG_INFO("[WorkerGuard] All workers evicted; reclaimed idle shared memory pages.");
+      }
+    }
   }
 }
 

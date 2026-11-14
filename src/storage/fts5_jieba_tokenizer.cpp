@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -15,6 +16,48 @@ namespace storage {
 
 namespace {
 
+std::string NormalizeDictDir(const std::string &dict_dir) {
+  std::string norm = dict_dir;
+  for (char &c : norm) {
+    if (c == '\\') c = '/';
+  }
+  while (norm.size() > 1 && norm.back() == '/') {
+    norm.pop_back();
+  }
+  return norm;
+}
+
+struct SharedJiebaRegistry {
+  std::mutex mutex;
+  std::unordered_map<std::string, std::weak_ptr<DatJieba>> by_dir;
+};
+
+SharedJiebaRegistry &GetSharedJiebaRegistry() {
+  static SharedJiebaRegistry registry;
+  return registry;
+}
+
+std::shared_ptr<DatJieba> AcquireSharedJieba(const std::string &dict_dir) {
+  const std::string key = NormalizeDictDir(dict_dir);
+  auto &registry = GetSharedJiebaRegistry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+
+  auto it = registry.by_dir.find(key);
+  if (it != registry.by_dir.end()) {
+    if (auto existing = it->second.lock()) {
+      return existing;
+    }
+  }
+
+  auto dj = std::make_shared<DatJieba>();
+  if (!dj->Init(dict_dir)) {
+    return nullptr;
+  }
+  dj->Freeze();
+  registry.by_dir[key] = dj;
+  return dj;
+}
+
 struct JiebaContext {
   std::string dict_dir;
   mutable std::mutex mutex;
@@ -23,10 +66,7 @@ struct JiebaContext {
   std::shared_ptr<DatJieba> GetJieba() const {
     std::lock_guard<std::mutex> lock(mutex);
     if (!jieba) {
-      auto dj = std::make_shared<DatJieba>();
-      if (dj->Init(dict_dir)) {
-        jieba = std::move(dj);
-      }
+      jieba = AcquireSharedJieba(dict_dir);
     }
     return jieba;
   }

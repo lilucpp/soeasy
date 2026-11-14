@@ -123,6 +123,15 @@ class ShmSlotPool {
    */
   uint8_t *GetWritableSlotData(uint32_t slot_id);
 
+  /**
+   * @brief Return physical pages backing idle payload regions to the OS (Linux tmpfs MADV_REMOVE).
+   * Safe no-op if any slot is still in use or not owned by creator.
+   *
+   * @return true if all slots are idle and reclamation succeeded (or already clean)
+   */
+  bool ReclaimIdlePages();
+
+  bool has_dirty_pages() const { return has_dirty_pages_.load(std::memory_order_acquire); }
   const std::string &shm_name() const { return shm_name_; }
   size_t slot_count() const { return slot_count_; }
   size_t slot_capacity() const { return slot_capacity_; }
@@ -132,9 +141,11 @@ class ShmSlotPool {
   uint8_t *GetSlotBase(uint32_t slot_id) const;
   SlotHeader *GetSlotHeader(uint32_t slot_id) const;
   uint8_t *GetSlotData(uint32_t slot_id) const;
+  size_t GetPayloadAlignedSize() const;
   size_t GetSlotStride() const;
 
   std::string shm_name_;
+  size_t page_size_ = 4096;
   size_t slot_count_ = 0;
   size_t slot_capacity_ = 0;
   size_t total_shm_size_ = 0;
@@ -144,6 +155,7 @@ class ShmSlotPool {
 #endif
   uint8_t *base_addr_ = nullptr;
   bool is_creator_ = false;
+  std::atomic<bool> has_dirty_pages_{false};
 };
 
 }  // namespace common

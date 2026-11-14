@@ -459,6 +459,8 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb) 
       th.join();
     }
   }
+  // Release scan path list immediately so malloc_trim(0) below can reclaim those heap pages.
+  std::vector<std::string>().swap(files_to_index);
 
   if (cancel_scan_.load(std::memory_order_acquire)) {
     LOG_INFO("[IndexOrchestrator] Initial scan cancelled by user at {}/{} files.",

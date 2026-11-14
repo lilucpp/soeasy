@@ -33,18 +33,37 @@ uint64_t FastChecksum64(const uint8_t *data, size_t len) {
   return hash;
 }
 
+size_t DetectOsPageSize() {
+#ifdef _WIN32
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return si.dwPageSize > 0 ? static_cast<size_t>(si.dwPageSize) : 4096;
+#else
+  long ps = sysconf(_SC_PAGESIZE);
+  return ps > 0 ? static_cast<size_t>(ps) : 4096;
+#endif
+}
+
+size_t AlignUp(size_t value, size_t alignment) {
+  if (alignment == 0) return value;
+  return ((value + alignment - 1) / alignment) * alignment;
+}
+
 }  // namespace
 
-ShmSlotPool::ShmSlotPool() = default;
+ShmSlotPool::ShmSlotPool() : page_size_(std::max<size_t>(sizeof(SlotHeader), DetectOsPageSize())) {}
 
 ShmSlotPool::~ShmSlotPool() {
   Close();
 }
 
+size_t ShmSlotPool::GetPayloadAlignedSize() const {
+  return AlignUp(slot_capacity_, page_size_);
+}
+
 size_t ShmSlotPool::GetSlotStride() const {
-  // Stride = sizeof(SlotHeader) + slot_capacity_, aligned to 64 bytes
-  size_t raw = sizeof(SlotHeader) + slot_capacity_;
-  return (raw + 63) & ~63ULL;
+  // Isolate SlotHeader on its own leading OS page so payload pages can be MADV_REMOVE-reclaimed safely.
+  return page_size_ + GetPayloadAlignedSize();
 }
 
 uint8_t *ShmSlotPool::GetSlotBase(uint32_t slot_id) const {
@@ -63,7 +82,7 @@ uint8_t *ShmSlotPool::GetSlotData(uint32_t slot_id) const {
   if (!base) {
     return nullptr;
   }
-  return base + sizeof(SlotHeader);
+  return base + page_size_;
 }
 
 bool ShmSlotPool::Create(const std::string &shm_name, size_t slot_count, size_t slot_capacity) {
@@ -101,7 +120,6 @@ bool ShmSlotPool::Create(const std::string &shm_name, size_t slot_count, size_t 
   }
 
   base_addr_ = static_cast<uint8_t *>(addr);
-  std::memset(base_addr_, 0, total_shm_size_);
 #else
   // Remove stale shm segment if leftover from a crash
   shm_unlink(shm_name_.c_str());
@@ -127,16 +145,19 @@ bool ShmSlotPool::Create(const std::string &shm_name, size_t slot_count, size_t 
   }
 
   base_addr_ = static_cast<uint8_t *>(addr);
-  std::memset(base_addr_, 0, total_shm_size_);
 #endif
 
+  // Leave payload pages untouched (lazy zero-fill on demand fault); initialize only SlotHeader pages.
   for (uint32_t i = 0; i < slot_count_; ++i) {
     SlotHeader *header = GetSlotHeader(i);
     header->state.store(kSlotFree, std::memory_order_relaxed);
     header->slot_id = i;
     header->data_bytes = 0;
     header->checksum = 0;
+    header->last_heartbeat_ms.store(0, std::memory_order_relaxed);
+    std::memset(header->reserved, 0, sizeof(header->reserved));
   }
+  has_dirty_pages_.store(false, std::memory_order_release);
 
   return true;
 }
@@ -215,6 +236,7 @@ void ShmSlotPool::Close() {
   }
 #endif
   is_creator_ = false;
+  has_dirty_pages_.store(false, std::memory_order_relaxed);
   shm_name_.clear();
   slot_count_ = 0;
   slot_capacity_ = 0;
@@ -236,6 +258,7 @@ bool ShmSlotPool::AllocateSlot(uint32_t *out_slot_id, uint8_t **out_data_ptr) {
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
               .count();
       header->last_heartbeat_ms.store(now_ms, std::memory_order_relaxed);
+      has_dirty_pages_.store(true, std::memory_order_release);
       *out_slot_id = i;
       *out_data_ptr = GetSlotData(i);
       return true;
@@ -315,6 +338,38 @@ uint64_t ShmSlotPool::GetSlotLastHeartbeat(uint32_t slot_id) const {
 
 uint8_t *ShmSlotPool::GetWritableSlotData(uint32_t slot_id) {
   return GetSlotData(slot_id);
+}
+
+bool ShmSlotPool::ReclaimIdlePages() {
+  if (!base_addr_ || !is_creator_ || slot_count_ == 0 || slot_capacity_ == 0) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < slot_count_; ++i) {
+    SlotHeader *header = GetSlotHeader(i);
+    if (!header || header->state.load(std::memory_order_acquire) != kSlotFree) {
+      return false;
+    }
+  }
+
+  if (!has_dirty_pages_.load(std::memory_order_acquire)) {
+    return true;
+  }
+
+#ifdef __linux__
+  const size_t payload_bytes = GetPayloadAlignedSize();
+  for (uint32_t i = 0; i < slot_count_; ++i) {
+    uint8_t *data_ptr = GetSlotData(i);
+    if (data_ptr && payload_bytes > 0) {
+      if (madvise(data_ptr, payload_bytes, MADV_REMOVE) != 0) {
+        return false;
+      }
+    }
+  }
+#endif
+
+  has_dirty_pages_.store(false, std::memory_order_release);
+  return true;
 }
 
 }  // namespace common

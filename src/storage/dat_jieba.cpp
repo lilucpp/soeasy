@@ -185,7 +185,15 @@ bool DatJieba::Init(const std::string &dict_dir) {
   return true;
 }
 
+void DatJieba::Freeze() {
+  std::lock_guard<std::mutex> lock(user_dict_mutex_);
+  is_frozen_.store(true, std::memory_order_release);
+}
+
 void DatJieba::LoadUserDict(const std::string &user_dict_path) {
+  if (is_frozen_.load(std::memory_order_acquire)) {
+    return;
+  }
   std::ifstream ifs(user_dict_path);
   if (!ifs.is_open()) return;
 
@@ -214,9 +222,12 @@ bool DatJieba::HasWord(const std::string &word) const {
     return false;
   }
 
-  // 1. Check Overlay user dictionary (dynamic additions)
+  // 1. Check Overlay user dictionary (lock-free once frozen)
   {
-    std::lock_guard<std::mutex> lock(user_dict_mutex_);
+    std::unique_lock<std::mutex> lock(user_dict_mutex_, std::defer_lock);
+    if (!is_frozen_.load(std::memory_order_acquire)) {
+      lock.lock();
+    }
     if (user_words_.find(word) != user_words_.end()) {
       return true;
     }
@@ -234,9 +245,10 @@ bool DatJieba::HasWord(const std::string &word) const {
 }
 
 bool DatJieba::InsertUserWord(const std::string &word, int freq, const std::string &tag) {
-  if (word.empty()) return false;
+  if (word.empty() || is_frozen_.load(std::memory_order_acquire)) return false;
 
   std::lock_guard<std::mutex> lock(user_dict_mutex_);
+  if (is_frozen_.load(std::memory_order_relaxed)) return false;
 
   // High default weight so user custom words are prioritized in shortest path DP
   double weight = (freq > 0) ? std::log(double(freq) / 1000000.0) : 0.0;
@@ -253,7 +265,9 @@ bool DatJieba::InsertUserWord(const std::string &word, int freq, const std::stri
 }
 
 bool DatJieba::DeleteUserWord(const std::string &word) {
+  if (is_frozen_.load(std::memory_order_acquire)) return false;
   std::lock_guard<std::mutex> lock(user_dict_mutex_);
+  if (is_frozen_.load(std::memory_order_relaxed)) return false;
   auto it = user_words_.find(word);
   if (it != user_words_.end()) {
     user_words_.erase(it);
@@ -306,7 +320,10 @@ void DatJieba::CutRange(const std::string &sentence, cppjieba::RuneStrArray::con
 
   Darts::DoubleArray::result_pair_type results[64];
 
-  std::lock_guard<std::mutex> lock(user_dict_mutex_);
+  std::unique_lock<std::mutex> lock(user_dict_mutex_, std::defer_lock);
+  if (!is_frozen_.load(std::memory_order_acquire)) {
+    lock.lock();
+  }
 
   // Build DAG
   for (size_t i = 0; i < num_runes; ++i) {

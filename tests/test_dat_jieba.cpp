@@ -344,6 +344,33 @@ int main(int argc, char *argv[]) {
   assert(!parent_words.empty());
   std::cout << "  • 子进程退出/崩溃完全隔离: PASS (底层 Page Cache 物理文件受 PROT_READ 保护, 无法被破坏)!\n";
 
+  // -------------------------------------------------------------------------
+  // [Test 7] Freeze() 不可变冻结模式 + 无锁多线程并发切词验证
+  // -------------------------------------------------------------------------
+  std::cout << "\n[Test 7] 验证: Freeze() 不可变冻结与无锁多线程并发读取...\n";
+  dj.Freeze();
+  assert(dj.IsFrozen());
+  assert(!dj.InsertUserWord("冻结后不应写入词", 5000));
+  assert(!dj.DeleteUserWord("动态测试词_0_0"));
+
+  std::atomic<size_t> frozen_cuts{0};
+  std::vector<std::thread> frozen_readers;
+  for (int t = 0; t < 4; ++t) {
+    frozen_readers.emplace_back([&dj, &frozen_cuts]() {
+      const std::string text = "分布式全文搜索引擎与中文双数组Trie树无锁并发分词验证";
+      std::vector<cppjieba::Word> words;
+      for (int iter = 0; iter < 500; ++iter) {
+        words.clear();
+        dj.Cut(text, words, true);
+        AssertOffsetInvariant(text, words);
+        frozen_cuts.fetch_add(1, std::memory_order_relaxed);
+      }
+    });
+  }
+  for (auto &th : frozen_readers) th.join();
+  assert(frozen_cuts.load() == 2000);
+  std::cout << "  • Freeze() 只读冻结与 4 线程无锁并发切词 (2000 次): PASS\n";
+
   std::cout << "\n========================================================================\n";
   std::cout << "🎉 所有 6 大类核心边界、极限输入、多线程竞态与崩溃隔离测试 100% 全部通过!\n";
   std::cout << "========================================================================\n";

@@ -15,7 +15,7 @@
 #include "gui/settings/general_tab.h"
 #include "gui/settings/patterns_tab.h"
 #include "gui/settings/performance_tab.h"
-#include "gui/settings/user_dict_tab.h"
+// #include "gui/settings/user_dict_tab.h"
 
 namespace soeasy {
 namespace gui {
@@ -198,7 +198,8 @@ void SettingsDialog::SetupUi() {
   add_nav_item(Tr("tab_dirs"));
   add_nav_item(Tr("tab_patterns"));
   add_nav_item(Tr("tab_exts"));
-  add_nav_item(Tr("tab_user_dict"));
+  // Disabled in UI: FTS5 phrase matching covers compound words cleanly; UserDictTab code kept for future use.
+  // add_nav_item(Tr("tab_user_dict"));
   add_nav_item(Tr("tab_perf"));
 
   page_stack_ = new QStackedWidget(body_widget);
@@ -210,10 +211,10 @@ void SettingsDialog::SetupUi() {
   auto *dirs_tab = new DirectoriesTab(page_stack_);
   auto *patterns_tab = new PatternsTab(page_stack_);
   auto *extensions_tab = new ExtensionsTab(page_stack_);
-  auto *user_dict_tab = new UserDictTab(page_stack_);
+  // auto *user_dict_tab = new UserDictTab(page_stack_);
   auto *performance_tab = new PerformanceTab(page_stack_);
 
-  tabs_ = {general_tab, dirs_tab, patterns_tab, extensions_tab, user_dict_tab, performance_tab};
+  tabs_ = {general_tab, dirs_tab, patterns_tab, extensions_tab, performance_tab};
 
   for (auto *tab : tabs_) {
     page_stack_->addWidget(tab);
@@ -275,13 +276,12 @@ void SettingsDialog::PopulateFromConfig() {
 void SettingsDialog::RetranslateUi() {
   setWindowTitle(Tr("settings_title"));
 
-  if (nav_list_ && nav_list_->count() >= 6) {
+  if (nav_list_ && nav_list_->count() >= 5) {
     nav_list_->item(0)->setText(Tr("tab_general"));
     nav_list_->item(1)->setText(Tr("tab_dirs"));
     nav_list_->item(2)->setText(Tr("tab_patterns"));
     nav_list_->item(3)->setText(Tr("tab_exts"));
-    nav_list_->item(4)->setText(Tr("tab_user_dict"));
-    nav_list_->item(5)->setText(Tr("tab_perf"));
+    nav_list_->item(4)->setText(Tr("tab_perf"));
   }
 
   if (btn_rebuild_) btn_rebuild_->setText(Tr("btn_rebuild"));

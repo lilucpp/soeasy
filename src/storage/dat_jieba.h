@@ -4,6 +4,7 @@
 #ifndef SOEASY_SRC_STORAGE_DAT_JIEBA_H_
 #define SOEASY_SRC_STORAGE_DAT_JIEBA_H_
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -73,6 +74,15 @@ class DatJieba {
   }
 
   /**
+   * @brief Seal the overlay user dictionary as immutable for lock-free concurrent reads.
+   */
+  void Freeze();
+
+  bool IsFrozen() const {
+    return is_frozen_.load(std::memory_order_acquire);
+  }
+
+  /**
    * @brief Fast existence check for a word in either overlay user dictionary
    * or the base Double-Array Trie dictionary (nanosecond lookup).
    */
@@ -131,7 +141,8 @@ class DatJieba {
   double min_weight_{-100.0};
   bool is_initialized_{false};
 
-  // Overlay User Dictionary (thread-safe for dynamic insertion/deletion)
+  // Overlay User Dictionary (thread-safe for dynamic insertion/deletion unless frozen)
+  std::atomic<bool> is_frozen_{false};
   mutable std::mutex user_dict_mutex_;
   std::unordered_map<std::string, UserWordInfo> user_words_;
   std::unordered_set<cppjieba::Rune> user_single_cjk_;

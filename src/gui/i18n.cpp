@@ -205,7 +205,7 @@ void I18n::InitDictionary() {
       {"tab_perf", "性能与日志"},
 
       // Settings - User Dict Tab
-      {"label_user_dict_hint", "自定义专有关键词，检索时具备即时自愈能力。点击“重建索引”可全量重新分词："},
+      {"label_user_dict_hint", "自定义专有关键词，修改并保存后需重启程序并在需要时“重建索引”以全量生效："},
       {"col_user_dict_word", "自定义关键词"},
       {"col_user_dict_freq", "词频权重"},
       {"btn_add_word", "添加关键词"},
@@ -519,7 +519,8 @@ void I18n::InitDictionary() {
 
       // Settings - User Dict Tab
       {"label_user_dict_hint",
-       "Custom keywords with instant search self-healing. Click 'Rebuild Index' to re-index historical files:"},
+       "Custom keywords take effect after restarting the application (click 'Rebuild Index' if needed to re-index "
+       "historical files):"},
       {"col_user_dict_word", "Custom Keyword"},
       {"col_user_dict_freq", "Weight"},
       {"btn_add_word", "Add Keyword"},

@@ -179,14 +179,14 @@ int main(int argc, char *argv[]) {
                 << pix.height() << "\n";
     }
 
-    // Verify Tab 5 (Performance & Logs) Combobox rendering
+    // Verify Tab 4 (Performance & Logs) Combobox rendering
     {
-      soeasy::gui::SettingsDialog dlg_tab5(config);
-      dlg_tab5.resize(800, 600);
-      dlg_tab5.show();
-      dlg_tab5.SetCurrentTab(5);
+      soeasy::gui::SettingsDialog dlg_tab4(config);
+      dlg_tab4.resize(800, 600);
+      dlg_tab4.show();
+      dlg_tab4.SetCurrentTab(4);
       app.processEvents();
-      dlg_tab5.grab().save("/tmp/tab5_combo_fixed.png");
+      dlg_tab4.grab().save("/tmp/tab5_combo_fixed.png");
     }
 
     std::string test_cfg_file = soeasy::test::GetTestTempPath("soeasy_i18n_test_config.json").string();
