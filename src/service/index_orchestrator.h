@@ -71,7 +71,10 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   [[nodiscard]] bool DoIsIndexing() const override;
   [[nodiscard]] OrchestratorPhase DoGetPhase() const override { return phase_.load(std::memory_order_acquire); }
   [[nodiscard]] bool DoHasIncompleteRebuild() const override {
-    return rebuild_incomplete_.load(std::memory_order_acquire);
+    return persisted_index_state_.load(std::memory_order_acquire) == PersistedIndexState::kRebuildingIncomplete;
+  }
+  [[nodiscard]] PersistedIndexState DoGetPersistedIndexState() const override {
+    return persisted_index_state_.load(std::memory_order_acquire);
   }
   [[nodiscard]] size_t DoIndexedFileCount() const override;
 
@@ -99,7 +102,7 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   void ReconcileAndDisableWatchBuffering();
   bool ApplyLiveFileChange(const DebouncedEvent &event, bool from_reconcile);
   size_t PruneStaleEntriesByConfigLocked();
-  void SetRebuildIncomplete(bool incomplete);
+  void SetPersistedIndexState(PersistedIndexState state);
   void SyncLiveWatchesWithoutStop();
   void StopAndJoinReclaim();
   void StopAndJoinBackgroundTask();
@@ -160,7 +163,7 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   bool pending_requires_scan_{false};
   std::atomic<uint64_t> bg_generation_{0};
   std::atomic<OrchestratorPhase> phase_{OrchestratorPhase::kIdle};
-  std::atomic<bool> rebuild_incomplete_{false};
+  std::atomic<PersistedIndexState> persisted_index_state_{PersistedIndexState::kReady};
   BackgroundIndexCallbacks bg_callbacks_;
   std::thread bg_task_thread_;
 

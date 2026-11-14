@@ -36,6 +36,12 @@ enum class OrchestratorPhase {
   kReconciling = 3,
 };
 
+enum class PersistedIndexState {
+  kReady = 0,
+  kScanning = 1,
+  kRebuildingIncomplete = 2,
+};
+
 struct IndexTaskResult {
   IndexTaskKind kind = IndexTaskKind::kInitial;
   uint64_t generation = 0;
@@ -106,6 +112,7 @@ class IIndexOrchestrator {
   [[nodiscard]] bool IsIndexing() const { return DoIsIndexing(); }
   [[nodiscard]] OrchestratorPhase GetPhase() const { return DoGetPhase(); }
   [[nodiscard]] bool HasIncompleteRebuild() const { return DoHasIncompleteRebuild(); }
+  [[nodiscard]] PersistedIndexState GetPersistedIndexState() const { return DoGetPersistedIndexState(); }
   [[nodiscard]] size_t IndexedFileCount() const { return DoIndexedFileCount(); }
 
   void CancelScan() { DoCancelScan(); }
@@ -142,6 +149,9 @@ class IIndexOrchestrator {
     return DoIsIndexing() ? OrchestratorPhase::kScanning : OrchestratorPhase::kIdle;
   }
   [[nodiscard]] virtual bool DoHasIncompleteRebuild() const { return false; }
+  [[nodiscard]] virtual PersistedIndexState DoGetPersistedIndexState() const {
+    return DoHasIncompleteRebuild() ? PersistedIndexState::kRebuildingIncomplete : PersistedIndexState::kReady;
+  }
   [[nodiscard]] virtual size_t DoIndexedFileCount() const = 0;
 
   virtual void DoCancelScan() = 0;

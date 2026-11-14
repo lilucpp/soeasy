@@ -374,17 +374,23 @@ TEST_F(IndexStateMachineTest, RebuildWatchFirstReconcileNoDowngradeAndIncomplete
   }
   EXPECT_TRUE(results.back().cancelled);
   EXPECT_TRUE(pipeline_->HasIncompleteRebuild());
+  EXPECT_EQ(pipeline_->GetPersistedIndexState(), PersistedIndexState::kRebuildingIncomplete);
 
   std::string meta_val;
   ASSERT_TRUE(storage_->GetMetaValue("rebuild_incomplete", &meta_val));
   EXPECT_EQ(meta_val, "1");
+  ASSERT_TRUE(storage_->GetMetaValue("index_state", &meta_val));
+  EXPECT_EQ(meta_val, "rebuilding_incomplete");
 
-  // Completing a clean scan resets rebuild_incomplete to 0 and returns phase to kIdle.
+  // Completing a clean scan resets rebuild_incomplete to 0, index_state to ready, and returns phase to kIdle.
   pipeline_->PerformInitialScan();
   EXPECT_EQ(pipeline_->GetPhase(), OrchestratorPhase::kIdle);
   EXPECT_FALSE(pipeline_->HasIncompleteRebuild());
+  EXPECT_EQ(pipeline_->GetPersistedIndexState(), PersistedIndexState::kReady);
   ASSERT_TRUE(storage_->GetMetaValue("rebuild_incomplete", &meta_val));
   EXPECT_EQ(meta_val, "0");
+  ASSERT_TRUE(storage_->GetMetaValue("index_state", &meta_val));
+  EXPECT_EQ(meta_val, "ready");
 }
 
 TEST_F(IndexStateMachineTest, InterruptedInitialScanResumesAfterNarrowingConfigSync) {
@@ -484,6 +490,44 @@ TEST_F(IndexStateMachineTest, DirectSyncResetsPhaseAndOcrExpandedReindexes) {
   const PipelineStats after_ocr = pipeline_->GetStats();
   EXPECT_EQ(after_ocr.total_files_indexed, baseline_stats.total_files_indexed);
   EXPECT_EQ(after_ocr.total_parse_failures, baseline_stats.total_parse_failures + 1);
+}
+
+TEST_F(IndexStateMachineTest, PersistedIndexStateCrashRecoveryAndColdBoot) {
+  InitPipeline();
+  WriteFile(dir_a_ / "recover.txt", "crash_recovery_token");
+  config_->SetIndexedDirectories({dir_a_.string()});
+  config_->SetSupportedExtensions({"txt"});
+
+  // 1. Simulate process crash mid-scan ('scanning' persisted in index_meta).
+  ASSERT_TRUE(storage_->SetMetaValue("index_state", "scanning"));
+  auto rebooted_scan_pipe = std::make_shared<IndexPipeline>(config_, worker_guard_, storage_);
+  ASSERT_TRUE(rebooted_scan_pipe->Init());
+  EXPECT_EQ(rebooted_scan_pipe->GetPersistedIndexState(), PersistedIndexState::kScanning);
+  EXPECT_FALSE(rebooted_scan_pipe->HasIncompleteRebuild());
+
+  // Clean scan heals 'scanning' -> 'ready'.
+  ASSERT_EQ(rebooted_scan_pipe->PerformInitialScan(), 1u);
+  EXPECT_EQ(rebooted_scan_pipe->GetPersistedIndexState(), PersistedIndexState::kReady);
+  std::string state_val;
+  ASSERT_TRUE(storage_->GetMetaValue("index_state", &state_val));
+  EXPECT_EQ(state_val, "ready");
+  rebooted_scan_pipe.reset();
+
+  // 2. Simulate process crash mid-rebuild ('rebuilding_incomplete' persisted in index_meta).
+  ASSERT_TRUE(storage_->SetMetaValue("index_state", "rebuilding_incomplete"));
+  ASSERT_TRUE(storage_->SetMetaValue("rebuild_incomplete", "1"));
+  auto rebooted_rebuild_pipe = std::make_shared<IndexPipeline>(config_, worker_guard_, storage_);
+  ASSERT_TRUE(rebooted_rebuild_pipe->Init());
+  EXPECT_EQ(rebooted_rebuild_pipe->GetPersistedIndexState(), PersistedIndexState::kRebuildingIncomplete);
+  EXPECT_TRUE(rebooted_rebuild_pipe->HasIncompleteRebuild());
+
+  // Clean background incremental scan heals 'rebuilding_incomplete' -> 'ready'.
+  rebooted_rebuild_pipe->StartBackgroundTask(/*rebuild=*/false, /*force_incremental=*/true, {});
+  ASSERT_TRUE(WaitUntil([&]() { return !rebooted_rebuild_pipe->IsIndexing(); }));
+  EXPECT_EQ(rebooted_rebuild_pipe->GetPersistedIndexState(), PersistedIndexState::kReady);
+  EXPECT_FALSE(rebooted_rebuild_pipe->HasIncompleteRebuild());
+  ASSERT_TRUE(storage_->GetMetaValue("index_state", &state_val));
+  EXPECT_EQ(state_val, "ready");
 }
 
 }  // namespace

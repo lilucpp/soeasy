@@ -696,6 +696,29 @@ int main(int argc, char *argv[]) {
     CHECK(gen_groups[1]->isEnabled());
     CHECK(gen_groups[2]->isEnabled());
     CHECK(tree->isEnabled());
+    CHECK(lock_pipeline->GetPersistedIndexState() == soeasy::service::PersistedIndexState::kRebuildingIncomplete);
+
+    // MainWindow status bar must persistently warn about incomplete index until healed cleanly.
+    {
+      soeasy::gui::MainWindow incomplete_win(lock_pipeline);
+      incomplete_win.show();
+      app.processEvents();
+      auto inc_labels = incomplete_win.statusBar()->findChildren<QLabel *>();
+      CHECK(inc_labels.size() >= 2);
+      CHECK(inc_labels.front()->text().contains("索引未完成"));
+      CHECK(inc_labels.back()->text().contains("索引未完成"));
+    }
+    lock_pipeline->PerformInitialScan();
+    CHECK(lock_pipeline->GetPersistedIndexState() == soeasy::service::PersistedIndexState::kReady);
+    {
+      soeasy::gui::MainWindow recovered_win(lock_pipeline);
+      recovered_win.show();
+      app.processEvents();
+      auto rec_labels = recovered_win.statusBar()->findChildren<QLabel *>();
+      CHECK(rec_labels.size() >= 2);
+      CHECK(!rec_labels.front()->text().contains("索引未完成"));
+      CHECK(rec_labels.back()->text().contains("就绪"));
+    }
 
     lock_pipeline.reset();
     lock_storage->Close();

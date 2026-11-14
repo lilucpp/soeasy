@@ -87,6 +87,7 @@ class MainWindow : public QMainWindow {
   void SetupTrayIcon();
   void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
+  [[nodiscard]] QString BuildStatusTooltip(double cost_ms, bool is_incomplete) const;
   void UpdateLatencyLabel(double cost_ms);
   [[nodiscard]] service::BackgroundIndexCallbacks MakeBackgroundCallbacks();
 

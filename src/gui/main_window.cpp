@@ -550,31 +550,51 @@ void MainWindow::RetranslateUi() {
   UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
 }
 
-void MainWindow::UpdateLatencyLabel(double cost_ms) {
-  if (!status_latency_label_) {
-    return;
-  }
-
-  QString tooltip;
+QString MainWindow::BuildStatusTooltip(double cost_ms, bool is_incomplete) const {
+  QString tooltip = is_incomplete ? Tr("status_incomplete_tooltip") : QString();
   if (has_completed_index_) {
     const QString task_name = IndexTaskDisplayName(last_index_task_type_);
     const QString state_name = last_index_cancelled_ ? Tr("status_task_state_cancelled") : Tr("status_task_state_done");
     const QString elapsed_str = FormatElapsedDuration(last_index_elapsed_sec_);
     const QString finished_str =
         last_index_finished_at_.isValid() ? last_index_finished_at_.toString("HH:mm:ss") : QString("-");
-    tooltip = Tr("status_index_tooltip")
-                  .arg(task_name)
-                  .arg(state_name)
-                  .arg(last_index_file_count_)
-                  .arg(elapsed_str)
-                  .arg(finished_str);
+    const QString detail = Tr("status_index_tooltip")
+                               .arg(task_name)
+                               .arg(state_name)
+                               .arg(last_index_file_count_)
+                               .arg(elapsed_str)
+                               .arg(finished_str);
+    tooltip = tooltip.isEmpty() ? detail : (tooltip + "\n" + detail);
     if (cost_ms > 0.0) {
       tooltip += Tr("status_search_tooltip_line").arg(QString::number(cost_ms, 'f', 2));
     }
+  } else if (cost_ms > 0.0 && !tooltip.isEmpty()) {
+    tooltip += Tr("status_search_tooltip_line").arg(QString::number(cost_ms, 'f', 2));
   }
+  return tooltip;
+}
+
+void MainWindow::UpdateLatencyLabel(double cost_ms) {
+  if (!status_latency_label_) {
+    return;
+  }
+
+  const auto idx_state = pipeline_ ? pipeline_->GetPersistedIndexState() : service::PersistedIndexState::kReady;
+  const bool is_incomplete = (idx_state != service::PersistedIndexState::kReady);
+
+  const QString tooltip = BuildStatusTooltip(cost_ms, is_incomplete);
   status_latency_label_->setToolTip(tooltip);
   if (status_stats_label_) {
     status_stats_label_->setToolTip(tooltip);
+  }
+
+  if (is_incomplete) {
+    if (cost_ms > 0.0) {
+      status_latency_label_->setText(Tr("status_latency_incomplete_with_search").arg(QString::number(cost_ms, 'f', 2)));
+    } else {
+      status_latency_label_->setText(Tr("status_latency_incomplete"));
+    }
+    return;
   }
 
   if (cost_ms > 0.0) {
@@ -610,9 +630,12 @@ void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
     return;
   }
   const size_t indexed_files = pipeline_ ? pipeline_->IndexedFileCount() : 0;
+  const auto idx_state = pipeline_ ? pipeline_->GetPersistedIndexState() : service::PersistedIndexState::kReady;
+  const bool is_incomplete = (idx_state != service::PersistedIndexState::kReady);
 
   if (!finish_banner_timer_ || !finish_banner_timer_->isActive()) {
-    status_stats_label_->setText(Tr("status_stats").arg(indexed_files).arg(total_matches));
+    status_stats_label_->setText(
+        Tr(is_incomplete ? "status_stats_incomplete" : "status_stats").arg(indexed_files).arg(total_matches));
   }
 
   UpdateLatencyLabel(cost_ms);
@@ -922,8 +945,14 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
 
   const QString elapsed_str = FormatElapsedDuration(elapsed_sec);
   if (cancelled) {
-    const bool incomplete_rebuild = pipeline_ && pipeline_->HasIncompleteRebuild();
-    status_stats_label_->setText(Tr(incomplete_rebuild ? "status_incomplete_rebuild" : "status_task_cancelled_msg"));
+    const auto idx_state = pipeline_ ? pipeline_->GetPersistedIndexState() : service::PersistedIndexState::kReady;
+    if (idx_state == service::PersistedIndexState::kRebuildingIncomplete) {
+      status_stats_label_->setText(Tr("status_incomplete_rebuild"));
+    } else if (idx_state == service::PersistedIndexState::kScanning) {
+      status_stats_label_->setText(Tr("status_incomplete_scan"));
+    } else {
+      status_stats_label_->setText(Tr("status_task_cancelled_msg"));
+    }
   } else {
     QString finish_desc;
     if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {

@@ -153,6 +153,10 @@ bool IndexPipeline::HasIncompleteRebuild() const {
   return orchestrator_ ? orchestrator_->HasIncompleteRebuild() : false;
 }
 
+PersistedIndexState IndexPipeline::GetPersistedIndexState() const {
+  return orchestrator_ ? orchestrator_->GetPersistedIndexState() : PersistedIndexState::kReady;
+}
+
 size_t IndexPipeline::IndexedFileCount() const {
   return orchestrator_ ? orchestrator_->IndexedFileCount() : 0;
 }

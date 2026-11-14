@@ -76,6 +76,7 @@ class IndexPipeline {
   [[nodiscard]] bool IsIndexing() const;
   [[nodiscard]] OrchestratorPhase GetPhase() const;
   [[nodiscard]] bool HasIncompleteRebuild() const;
+  [[nodiscard]] PersistedIndexState GetPersistedIndexState() const;
   [[nodiscard]] size_t IndexedFileCount() const;
 
   void CancelScan();

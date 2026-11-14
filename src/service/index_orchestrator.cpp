@@ -116,6 +116,25 @@ struct ScopedPhaseResetGuard {
   bool active_;
 };
 
+class ScopedWriteQueuePause {
+ public:
+  explicit ScopedWriteQueuePause(std::shared_ptr<soeasy::service::AsyncWriteQueue> queue) : queue_(std::move(queue)) {
+    if (queue_) {
+      queue_->Pause();
+    }
+  }
+  ~ScopedWriteQueuePause() {
+    if (queue_) {
+      queue_->Resume();
+    }
+  }
+  ScopedWriteQueuePause(const ScopedWriteQueuePause &) = delete;
+  ScopedWriteQueuePause &operator=(const ScopedWriteQueuePause &) = delete;
+
+ private:
+  std::shared_ptr<soeasy::service::AsyncWriteQueue> queue_;
+};
+
 std::string NormalizeDirPrefixSlash(const std::string &dir_path) {
   const std::string norm = soeasy::service::NormalizeDirKey(dir_path);
   return (norm == "/") ? norm : (norm + "/");
@@ -216,10 +235,23 @@ bool IndexOrchestrator::DoInit() {
   watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
   watch_engine_->SetPathKnownCallback(
       [this](const std::string &p) { return name_index_ ? name_index_->ContainsPathOrPrefix(p) : false; });
-  std::string incomplete_flag;
-  if (storage_engine_->GetMetaValue("rebuild_incomplete", &incomplete_flag) && incomplete_flag == "1") {
-    rebuild_incomplete_.store(true, std::memory_order_release);
-    LOG_WARN("[IndexOrchestrator] Detected incomplete rebuild flag from previous session.");
+  std::string index_state_val;
+  if (storage_engine_->GetMetaValue("index_state", &index_state_val) && !index_state_val.empty()) {
+    if (index_state_val == "rebuilding_incomplete") {
+      persisted_index_state_.store(PersistedIndexState::kRebuildingIncomplete, std::memory_order_release);
+      LOG_WARN("[IndexOrchestrator] Detected incomplete rebuild state ('rebuilding_incomplete') from previous session.");
+    } else if (index_state_val == "scanning") {
+      persisted_index_state_.store(PersistedIndexState::kScanning, std::memory_order_release);
+      LOG_WARN("[IndexOrchestrator] Detected interrupted scan state ('scanning') from previous session.");
+    } else {
+      persisted_index_state_.store(PersistedIndexState::kReady, std::memory_order_release);
+    }
+  } else {
+    std::string incomplete_flag;
+    if (storage_engine_->GetMetaValue("rebuild_incomplete", &incomplete_flag) && incomplete_flag == "1") {
+      persisted_index_state_.store(PersistedIndexState::kRebuildingIncomplete, std::memory_order_release);
+      LOG_WARN("[IndexOrchestrator] Detected incomplete rebuild flag from previous session.");
+    }
   }
   write_queue_ = std::make_shared<AsyncWriteQueue>();
   const auto profile = config_ ? config_->resource_profile() : common::ResourceProfile::kLowMemory;
@@ -394,11 +426,19 @@ void IndexOrchestrator::DoTriggerAsyncSpaceReclaim() {
   });
 }
 
-void IndexOrchestrator::SetRebuildIncomplete(bool incomplete) {
-  rebuild_incomplete_.store(incomplete, std::memory_order_release);
-  if (storage_engine_) {
-    storage_engine_->SetMetaValue("rebuild_incomplete", incomplete ? "1" : "0");
+void IndexOrchestrator::SetPersistedIndexState(PersistedIndexState state) {
+  persisted_index_state_.store(state, std::memory_order_release);
+  if (!storage_engine_) {
+    return;
   }
+  const char *state_str = "ready";
+  if (state == PersistedIndexState::kScanning) {
+    state_str = "scanning";
+  } else if (state == PersistedIndexState::kRebuildingIncomplete) {
+    state_str = "rebuilding_incomplete";
+  }
+  storage_engine_->SetMetaValue("index_state", state_str);
+  storage_engine_->SetMetaValue("rebuild_incomplete", state == PersistedIndexState::kRebuildingIncomplete ? "1" : "0");
 }
 
 void IndexOrchestrator::EnableWatchBuffering(bool clear_existing) {
@@ -659,6 +699,13 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
     bool active_;
   } buffering_guard(this, manage_buffering);
 
+  if (manage_buffering &&
+      persisted_index_state_.load(std::memory_order_acquire) != PersistedIndexState::kRebuildingIncomplete) {
+    // Pause and drain AsyncWriteQueue before persisting index_state so the metadata write commits independently.
+    ScopedWriteQueuePause pause_guard(write_queue_);
+    SetPersistedIndexState(PersistedIndexState::kScanning);
+  }
+
   std::vector<std::string> watched_dirs = config_ ? config_->GetIndexedDirectories() : std::vector<std::string>{};
   if (watched_dirs.empty() && watch_engine_) {
     watched_dirs = watch_engine_->GetWatchedDirectories();
@@ -744,8 +791,8 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
   SweepOfflineDeletedFiles(visited_doc_ids, traversed_root_prefixes);
 
   if (manage_buffering && !cancel_scan_.load(std::memory_order_acquire) &&
-      !bg_stopping_.load(std::memory_order_acquire) && rebuild_incomplete_.load(std::memory_order_acquire)) {
-    SetRebuildIncomplete(false);
+      !bg_stopping_.load(std::memory_order_acquire)) {
+    SetPersistedIndexState(PersistedIndexState::kReady);
   }
 
 #if defined(__linux__) && defined(__GLIBC__)
@@ -801,7 +848,7 @@ bool IndexOrchestrator::RebuildIndexInternal(ScanProgressCallback progress_cb, b
   } else {
     DoFlushWriteQueue();
   }
-  SetRebuildIncomplete(true);
+  SetPersistedIndexState(PersistedIndexState::kRebuildingIncomplete);
 
   // 3. Clear persistent storage first; only drop the in-memory mirror once the DB was cleared
   //    successfully, otherwise a failure would leave NameIndex empty while the DB still has data.
@@ -842,7 +889,7 @@ bool IndexOrchestrator::RebuildIndexInternal(ScanProgressCallback progress_cb, b
     LOG_INFO("[IndexOrchestrator] Rebuild cancelled after indexing {} files (rebuild_incomplete remains set).", indexed);
     return false;
   }
-  SetRebuildIncomplete(false);
+  SetPersistedIndexState(PersistedIndexState::kReady);
   LOG_INFO("[IndexOrchestrator] Rebuild completed successfully. Total files indexed: {}", indexed);
   return true;
 }
@@ -1516,7 +1563,7 @@ void IndexOrchestrator::BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t 
         DoPruneStaleEntriesByConfig();
       }
       const bool needs_scan = force_rescan || !diff.added_dirs.empty() || diff.rules_expanded ||
-                              rebuild_incomplete_.load(std::memory_order_acquire);
+                              persisted_index_state_.load(std::memory_order_acquire) != PersistedIndexState::kReady;
       if (needs_scan && !cancel_scan_.load() && !bg_stopping_.load()) {
         std::lock_guard<std::mutex> scan_lock(scan_mutex_);
         PerformScanInternal(std::move(progress_forwarder), /*manage_buffering=*/true, /*manage_phase=*/false,
