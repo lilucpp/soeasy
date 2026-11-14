@@ -28,6 +28,13 @@ struct NameMatchResult {
   double score = 0.0;
 };
 
+struct IndexedFileSummary {
+  int64_t doc_id = 0;
+  std::string file_path;
+  std::string ext;
+  uint64_t file_size = 0;
+};
+
 class NameIndex {
  public:
   NameIndex();
@@ -94,6 +101,16 @@ class NameIndex {
    * @brief Estimate live heap memory (in bytes) consumed by internal index structures.
    */
   size_t ApproximateMemoryUsage() const;
+
+  /**
+   * @brief Snapshot lightweight summaries of all active indexed files for rule pruning or reconciliation.
+   */
+  std::vector<IndexedFileSummary> SnapshotFileSummaries() const;
+
+  /**
+   * @brief Check whether the given path matches an indexed file or an indexed directory subtree.
+   */
+  bool ContainsPathOrPrefix(const std::string &path) const;
 
  private:
   struct Impl;

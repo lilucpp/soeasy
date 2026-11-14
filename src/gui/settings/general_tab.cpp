@@ -147,6 +147,10 @@ void GeneralTab::ApplyToConfig(service::IndexConfig *config) {
   if (!config) return;
   config->set_ui_language(language_combo_->currentData().toString().toStdString());
 
+  if (structural_read_only_) {
+    return;
+  }
+
   std::vector<std::string> dirs;
   dirs.reserve(static_cast<size_t>(dirs_list_->count()));
   for (int i = 0; i < dirs_list_->count(); ++i) {
@@ -162,6 +166,12 @@ void GeneralTab::ApplyToConfig(service::IndexConfig *config) {
   config->SetExcludedPatterns(pats);
 
   config->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
+}
+
+void GeneralTab::SetStructuralReadOnly(bool read_only) {
+  structural_read_only_ = read_only;
+  if (group_dirs_) group_dirs_->setEnabled(!read_only);
+  if (group_exclusions_) group_exclusions_->setEnabled(!read_only);
 }
 
 void GeneralTab::RetranslateUi() {

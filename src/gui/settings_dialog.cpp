@@ -18,10 +18,17 @@
 namespace soeasy {
 namespace gui {
 
-SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent)
-    : QDialog(parent), config_(std::move(config)) {
+SettingsDialog::SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent,
+                               IndexingControl indexing_control)
+    : QDialog(parent), config_(std::move(config)), indexing_control_(std::move(indexing_control)) {
   SetupUi();
   PopulateFromConfig();
+  UpdateIndexingLockState();
+  if (indexing_control_.is_indexing) {
+    lock_poll_timer_ = new QTimer(this);
+    connect(lock_poll_timer_, &QTimer::timeout, this, &SettingsDialog::UpdateIndexingLockState);
+    lock_poll_timer_->start(120);
+  }
 }
 
 void SettingsDialog::SetupUi() {
@@ -187,6 +194,32 @@ void SettingsDialog::SetupUi() {
   main_layout->setContentsMargins(0, 0, 0, 0);
   main_layout->setSpacing(0);
 
+  lock_banner_ = new QWidget(this);
+  lock_banner_->setObjectName("settings_lock_banner");
+  lock_banner_->setStyleSheet(
+      "QWidget#settings_lock_banner { background-color: #FEF3C7; border-bottom: 1px solid #F59E0B; }");
+  auto *banner_layout = new QHBoxLayout(lock_banner_);
+  banner_layout->setContentsMargins(16, 8, 16, 8);
+  banner_layout->setSpacing(12);
+
+  lock_banner_label_ = new QLabel(lock_banner_);
+  lock_banner_label_->setWordWrap(true);
+  lock_banner_label_->setStyleSheet("color: #92400E; font-size: 12px; font-weight: 500; background: transparent;");
+
+  btn_stop_indexing_ = new QPushButton(lock_banner_);
+  btn_stop_indexing_->setObjectName("btn_stop_indexing");
+  btn_stop_indexing_->setStyleSheet(
+      "QPushButton { background-color: #DC2626; color: #FFFFFF; border: none; border-radius: 4px; "
+      "padding: 5px 12px; font-weight: 600; }"
+      "QPushButton:hover { background-color: #B91C1C; }"
+      "QPushButton:disabled { background-color: #FCA5A5; }");
+  connect(btn_stop_indexing_, &QPushButton::clicked, this, &SettingsDialog::OnStopIndexingClicked);
+
+  banner_layout->addWidget(lock_banner_label_, 1);
+  banner_layout->addWidget(btn_stop_indexing_, 0, Qt::AlignVCenter);
+  lock_banner_->setVisible(false);
+  main_layout->addWidget(lock_banner_);
+
   auto *body_widget = new QWidget(this);
   auto *body_layout = new QHBoxLayout(body_widget);
   body_layout->setContentsMargins(0, 0, 0, 0);
@@ -249,10 +282,12 @@ void SettingsDialog::SetCurrentTab(int index) {
 QHBoxLayout *SettingsDialog::CreateBottomBar() {
   auto *bottom_layout = new QHBoxLayout();
   btn_rebuild_ = new QPushButton(this);
+  btn_rebuild_->setObjectName("btn_rebuild");
   btn_rebuild_->setStyleSheet("QPushButton { color: #D32F2F; }");
   bottom_layout->addWidget(btn_rebuild_);
   bottom_layout->addStretch();
   btn_save_ = new QPushButton(this);
+  btn_save_->setObjectName("btn_save");
   btn_save_->setDefault(true);
   btn_cancel_ = new QPushButton(this);
   bottom_layout->addWidget(btn_save_);
@@ -290,6 +325,8 @@ void SettingsDialog::RetranslateUi() {
   if (btn_rebuild_) btn_rebuild_->setText(Tr("btn_rebuild"));
   if (btn_save_) btn_save_->setText(Tr("btn_save"));
   if (btn_cancel_) btn_cancel_->setText(Tr("btn_cancel"));
+  if (lock_banner_label_) lock_banner_label_->setText(Tr("settings_indexing_lock_banner"));
+  if (btn_stop_indexing_) btn_stop_indexing_->setText(Tr("btn_stop_indexing"));
 
   for (auto *tab : tabs_) {
     tab->RetranslateUi();
@@ -300,14 +337,50 @@ void SettingsDialog::OnLanguageChanged(const std::string &) {
   RetranslateUi();
 }
 
+void SettingsDialog::OnStopIndexingClicked() {
+  if (!indexing_control_.cancel_indexing) {
+    return;
+  }
+  if (btn_stop_indexing_) {
+    btn_stop_indexing_->setEnabled(false);
+  }
+  indexing_control_.cancel_indexing();
+}
+
+void SettingsDialog::UpdateIndexingLockState() {
+  const bool locked = indexing_control_.is_indexing && indexing_control_.is_indexing();
+  if (lock_banner_) {
+    lock_banner_->setVisible(locked);
+  }
+  if (btn_rebuild_) {
+    btn_rebuild_->setEnabled(!locked);
+  }
+  if (btn_stop_indexing_ && (!locked || !was_structural_locked_)) {
+    btn_stop_indexing_->setEnabled(true);
+  }
+  was_structural_locked_ = locked;
+  for (auto *tab : tabs_) {
+    tab->SetStructuralReadOnly(locked);
+  }
+}
+
 void SettingsDialog::OnSaveAndApply() {
   if (!config_) {
     accept();
     return;
   }
 
+  const bool locked = indexing_control_.is_indexing && indexing_control_.is_indexing();
+  const service::IndexConfigSnapshot before_apply = config_->CaptureSnapshot();
   for (auto *tab : tabs_) {
+    tab->SetStructuralReadOnly(locked);
     tab->ApplyToConfig(config_.get());
+  }
+  const service::ConfigChangeSummary diff = service::DiffIndexConfig(before_apply, config_->CaptureSnapshot());
+
+  if (locked && !diff.HasAnyChanges()) {
+    QMessageBox::information(this, Tr("dlg_tip"), Tr("settings_locked_no_runtime_changes"));
+    return;
   }
 
   QString config_path;
@@ -322,6 +395,7 @@ void SettingsDialog::OnSaveAndApply() {
     return;
   }
 
+  emit SettingsAppliedWithDiff(diff);
   emit SettingsApplied();
   accept();
 }

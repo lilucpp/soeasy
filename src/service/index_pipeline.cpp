@@ -113,6 +113,16 @@ void IndexPipeline::ApplyRuntimeConfig() {
   }
 }
 
+void IndexPipeline::ApplyConfigChanges(const ConfigChangeSummary &diff, BackgroundIndexCallbacks callbacks) {
+  if (orchestrator_) {
+    orchestrator_->ApplyConfigChanges(diff, std::move(callbacks));
+  }
+}
+
+size_t IndexPipeline::PruneStaleEntriesByConfig() {
+  return orchestrator_ ? orchestrator_->PruneStaleEntriesByConfig() : 0;
+}
+
 void IndexPipeline::SyncWatchedDirectories() {
   if (orchestrator_) {
     orchestrator_->SyncWatchedDirectories();
@@ -133,6 +143,14 @@ void IndexPipeline::ClearBackgroundCallbacks() {
 
 bool IndexPipeline::IsIndexing() const {
   return orchestrator_ ? orchestrator_->IsIndexing() : false;
+}
+
+OrchestratorPhase IndexPipeline::GetPhase() const {
+  return orchestrator_ ? orchestrator_->GetPhase() : OrchestratorPhase::kIdle;
+}
+
+bool IndexPipeline::HasIncompleteRebuild() const {
+  return orchestrator_ ? orchestrator_->HasIncompleteRebuild() : false;
 }
 
 size_t IndexPipeline::IndexedFileCount() const {

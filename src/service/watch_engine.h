@@ -1,6 +1,7 @@
 #ifndef SOEASY_SRC_SERVICE_WATCH_ENGINE_H_
 #define SOEASY_SRC_SERVICE_WATCH_ENGINE_H_
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -16,6 +17,8 @@ namespace service {
 
 class WatchEngine : public efsw::FileWatchListener {
  public:
+  using PathKnownCallback = std::function<bool(const std::string &path)>;
+
   WatchEngine(std::shared_ptr<IndexConfig> config, std::shared_ptr<EventDebouncer> debouncer);
   ~WatchEngine() override;
 
@@ -55,6 +58,11 @@ class WatchEngine : public efsw::FileWatchListener {
   void RemoveWatch(const std::string &dir_path);
 
   /**
+   * @brief Register a fast predicate used to recognize indexed files or directory subtrees on Delete/Moved.
+   */
+  void SetPathKnownCallback(PathKnownCallback cb);
+
+  /**
    * @brief Get list of currently monitored root directories.
    */
   std::vector<std::string> GetWatchedDirectories() const;
@@ -75,6 +83,7 @@ class WatchEngine : public efsw::FileWatchListener {
   mutable std::mutex watch_mutex_;
   std::unordered_map<std::string, efsw::WatchID> watch_ids_;
   bool is_watching_ = false;
+  PathKnownCallback path_known_cb_;
 };
 
 }  // namespace service

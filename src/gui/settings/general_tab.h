@@ -30,6 +30,7 @@ class GeneralTab : public ISettingsTab {
   void PopulateFromConfig(const service::IndexConfig &config) override;
   void ApplyToConfig(service::IndexConfig *config) override;
   void RetranslateUi() override;
+  void SetStructuralReadOnly(bool read_only) override;
 
  signals:
   void LanguageChanged(const std::string &lang);
@@ -61,6 +62,7 @@ class GeneralTab : public ISettingsTab {
   QPushButton *btn_add_pattern_ = nullptr;
   QPushButton *btn_rm_pattern_ = nullptr;
   QCheckBox *filter_thumbs_check_ = nullptr;
+  bool structural_read_only_ = false;
 };
 
 }  // namespace gui

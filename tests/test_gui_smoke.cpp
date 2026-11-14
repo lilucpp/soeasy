@@ -5,10 +5,12 @@
 #include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QGroupBox>
 #include <QLabel>
 #include <QMetaObject>
 #include <QSpinBox>
 #include <QStatusBar>
+#include <QTreeWidget>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -26,6 +28,7 @@
 #include "gui/main_window.h"
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
+#include "gui/settings/extensions_tab.h"
 #include "gui/settings/general_tab.h"
 #include "gui/settings/performance_tab.h"
 #include "gui/settings_dialog.h"
@@ -599,6 +602,109 @@ int main(int argc, char *argv[]) {
     CHECK(enqueue_ms < 2500);
     byte_queue.Stop();
     std::cout << "  -> ResourceProfile 设置页绑定、配置持久化及字节反压即时唤醒验证通过!\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test 8: SettingsDialog Structural Read-Only Lock & Stop Button
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 8] 测试 SettingsDialog 在后台索引期间的结构只读锁定、语言可编辑及停止按钮解锁...\n";
+  {
+    const std::string lock_dir = soeasy::test::GetTestTempPath("soeasy_gui_lock_test").string();
+    std::filesystem::remove_all(lock_dir);
+    std::filesystem::create_directories(lock_dir);
+    for (int i = 0; i < 6; ++i) {
+      WriteFile(lock_dir + "/doc_" + std::to_string(i) + ".txt", "lock test payload " + std::to_string(i));
+    }
+
+    auto lock_cfg = std::make_shared<soeasy::service::IndexConfig>();
+    lock_cfg->SetIndexedDirectories({lock_dir});
+    lock_cfg->SetSupportedExtensions({"txt"});
+    const std::string lock_cfg_path = soeasy::test::GetTestTempPath("soeasy_gui_lock_cfg.json").string();
+    lock_cfg->set_config_path(lock_cfg_path);
+
+    auto lock_storage = std::make_shared<soeasy::storage::StorageEngine>();
+    const std::string lock_db = soeasy::test::GetTestTempPath("soeasy_gui_lock_test.db").string();
+    std::remove(lock_db.c_str());
+    CHECK(lock_storage->Open(lock_db, "SoEasy_GuiLock_Pass!", soeasy::test::FindDictDir()));
+
+    auto lock_pipeline = std::make_shared<soeasy::service::IndexPipeline>(lock_cfg, worker_guard, lock_storage);
+    CHECK(lock_pipeline->Init());
+
+    std::atomic<bool> progress_entered{false};
+    soeasy::service::BackgroundIndexCallbacks lock_cb;
+    lock_cb.on_progress = [&](soeasy::service::IndexTaskKind, uint64_t, size_t, size_t, const std::string &) {
+      progress_entered.store(true);
+      std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    };
+
+    lock_pipeline->StartBackgroundTask(/*rebuild=*/true, /*force_incremental=*/false, lock_cb);
+    const auto wait_start = std::chrono::steady_clock::now();
+    while (!progress_entered.load() &&
+           std::chrono::steady_clock::now() - wait_start < std::chrono::seconds(5)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK(lock_pipeline->IsIndexing());
+
+    soeasy::gui::SettingsDialog locked_dlg(
+        lock_cfg, nullptr,
+        soeasy::gui::SettingsDialog::IndexingControl{
+            [&lock_pipeline]() { return lock_pipeline && lock_pipeline->IsIndexing(); },
+            [&lock_pipeline]() {
+              if (lock_pipeline) {
+                lock_pipeline->CancelScan();
+              }
+            }});
+    locked_dlg.show();
+    app.processEvents();
+
+    auto *banner = locked_dlg.findChild<QWidget *>("settings_lock_banner");
+    auto *stop_btn = locked_dlg.findChild<QPushButton *>("btn_stop_indexing");
+    auto *rebuild_btn = locked_dlg.findChild<QPushButton *>("btn_rebuild");
+    CHECK(banner != nullptr && !banner->isHidden());
+    CHECK(stop_btn != nullptr && stop_btn->isEnabled());
+    CHECK(rebuild_btn != nullptr && !rebuild_btn->isEnabled());
+
+    // Language combo in GeneralTab remains enabled while directory/exclusion groups are disabled
+    auto *gen_tab = locked_dlg.findChild<soeasy::gui::GeneralTab *>();
+    CHECK(gen_tab != nullptr);
+    auto gen_combos = gen_tab->findChildren<QComboBox *>();
+    auto gen_groups = gen_tab->findChildren<QGroupBox *>();
+    CHECK(gen_combos.size() == 1 && gen_combos[0]->isEnabled());
+    CHECK(gen_groups.size() == 3);
+    CHECK(gen_groups[0]->isEnabled());   // Appearance / Language
+    CHECK(!gen_groups[1]->isEnabled());  // Watched directories locked
+    CHECK(!gen_groups[2]->isEnabled());  // Exclusions locked
+
+    // ExtensionsTab tree is disabled while indexing
+    auto *exts_tab = locked_dlg.findChild<soeasy::gui::ExtensionsTab *>();
+    CHECK(exts_tab != nullptr);
+    auto *tree = exts_tab->findChild<QTreeWidget *>();
+    CHECK(tree != nullptr && !tree->isEnabled());
+
+    // Clicking [Stop Indexing] cancels scan and timer unlocks controls automatically
+    stop_btn->click();
+    const auto unlock_start = std::chrono::steady_clock::now();
+    while ((lock_pipeline->IsIndexing() || !banner->isHidden()) &&
+           std::chrono::steady_clock::now() - unlock_start < std::chrono::seconds(6)) {
+      app.processEvents();
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    app.processEvents();
+    CHECK(!lock_pipeline->IsIndexing());
+    CHECK(banner->isHidden());
+    CHECK(rebuild_btn->isEnabled());
+    CHECK(gen_groups[1]->isEnabled());
+    CHECK(gen_groups[2]->isEnabled());
+    CHECK(tree->isEnabled());
+
+    lock_pipeline.reset();
+    lock_storage->Close();
+    std::filesystem::remove_all(lock_dir);
+    std::remove(lock_db.c_str());
+    std::remove((lock_db + "-wal").c_str());
+    std::remove((lock_db + "-shm").c_str());
+    std::remove(lock_cfg_path.c_str());
+    std::cout << "  -> SettingsDialog 运行期结构只读锁定、语言仍可调及停止后自动解锁验证通过!\n";
   }
 
   // Cleanup

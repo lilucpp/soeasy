@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "service/async_write_queue.h"
@@ -62,10 +63,16 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   void DoFlushWriteQueue() override;
 
   void DoApplyRuntimeConfig() override;
+  void DoApplyConfigChanges(const ConfigChangeSummary &diff, BackgroundIndexCallbacks callbacks) override;
+  size_t DoPruneStaleEntriesByConfig() override;
   void DoSyncWatchedDirectories() override;
   void DoStartBackgroundTask(bool rebuild, bool force_incremental, BackgroundIndexCallbacks callbacks) override;
   void DoClearBackgroundCallbacks() override;
   [[nodiscard]] bool DoIsIndexing() const override;
+  [[nodiscard]] OrchestratorPhase DoGetPhase() const override { return phase_.load(std::memory_order_acquire); }
+  [[nodiscard]] bool DoHasIncompleteRebuild() const override {
+    return rebuild_incomplete_.load(std::memory_order_acquire);
+  }
   [[nodiscard]] size_t DoIndexedFileCount() const override;
 
   void DoCancelScan() override;
@@ -74,26 +81,39 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   [[nodiscard]] PipelineStats DoGetStats() const override;
 
  private:
-  enum class PendingTask { kNone = 0, kIncremental = 1, kRebuild = 2 };
+  enum class PendingTask { kNone = 0, kIncremental = 1, kConfigSync = 2, kRebuild = 3 };
 
   static constexpr size_t kPathLockBuckets = 64;
 
   std::mutex &LockBucketForPath(const std::string &file_path) const;
-  size_t PerformScanInternal(ScanProgressCallback progress_cb);
+  size_t PerformScanInternal(ScanProgressCallback progress_cb, bool manage_buffering = true, bool manage_phase = true,
+                             bool force_ocr_reindex = false);
+  void CollectScanCandidates(const std::vector<std::string> &watched_dirs, std::vector<std::string> *files_to_index,
+                             std::unordered_set<int64_t> *visited_doc_ids,
+                             std::vector<std::string> *traversed_root_prefixes);
+  bool RebuildIndexInternal(ScanProgressCallback progress_cb, bool manage_phase = true);
+  void SweepOfflineDeletedFiles(const std::unordered_set<int64_t> &visited_doc_ids,
+                                const std::vector<std::string> &traversed_root_prefixes);
+  void EnableWatchBuffering(bool clear_existing);
+  void RecordBufferedEventUnlocked(const DebouncedEvent &event);
+  void ReconcileAndDisableWatchBuffering();
+  bool ApplyLiveFileChange(const DebouncedEvent &event, bool from_reconcile);
+  size_t PruneStaleEntriesByConfigLocked();
+  void SetRebuildIncomplete(bool incomplete);
+  void SyncLiveWatchesWithoutStop();
   void StopAndJoinReclaim();
   void StopAndJoinBackgroundTask();
-  void BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t initial_generation);
-  void ScanDirectoryRecursive(const std::string &dir_path);
-  bool IndexSingleFile(const std::string &file_path);
-  bool IndexSingleFileLocked(const std::string &file_path);
+  void EnqueueOrLaunchBackgroundTask(IndexTaskKind initial_kind, PendingTask req_pending,
+                                     ConfigChangeSummary req_diff, bool cancel_active_non_rebuild,
+                                     BackgroundIndexCallbacks callbacks);
+  void BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t initial_generation, PendingTask initial_task_mode,
+                          ConfigChangeSummary initial_diff, bool initial_force_rescan);
+  void ScanDirectoryRecursive(const std::string &dir_path, bool force_reindex = false);
+  bool IndexSingleFile(const std::string &file_path, bool force_reindex = false);
+  bool IndexSingleFileLocked(const std::string &file_path, bool force_reindex = false);
   void PersistIndexedFile(int64_t doc_id, const std::string &file_path, const std::string &filename,
                           const std::string &ext, uint64_t file_size, int64_t file_mtime, std::string content);
   void PurgeFailedFilesUnder(const std::string &dir_path);
-
-  /**
-   * @brief Re-register configured directories and restart the watcher after a maintenance pause.
-   */
-  void RestartLiveWatch(bool was_watching);
 
   static constexpr int64_t kMinFreePagesForVacuum = 100;
   static constexpr double kMinFragRatioForVacuum = 0.15;
@@ -133,11 +153,22 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   mutable std::mutex bg_task_mutex_;
   std::mutex bg_callback_mutex_;
   bool bg_task_running_{false};
+  IndexTaskKind active_kind_{IndexTaskKind::kInitial};
   std::atomic<bool> bg_stopping_{false};
   PendingTask pending_task_{PendingTask::kNone};
+  ConfigChangeSummary pending_diff_;
+  bool pending_requires_scan_{false};
   std::atomic<uint64_t> bg_generation_{0};
+  std::atomic<OrchestratorPhase> phase_{OrchestratorPhase::kIdle};
+  std::atomic<bool> rebuild_incomplete_{false};
   BackgroundIndexCallbacks bg_callbacks_;
   std::thread bg_task_thread_;
+
+  // Watch-first buffering during scan/rebuild -> reconciled upon completion.
+  std::mutex live_dispatch_mutex_;
+  std::mutex buffered_events_mutex_;
+  std::atomic<bool> buffer_watch_events_{false};
+  std::unordered_map<std::string, DebouncedEvent> buffered_watch_events_;
 };
 
 }  // namespace service

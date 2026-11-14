@@ -187,7 +187,7 @@ void ExtensionsTab::PopulateFromConfig(const service::IndexConfig &config) {
 }
 
 void ExtensionsTab::ApplyToConfig(service::IndexConfig *config) {
-  if (!config) return;
+  if (!config || structural_read_only_) return;
 
   config->set_enable_embedded_image_ocr(embedded_image_ocr_check_->isChecked());
 
@@ -202,6 +202,18 @@ void ExtensionsTab::ApplyToConfig(service::IndexConfig *config) {
     }
   }
   config->SetSupportedExtensions(exts);
+}
+
+void ExtensionsTab::SetStructuralReadOnly(bool read_only) {
+  structural_read_only_ = read_only;
+  if (group_ocr_) group_ocr_->setEnabled(!read_only);
+  if (exts_tree_) exts_tree_->setEnabled(!read_only);
+  if (new_custom_ext_edit_) new_custom_ext_edit_->setEnabled(!read_only);
+  if (btn_add_custom_ext_) btn_add_custom_ext_->setEnabled(!read_only);
+  if (btn_rm_custom_ext_) btn_rm_custom_ext_->setEnabled(!read_only);
+  if (btn_select_all_) btn_select_all_->setEnabled(!read_only);
+  if (btn_deselect_all_) btn_deselect_all_->setEnabled(!read_only);
+  if (btn_reset_exts_) btn_reset_exts_->setEnabled(!read_only);
 }
 
 void ExtensionsTab::RetranslateUi() {

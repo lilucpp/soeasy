@@ -123,7 +123,9 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
   if (!config) return;
 
   config->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
-  config->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
+  if (!structural_read_only_) {
+    config->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
+  }
   config->set_worker_count(static_cast<size_t>(workers_spin_->value()));
   config->set_resource_profile(
       common::ParseResourceProfile(resource_profile_combo_->currentData().toString().toStdString()));
@@ -133,6 +135,11 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
   config->set_log_sync(log_sync_check_->isChecked());
   config->set_doctotext_logging(doctotext_log_check_->isChecked());
   config->set_doctotext_log_path(doctotext_log_path_edit_->text().trimmed().toStdString());
+}
+
+void PerformanceTab::SetStructuralReadOnly(bool read_only) {
+  structural_read_only_ = read_only;
+  if (max_size_spin_) max_size_spin_->setEnabled(!read_only);
 }
 
 void PerformanceTab::RetranslateUi() {

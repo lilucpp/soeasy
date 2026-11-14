@@ -6,9 +6,12 @@
 
 #include <QDialog>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QTimer>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -25,19 +28,28 @@ class SettingsDialog : public QDialog {
   Q_OBJECT
 
  public:
-  explicit SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent = nullptr);
+  struct IndexingControl {
+    std::function<bool()> is_indexing;
+    std::function<void()> cancel_indexing;
+  };
+
+  explicit SettingsDialog(std::shared_ptr<service::IndexConfig> config, QWidget *parent = nullptr,
+                          IndexingControl indexing_control = {});
   ~SettingsDialog() override = default;
 
   void SetCurrentTab(int index);
 
  signals:
   void SettingsApplied();
+  void SettingsAppliedWithDiff(const soeasy::service::ConfigChangeSummary &diff);
   void RebuildIndexRequested();
 
  private slots:
   void OnSaveAndApply();
   void OnRebuildIndex();
+  void OnStopIndexingClicked();
   void OnLanguageChanged(const std::string &lang);
+  void UpdateIndexingLockState();
 
  private:
   void SetupUi();
@@ -46,6 +58,13 @@ class SettingsDialog : public QDialog {
   QHBoxLayout *CreateBottomBar();
 
   std::shared_ptr<service::IndexConfig> config_;
+  IndexingControl indexing_control_;
+  bool was_structural_locked_ = false;
+
+  QWidget *lock_banner_ = nullptr;
+  QLabel *lock_banner_label_ = nullptr;
+  QPushButton *btn_stop_indexing_ = nullptr;
+  QTimer *lock_poll_timer_ = nullptr;
 
   QListWidget *nav_list_ = nullptr;
   QStackedWidget *page_stack_ = nullptr;

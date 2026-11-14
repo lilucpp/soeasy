@@ -68,10 +68,14 @@ class IndexPipeline {
   void FlushWriteQueue();
 
   void ApplyRuntimeConfig();
+  void ApplyConfigChanges(const ConfigChangeSummary &diff, BackgroundIndexCallbacks callbacks = {});
+  size_t PruneStaleEntriesByConfig();
   void SyncWatchedDirectories();
   void StartBackgroundTask(bool rebuild, bool force_incremental, BackgroundIndexCallbacks callbacks);
   void ClearBackgroundCallbacks();
   [[nodiscard]] bool IsIndexing() const;
+  [[nodiscard]] OrchestratorPhase GetPhase() const;
+  [[nodiscard]] bool HasIncompleteRebuild() const;
   [[nodiscard]] size_t IndexedFileCount() const;
 
   void CancelScan();

@@ -12,6 +12,42 @@
 namespace soeasy {
 namespace service {
 
+struct IndexConfigSnapshot {
+  std::vector<std::string> indexed_dirs;
+  std::vector<std::string> excluded_patterns;
+  std::unordered_set<std::string> supported_exts;
+  uint64_t max_file_size = 0;
+  uint32_t debounce_ms = 0;
+  size_t worker_count = 0;
+  common::ResourceProfile resource_profile = common::ResourceProfile::kLowMemory;
+  bool filter_cache_thumbnails = true;
+  std::string log_level;
+  bool log_console = false;
+  bool log_sync = false;
+  bool doctotext_logging = false;
+  std::string doctotext_log_path;
+  bool enable_embedded_image_ocr = false;
+  std::string ui_language;
+};
+
+struct ConfigChangeSummary {
+  bool runtime_changed = false;
+  bool debounce_changed = false;
+  std::vector<std::string> removed_dirs;
+  std::vector<std::string> added_dirs;
+  bool rules_narrowed = false;
+  bool rules_expanded = false;
+  bool ocr_expanded = false;
+
+  [[nodiscard]] bool HasStructuralChanges() const {
+    return !removed_dirs.empty() || !added_dirs.empty() || rules_narrowed || rules_expanded;
+  }
+
+  [[nodiscard]] bool HasAnyChanges() const {
+    return runtime_changed || debounce_changed || HasStructuralChanges();
+  }
+};
+
 class IndexConfig {
  public:
   static constexpr uint64_t kDefaultMaxFileSize = 50 * 1024 * 1024;  // 50MB
@@ -40,11 +76,23 @@ class IndexConfig {
   void ResetSupportedExtensionsToDefault();
   static std::unordered_set<std::string> GetDefaultSupportedExtensions();
 
-  void set_max_file_size(uint64_t bytes) { max_file_size_ = bytes; }
-  uint64_t max_file_size() const { return max_file_size_; }
+  void set_max_file_size(uint64_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    max_file_size_ = bytes;
+  }
+  uint64_t max_file_size() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return max_file_size_;
+  }
 
-  void set_debounce_ms(uint32_t ms) { debounce_ms_ = ms; }
-  uint32_t debounce_ms() const { return debounce_ms_; }
+  void set_debounce_ms(uint32_t ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    debounce_ms_ = ms;
+  }
+  uint32_t debounce_ms() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return debounce_ms_;
+  }
 
   void set_worker_count(size_t count) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -220,6 +268,8 @@ class IndexConfig {
     return SaveToFile(path);
   }
 
+  IndexConfigSnapshot CaptureSnapshot() const;
+
  private:
   mutable std::mutex mutex_;
   std::string config_path_;
@@ -242,6 +292,9 @@ class IndexConfig {
   std::vector<std::string> custom_exts_;
   std::string dict_dir_;
 };
+
+std::string NormalizeDirKey(const std::string &dir_path);
+ConfigChangeSummary DiffIndexConfig(const IndexConfigSnapshot &before, const IndexConfigSnapshot &after);
 
 }  // namespace service
 }  // namespace soeasy

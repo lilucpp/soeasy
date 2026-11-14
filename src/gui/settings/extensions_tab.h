@@ -27,6 +27,7 @@ class ExtensionsTab : public ISettingsTab {
   void PopulateFromConfig(const service::IndexConfig &config) override;
   void ApplyToConfig(service::IndexConfig *config) override;
   void RetranslateUi() override;
+  void SetStructuralReadOnly(bool read_only) override;
 
  private slots:
   void OnAddCustomExtension();
@@ -56,6 +57,7 @@ class ExtensionsTab : public ISettingsTab {
   QLabel *exts_count_label_ = nullptr;
 
   bool is_updating_tree_ = false;
+  bool structural_read_only_ = false;
 };
 
 }  // namespace gui

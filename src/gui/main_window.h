@@ -65,7 +65,7 @@ class MainWindow : public QMainWindow {
   void OnLoadMoreRequested();
   void OnTogglePreview();
   void OnOpenSettings();
-  void OnSettingsApplied();
+  void OnSettingsAppliedWithDiff(const soeasy::service::ConfigChangeSummary &diff);
   void OnRebuildIndexRequested();
 
   void OnIndexTaskStarted(int task_type, quint64 generation);

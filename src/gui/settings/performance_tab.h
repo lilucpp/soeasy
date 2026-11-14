@@ -27,6 +27,7 @@ class PerformanceTab : public ISettingsTab {
   void PopulateFromConfig(const service::IndexConfig &config) override;
   void ApplyToConfig(service::IndexConfig *config) override;
   void RetranslateUi() override;
+  void SetStructuralReadOnly(bool read_only) override;
 
  private slots:
   void OnBrowseDocToTextLogPath();
@@ -53,6 +54,7 @@ class PerformanceTab : public ISettingsTab {
   QLabel *label_dt_path_ = nullptr;
   QLineEdit *doctotext_log_path_edit_ = nullptr;
   QPushButton *dt_browse_btn_ = nullptr;
+  bool structural_read_only_ = false;
 };
 
 }  // namespace gui

@@ -23,6 +23,7 @@ class ISettingsTab : public QWidget {
   virtual void PopulateFromConfig(const service::IndexConfig &config) = 0;
   virtual void ApplyToConfig(service::IndexConfig *config) = 0;
   virtual void RetranslateUi() = 0;
+  virtual void SetStructuralReadOnly(bool /*read_only*/) {}
 };
 
 }  // namespace gui

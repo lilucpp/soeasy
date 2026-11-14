@@ -477,5 +477,118 @@ bool IndexConfig::SaveToFile(const std::string &file_path) const {
   }
 }
 
+IndexConfigSnapshot IndexConfig::CaptureSnapshot() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  IndexConfigSnapshot snap;
+  snap.indexed_dirs = indexed_dirs_;
+  snap.excluded_patterns = excluded_patterns_;
+  snap.supported_exts = supported_exts_;
+  snap.max_file_size = max_file_size_;
+  snap.debounce_ms = debounce_ms_;
+  snap.worker_count = worker_count_;
+  snap.resource_profile = resource_profile_;
+  snap.filter_cache_thumbnails = filter_cache_thumbnails_;
+  snap.log_level = log_level_;
+  snap.log_console = log_console_;
+  snap.log_sync = log_sync_;
+  snap.doctotext_logging = doctotext_logging_;
+  snap.doctotext_log_path = doctotext_log_path_;
+  snap.enable_embedded_image_ocr = enable_embedded_image_ocr_;
+  snap.ui_language = ui_language_;
+  return snap;
+}
+
+std::string NormalizeDirKey(const std::string &dir_path) {
+  std::string norm = dir_path;
+  std::replace(norm.begin(), norm.end(), '\\', '/');
+  while (norm.size() > 1 && norm.back() == '/') {
+    norm.pop_back();
+  }
+  return norm;
+}
+
+ConfigChangeSummary DiffIndexConfig(const IndexConfigSnapshot &before, const IndexConfigSnapshot &after) {
+  ConfigChangeSummary diff;
+  diff.debounce_changed = (before.debounce_ms != after.debounce_ms);
+  diff.runtime_changed = diff.debounce_changed || (before.ui_language != after.ui_language) ||
+                         (before.log_level != after.log_level) || (before.log_console != after.log_console) ||
+                         (before.log_sync != after.log_sync) ||
+                         (before.doctotext_logging != after.doctotext_logging) ||
+                         (before.doctotext_log_path != after.doctotext_log_path) ||
+                         (before.resource_profile != after.resource_profile) ||
+                         (before.worker_count != after.worker_count);
+
+  std::unordered_set<std::string> before_dir_keys;
+  for (const auto &d : before.indexed_dirs) {
+    before_dir_keys.insert(NormalizeDirKey(d));
+  }
+  std::unordered_set<std::string> after_dir_keys;
+  for (const auto &d : after.indexed_dirs) {
+    after_dir_keys.insert(NormalizeDirKey(d));
+  }
+
+  std::unordered_set<std::string> seen_removed;
+  for (const auto &d : before.indexed_dirs) {
+    const std::string key = NormalizeDirKey(d);
+    if (after_dir_keys.find(key) == after_dir_keys.end() && seen_removed.insert(key).second) {
+      diff.removed_dirs.push_back(d);
+    }
+  }
+  std::unordered_set<std::string> seen_added;
+  for (const auto &d : after.indexed_dirs) {
+    const std::string key = NormalizeDirKey(d);
+    if (before_dir_keys.find(key) == before_dir_keys.end() && seen_added.insert(key).second) {
+      diff.added_dirs.push_back(d);
+    }
+  }
+
+  for (const auto &ext : before.supported_exts) {
+    if (after.supported_exts.find(ext) == after.supported_exts.end()) {
+      diff.rules_narrowed = true;
+      break;
+    }
+  }
+  for (const auto &ext : after.supported_exts) {
+    if (before.supported_exts.find(ext) == before.supported_exts.end()) {
+      diff.rules_expanded = true;
+      break;
+    }
+  }
+
+  std::unordered_set<std::string> before_pats(before.excluded_patterns.begin(), before.excluded_patterns.end());
+  std::unordered_set<std::string> after_pats(after.excluded_patterns.begin(), after.excluded_patterns.end());
+  for (const auto &p : after_pats) {
+    if (before_pats.find(p) == before_pats.end()) {
+      diff.rules_narrowed = true;
+      break;
+    }
+  }
+  for (const auto &p : before_pats) {
+    if (after_pats.find(p) == after_pats.end()) {
+      diff.rules_expanded = true;
+      break;
+    }
+  }
+
+  if (!before.filter_cache_thumbnails && after.filter_cache_thumbnails) {
+    diff.rules_narrowed = true;
+  } else if (before.filter_cache_thumbnails && !after.filter_cache_thumbnails) {
+    diff.rules_expanded = true;
+  }
+
+  if (after.max_file_size < before.max_file_size) {
+    diff.rules_narrowed = true;
+  } else if (after.max_file_size > before.max_file_size) {
+    diff.rules_expanded = true;
+  }
+
+  if (!before.enable_embedded_image_ocr && after.enable_embedded_image_ocr) {
+    diff.rules_expanded = true;
+    diff.ocr_expanded = true;
+  }
+
+  return diff;
+}
+
 }  // namespace service
 }  // namespace soeasy

@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "sqlite3mc_amalgamation.h"
@@ -52,8 +53,11 @@ class StorageEngine : public IStorageEngine {
 
   bool DoIndexDocument(const DocumentIndexEntry &entry) override;
   bool DoDeleteDocument(int64_t doc_id) override;
+  bool DoDeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) override;
   int64_t DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) override;
   bool DoClearAll() override;
+  bool DoSetMetaValue(const std::string &key, const std::string &value) override;
+  bool DoGetMetaValue(const std::string &key, std::string *out_value) override;
 
   std::vector<SearchResultItem> DoSearch(const std::string &query, int limit, int offset,
                                          const std::string &path_prefix, int *out_total_count) override;
@@ -87,6 +91,9 @@ class StorageEngine : public IStorageEngine {
   void ApplyWriterPragmasUnlocked(sqlite3 *db, int wal_autocheckpoint, int cache_kb, int64_t mmap_bytes);
   void ShrinkIdleMemoryUnlocked();
   bool GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content);
+  bool DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids,
+                                const std::unordered_map<std::string, int> &ext_counts,
+                                bool delete_files_rows);
 
   std::unique_ptr<SQLite::Database> writer_cpp_db_;
   sqlite3 *writer_db_ = nullptr;

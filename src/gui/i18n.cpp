@@ -170,6 +170,8 @@ void I18n::InitDictionary() {
       {"status_parsing_file", "正在解析: %1"},
       {"status_task_cancelled_msg",
        "<span style=\"color:#D97706; font-weight:bold;\">! 索引任务已取消</span> 已保留已解析的数据"},
+      {"status_incomplete_rebuild",
+       "<span style=\"color:#D97706; font-weight:bold;\">! 索引重建未完成</span> 索引未完整覆盖，建议重新触发「重建索引」或增量扫描"},
       {"status_finish_rebuild",
        "<span style=\"color:#16A34A; font-weight:bold;\">✓ 索引重建完成</span> 共重构 %1 个文件索引 (耗时 %2)"},
       {"status_finish_initial",
@@ -296,6 +298,11 @@ void I18n::InitDictionary() {
 
       // Rebuild & Actions
       {"btn_rebuild", "清空并重建索引..."},
+      {"btn_stop_indexing", "停止当前索引"},
+      {"settings_indexing_lock_banner",
+       "⚠ 正在执行后台索引/重建：监控目录、排除规则、文件类型、单文件上限等结构设置已锁定为只读；界面语言、防抖、资源策略及日志设置仍可保存。"},
+      {"settings_locked_no_runtime_changes",
+       "当前正在后台索引或重建，结构性索引设置处于只读锁定状态，且未检测到运行时设置修改。\n\n如需修改目录或文件类型规则，请先点击顶部「停止当前索引」。"},
       {"btn_save", "保存并应用"},
       {"btn_cancel", "取消"},
       {"btn_browse", "浏览..."},
@@ -487,6 +494,8 @@ void I18n::InitDictionary() {
       {"status_parsing_file", "Parsing: %1"},
       {"status_task_cancelled_msg",
        "<span style=\"color:#D97706; font-weight:bold;\">! Indexing Cancelled</span> Parsed data preserved"},
+      {"status_incomplete_rebuild",
+       "<span style=\"color:#D97706; font-weight:bold;\">! Rebuild Incomplete</span> Index coverage incomplete; please rebuild or scan again"},
       {"status_finish_rebuild",
        "<span style=\"color:#16A34A; font-weight:bold;\">✓ Rebuild Complete</span> %1 files indexed (%2)"},
       {"status_finish_initial",
@@ -618,6 +627,11 @@ void I18n::InitDictionary() {
 
       // Rebuild & Actions
       {"btn_rebuild", "Rebuild Index..."},
+      {"btn_stop_indexing", "Stop Indexing"},
+      {"settings_indexing_lock_banner",
+       "⚠ Background indexing/rebuild in progress: structural settings (directories, exclusions, file types, max file size) are read-only. Language, debounce, resource profile, and logging remain editable."},
+      {"settings_locked_no_runtime_changes",
+       "Indexing or rebuild is currently active. Structural settings are read-only and no runtime setting changes were detected.\n\nClick 'Stop Indexing' at the top to unlock structural settings."},
       {"btn_save", "Save && Apply"},
       {"btn_cancel", "Cancel"},
       {"btn_browse", "Browse..."},

@@ -789,6 +789,29 @@ if(BUILD_TESTS)
       TIMEOUT 30
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
   )
+
+  # State Machine Test Suite: Config Diff, Prune, Watch-First Rebuild Reconcile, Lock/Meta
+  add_executable(test_index_state_machine_gtest
+      tests/test_index_state_machine_gtest.cpp
+  )
+  target_include_directories(test_index_state_machine_gtest PRIVATE
+      src
+      .
+  )
+  target_link_libraries(test_index_state_machine_gtest PRIVATE
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_index_state_machine_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 60
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
 endif()
 
 # -------------------------------------------------------------

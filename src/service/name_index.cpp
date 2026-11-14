@@ -1283,5 +1283,66 @@ size_t NameIndex::ApproximateMemoryUsage() const {
   return bytes;
 }
 
+std::vector<IndexedFileSummary> NameIndex::SnapshotFileSummaries() const {
+  std::shared_lock<SharedRwLock> lock(impl_->rw_mutex);
+  std::vector<IndexedFileSummary> out;
+  out.reserve(impl_->active_count);
+  const uint32_t num_slots = static_cast<uint32_t>(impl_->hot.size());
+  for (uint32_t s = 0; s < num_slots; ++s) {
+    const FileHotEntry &entry = impl_->hot[s];
+    if (entry.deleted) continue;
+    const FileColdMeta &meta = impl_->cold[s];
+    const std::string_view base = impl_->GetBasename(s);
+    const std::string_view ext = impl_->GetExtension(s);
+
+    IndexedFileSummary item;
+    item.doc_id = meta.doc_id;
+    item.file_path = impl_->ReconstructPath(entry.parent_dir_id, base);
+    item.ext.assign(ext.data(), ext.size());
+    item.file_size = meta.file_size;
+    out.push_back(std::move(item));
+  }
+  return out;
+}
+
+bool NameIndex::ContainsPathOrPrefix(const std::string &path) const {
+  if (path.empty()) return false;
+  std::string normalized = NormalizeSlashes(path);
+  while (normalized.size() > 1 && normalized.back() == '/') {
+    normalized.pop_back();
+  }
+
+  std::shared_lock<SharedRwLock> lock(impl_->rw_mutex);
+  if (impl_->active_count == 0) return false;
+
+  uint32_t exact_parent = kNoDir;
+  std::string_view exact_base;
+  if (impl_->ResolveNormalizedPath(normalized, /*create_dirs=*/false, &exact_parent, &exact_base)) {
+    if (impl_->FindSlotByKey(exact_parent, exact_base) != kInvalidU32) {
+      return true;
+    }
+  }
+
+  // Fast O(depth) reject: if the directory node itself doesn't exist in DirNode table, no descendants exist.
+  const std::string prefix_slash = (normalized == "/") ? "/" : (normalized + "/");
+  const std::string probe_path = prefix_slash + "_";
+  uint32_t probe_parent = kNoDir;
+  std::string_view probe_base;
+  if (!impl_->ResolveNormalizedPath(probe_path, /*create_dirs=*/false, &probe_parent, &probe_base)) {
+    return false;
+  }
+
+  std::vector<uint32_t> b_state;
+  impl_->ComputeDirPrefixStates(prefix_slash, &b_state);
+  const uint32_t num_slots = static_cast<uint32_t>(impl_->hot.size());
+  for (uint32_t s = 0; s < num_slots; ++s) {
+    const FileHotEntry &entry = impl_->hot[s];
+    if (!entry.deleted && impl_->MatchesPrefixStates(s, entry, prefix_slash, b_state)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace service
 }  // namespace soeasy

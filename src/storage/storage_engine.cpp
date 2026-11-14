@@ -669,6 +669,12 @@ bool StorageEngine::InitTables() {
         ext          TEXT PRIMARY KEY NOT NULL,
         active_count INTEGER NOT NULL DEFAULT 0
     );
+
+    -- 5. Persistent index metadata (e.g., rebuild_incomplete)
+    CREATE TABLE IF NOT EXISTS index_meta (
+        key   TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+    );
   )SQL";
 
   char *err_msg = nullptr;
@@ -912,6 +918,157 @@ bool StorageEngine::DoDeleteDocument(int64_t doc_id) {
   return true;
 }
 
+bool StorageEngine::DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids,
+                                             const std::unordered_map<std::string, int> &ext_counts,
+                                             bool delete_files_rows) {
+  if (!writer_db_ || doc_ids.empty()) {
+    return writer_db_ != nullptr;
+  }
+
+  SqliteStmtScope stmt_del_files;
+  SqliteStmtScope stmt_del_content;
+  SqliteStmtScope stmt_del_fts;
+  if (delete_files_rows &&
+      sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1, stmt_del_files.address(), nullptr) !=
+          SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(writer_db_));
+    return false;
+  }
+  if (sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(),
+                         nullptr) != SQLITE_OK ||
+      sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(),
+                         nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(writer_db_));
+    return false;
+  }
+
+  for (int64_t id : doc_ids) {
+    if (stmt_del_files) {
+      sqlite3_bind_int64(stmt_del_files, 1, id);
+      sqlite3_step(stmt_del_files);
+      sqlite3_reset(stmt_del_files);
+    }
+    sqlite3_bind_int64(stmt_del_content, 1, id);
+    sqlite3_step(stmt_del_content);
+    sqlite3_reset(stmt_del_content);
+
+    sqlite3_bind_int64(stmt_del_fts, 1, id);
+    sqlite3_step(stmt_del_fts);
+    sqlite3_reset(stmt_del_fts);
+  }
+
+  if (!ext_counts.empty()) {
+    SqliteStmtScope stmt_update_stat;
+    if (sqlite3_prepare_v2(writer_db_, "UPDATE ext_stats SET active_count = MAX(0, active_count - ?1) WHERE ext = ?2;",
+                           -1, stmt_update_stat.address(), nullptr) == SQLITE_OK) {
+      for (const auto &pair : ext_counts) {
+        sqlite3_bind_int(stmt_update_stat, 1, pair.second);
+        sqlite3_bind_text(stmt_update_stat, 2, pair.first.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt_update_stat);
+        sqlite3_reset(stmt_update_stat);
+      }
+    }
+  }
+  return true;
+}
+
+bool StorageEngine::DoDeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) {
+  std::lock_guard<std::mutex> lock(writer_mutex_);
+  if (!writer_db_) {
+    return false;
+  }
+  if (doc_ids.empty()) {
+    return true;
+  }
+
+  std::unordered_map<std::string, int> ext_counts;
+  {
+    SqliteStmtScope stmt_ext;
+    if (sqlite3_prepare_v2(writer_db_, "SELECT ext FROM files WHERE doc_id = ?1;", -1, stmt_ext.address(), nullptr) ==
+        SQLITE_OK) {
+      for (int64_t id : doc_ids) {
+        sqlite3_bind_int64(stmt_ext, 1, id);
+        if (sqlite3_step(stmt_ext) == SQLITE_ROW) {
+          const char *ext = reinterpret_cast<const char *>(sqlite3_column_text(stmt_ext, 0));
+          if (ext) {
+            ext_counts[ext]++;
+          }
+        }
+        sqlite3_reset(stmt_ext);
+      }
+    }
+  }
+
+  const bool is_outer_tx = IsInTransactionUnlocked();
+  if (!is_outer_tx) {
+    sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
+  }
+
+  const bool ok = DeleteDocDetailsUnlocked(doc_ids, ext_counts, /*delete_files_rows=*/true);
+  if (!ok) {
+    if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    return false;
+  }
+
+  if (is_outer_tx) {
+    uncommitted_count_ += doc_ids.size();
+  } else {
+    sqlite3_exec(writer_db_, "COMMIT;", nullptr, nullptr, nullptr);
+  }
+  return true;
+}
+
+bool StorageEngine::DoSetMetaValue(const std::string &key, const std::string &value) {
+  std::lock_guard<std::mutex> lock(writer_mutex_);
+  if (!writer_db_) {
+    return false;
+  }
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(writer_db_, "INSERT OR REPLACE INTO index_meta (key, value) VALUES (?1, ?2);", -1,
+                         stmt.address(), nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(writer_db_));
+    return false;
+  }
+  sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT);
+  const int rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) {
+    SetLastError(sqlite3_errmsg(writer_db_));
+    return false;
+  }
+  return true;
+}
+
+bool StorageEngine::DoGetMetaValue(const std::string &key, std::string *out_value) {
+  if (out_value) {
+    out_value->clear();
+  }
+  ScopedReadConnection read_conn = AcquireReadConnection();
+  sqlite3 *target_db = read_conn.get();
+  std::unique_lock<std::mutex> fallback_lock;
+  if (!target_db) {
+    fallback_lock = std::unique_lock<std::mutex>(writer_mutex_);
+    target_db = writer_db_;
+  }
+  if (!target_db) {
+    return false;
+  }
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, "SELECT value FROM index_meta WHERE key = ?1;", -1, stmt.address(), nullptr) !=
+      SQLITE_OK) {
+    return false;
+  }
+  sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const char *val = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+    if (out_value && val) {
+      *out_value = val;
+    }
+    return true;
+  }
+  return false;
+}
+
 int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) {
   std::lock_guard<std::mutex> lock(writer_mutex_);
   if (!writer_db_) {
@@ -973,28 +1130,9 @@ int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vecto
     sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
   }
 
-  SqliteStmtScope stmt_del_content;
-  SqliteStmtScope stmt_del_fts;
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(),
-                     nullptr);
-  sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(), nullptr);
+  // 3. Batch delete from doc_contents, fts_docs, ext_stats, then prefix-delete files table
+  DeleteDocDetailsUnlocked(doc_ids, ext_counts, /*delete_files_rows=*/false);
 
-  for (int64_t id : doc_ids) {
-    if (stmt_del_content) {
-      sqlite3_bind_int64(stmt_del_content, 1, id);
-      sqlite3_step(stmt_del_content);
-      sqlite3_reset(stmt_del_content);
-    }
-    if (stmt_del_fts) {
-      sqlite3_bind_int64(stmt_del_fts, 1, id);
-      sqlite3_step(stmt_del_fts);
-      sqlite3_reset(stmt_del_fts);
-    }
-  }
-  stmt_del_content.Reset();
-  stmt_del_fts.Reset();
-
-  // 3. Batch delete from files table
   const char *del_files_sql =
       "DELETE FROM files WHERE file_path = ?1 OR file_path LIKE ?2 ESCAPE '^' OR file_path LIKE ?3 ESCAPE '^';";
   SqliteStmtScope stmt_del_files;
@@ -1003,18 +1141,6 @@ int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vecto
     sqlite3_bind_text(stmt_del_files, 2, prefix_slash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt_del_files, 3, prefix_bslash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt_del_files);
-  }
-
-  // 4. Update ext_stats active_count
-  const char *update_stat_sql = "UPDATE ext_stats SET active_count = MAX(0, active_count - ?1) WHERE ext = ?2;";
-  SqliteStmtScope stmt_update_stat;
-  if (sqlite3_prepare_v2(writer_db_, update_stat_sql, -1, stmt_update_stat.address(), nullptr) == SQLITE_OK) {
-    for (const auto &pair : ext_counts) {
-      sqlite3_bind_int(stmt_update_stat, 1, pair.second);
-      sqlite3_bind_text(stmt_update_stat, 2, pair.first.c_str(), -1, SQLITE_TRANSIENT);
-      sqlite3_step(stmt_update_stat);
-      sqlite3_reset(stmt_update_stat);
-    }
   }
 
   if (is_outer_tx) {

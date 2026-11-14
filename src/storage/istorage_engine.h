@@ -229,6 +229,21 @@ class IStorageEngine {
   bool DeleteDocument(int64_t doc_id) { return DoDeleteDocument(doc_id); }
 
   /**
+   * @brief Delete multiple documents from metadata, content, and FTS5 index in one batch transaction.
+   */
+  bool DeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) { return DoDeleteDocumentsBatch(doc_ids); }
+
+  /**
+   * @brief Persist a runtime metadata flag/value in the database (Write channel).
+   */
+  bool SetMetaValue(const std::string &key, const std::string &value) { return DoSetMetaValue(key, value); }
+
+  /**
+   * @brief Query a persisted metadata value by key (Read channel).
+   */
+  bool GetMetaValue(const std::string &key, std::string *out_value) { return DoGetMetaValue(key, out_value); }
+
+  /**
    * @brief Cascade delete all files under a directory prefix (Write channel).
    */
   int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) {
@@ -306,8 +321,17 @@ class IStorageEngine {
 
   virtual bool DoIndexDocument(const DocumentIndexEntry &entry) = 0;
   virtual bool DoDeleteDocument(int64_t doc_id) = 0;
+  virtual bool DoDeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) {
+    bool all_ok = true;
+    for (int64_t id : doc_ids) {
+      if (!DoDeleteDocument(id)) all_ok = false;
+    }
+    return all_ok;
+  }
   virtual int64_t DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) = 0;
   virtual bool DoClearAll() = 0;
+  virtual bool DoSetMetaValue(const std::string & /*key*/, const std::string & /*value*/) { return false; }
+  virtual bool DoGetMetaValue(const std::string & /*key*/, std::string * /*out_value*/) { return false; }
 
   virtual std::vector<SearchResultItem> DoSearch(const std::string &query, int limit, int offset,
                                                  const std::string &path_prefix, int *out_total_count) = 0;

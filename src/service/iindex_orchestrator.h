@@ -11,6 +11,7 @@
 #include <string>
 
 #include "service/event_debouncer.h"
+#include "service/index_config.h"
 
 namespace soeasy {
 namespace service {
@@ -26,6 +27,13 @@ enum class IndexTaskKind {
   kInitial = 0,
   kRebuild = 1,
   kIncremental = 2,
+};
+
+enum class OrchestratorPhase {
+  kIdle = 0,
+  kScanning = 1,
+  kRebuilding = 2,
+  kReconciling = 3,
 };
 
 struct IndexTaskResult {
@@ -86,12 +94,18 @@ class IIndexOrchestrator {
   void FlushWriteQueue() { DoFlushWriteQueue(); }
 
   void ApplyRuntimeConfig() { DoApplyRuntimeConfig(); }
+  void ApplyConfigChanges(const ConfigChangeSummary &diff, BackgroundIndexCallbacks callbacks = {}) {
+    DoApplyConfigChanges(diff, std::move(callbacks));
+  }
+  size_t PruneStaleEntriesByConfig() { return DoPruneStaleEntriesByConfig(); }
   void SyncWatchedDirectories() { DoSyncWatchedDirectories(); }
   void StartBackgroundTask(bool rebuild, bool force_incremental, BackgroundIndexCallbacks callbacks) {
     DoStartBackgroundTask(rebuild, force_incremental, std::move(callbacks));
   }
   void ClearBackgroundCallbacks() { DoClearBackgroundCallbacks(); }
   [[nodiscard]] bool IsIndexing() const { return DoIsIndexing(); }
+  [[nodiscard]] OrchestratorPhase GetPhase() const { return DoGetPhase(); }
+  [[nodiscard]] bool HasIncompleteRebuild() const { return DoHasIncompleteRebuild(); }
   [[nodiscard]] size_t IndexedFileCount() const { return DoIndexedFileCount(); }
 
   void CancelScan() { DoCancelScan(); }
@@ -116,10 +130,18 @@ class IIndexOrchestrator {
   virtual void DoFlushWriteQueue() = 0;
 
   virtual void DoApplyRuntimeConfig() = 0;
+  virtual void DoApplyConfigChanges(const ConfigChangeSummary & /*diff*/, BackgroundIndexCallbacks /*callbacks*/) {
+    DoApplyRuntimeConfig();
+  }
+  virtual size_t DoPruneStaleEntriesByConfig() { return 0; }
   virtual void DoSyncWatchedDirectories() = 0;
   virtual void DoStartBackgroundTask(bool rebuild, bool force_incremental, BackgroundIndexCallbacks callbacks) = 0;
   virtual void DoClearBackgroundCallbacks() = 0;
   [[nodiscard]] virtual bool DoIsIndexing() const = 0;
+  [[nodiscard]] virtual OrchestratorPhase DoGetPhase() const {
+    return DoIsIndexing() ? OrchestratorPhase::kScanning : OrchestratorPhase::kIdle;
+  }
+  [[nodiscard]] virtual bool DoHasIncompleteRebuild() const { return false; }
   [[nodiscard]] virtual size_t DoIndexedFileCount() const = 0;
 
   virtual void DoCancelScan() = 0;

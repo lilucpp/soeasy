@@ -760,27 +760,36 @@ void MainWindow::OnOpenSettings() {
   if (!pipeline_ || !pipeline_->config()) {
     return;
   }
-  SettingsDialog dlg(pipeline_->config(), this);
-  connect(&dlg, &SettingsDialog::SettingsApplied, this, &MainWindow::OnSettingsApplied);
+  SettingsDialog dlg(pipeline_->config(), this,
+                     SettingsDialog::IndexingControl{
+                         [this]() { return pipeline_ && pipeline_->IsIndexing(); },
+                         [this]() {
+                           if (pipeline_) {
+                             pipeline_->CancelScan();
+                           }
+                         }});
+  connect(&dlg, &SettingsDialog::SettingsAppliedWithDiff, this, &MainWindow::OnSettingsAppliedWithDiff);
   connect(&dlg, &SettingsDialog::RebuildIndexRequested, this, &MainWindow::OnRebuildIndexRequested);
   dlg.exec();
 }
 
-void MainWindow::OnSettingsApplied() {
+void MainWindow::OnSettingsAppliedWithDiff(const service::ConfigChangeSummary &diff) {
   RetranslateUi();
 
-  if (pipeline_) {
+  if (!pipeline_) {
+    return;
+  }
+
+  if (diff.HasStructuralChanges()) {
+    // Clear any temporary statusBar message so progress bar is visible immediately
+    statusBar()->clearMessage();
+    pipeline_->ApplyConfigChanges(diff, MakeBackgroundCallbacks());
+  } else {
     pipeline_->ApplyRuntimeConfig();
   }
 
-  // Clear any temporary statusBar message so progress bar is visible immediately
-  statusBar()->clearMessage();
-
-  // Trigger background indexing for newly added or modified directories
-  StartBackgroundInitialIndex(true);
-
   // Re-trigger current search only if idle and there is an active search query
-  if (!is_task_active_ && (!pipeline_ || !pipeline_->IsIndexing()) && search_bar_ &&
+  if (!is_task_active_ && !pipeline_->IsIndexing() && search_bar_ &&
       (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {
     OnSearchTriggered(search_bar_->query(), search_bar_->mode(), search_bar_->path_scope());
   }
@@ -913,7 +922,8 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
 
   const QString elapsed_str = FormatElapsedDuration(elapsed_sec);
   if (cancelled) {
-    status_stats_label_->setText(Tr("status_task_cancelled_msg"));
+    const bool incomplete_rebuild = pipeline_ && pipeline_->HasIncompleteRebuild();
+    status_stats_label_->setText(Tr(incomplete_rebuild ? "status_incomplete_rebuild" : "status_task_cancelled_msg"));
   } else {
     QString finish_desc;
     if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {
