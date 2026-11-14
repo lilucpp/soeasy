@@ -6,9 +6,11 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "storage/istorage_engine.h"
@@ -43,12 +45,23 @@ class ReaderConnectionPool {
    * @param pool_size Number of concurrent read handles (default 4)
    * @return true on success, false if opening or decryption fails
    */
-  bool Init(const std::string &db_path, const std::string &key, const std::string &dict_dir, size_t pool_size = 4);
+  bool Init(const std::string &db_path, const std::string &key, const std::string &dict_dir, size_t pool_size = 2,
+            int cache_kb = -4000, int64_t mmap_bytes = 0);
+
+  /**
+   * @brief Update cache and mmap pragmas on idle pooled reader connections.
+   */
+  void ConfigureTuning(int cache_kb, int64_t mmap_bytes);
 
   /**
    * @brief Close and finalize all pooled reader connections.
    */
   void Close();
+
+  /**
+   * @brief Release cached SQLite page memory on idle pooled reader connections.
+   */
+  void ShrinkMemory();
 
   /**
    * @brief Borrow an available read connection from the pool wrapped in RAII ScopedReadConnection.
@@ -78,11 +91,17 @@ class ReaderConnectionPool {
 
  private:
   sqlite3 *CreateReaderConnection();
+  void ApplyConnectionPragmas(sqlite3 *conn) const;
+  template <typename Fn>
+  void ForEachIdleConnection(Fn &&fn);
 
   std::string db_path_;
   std::string key_;
   std::string dict_dir_;
   size_t capacity_ = 0;
+  int cache_kb_ = -4000;
+  int64_t mmap_bytes_ = 0;
+  uint64_t tuning_epoch_ = 0;
   bool is_closed_ = false;
 
   mutable std::mutex mutex_;
@@ -90,6 +109,7 @@ class ReaderConnectionPool {
   std::condition_variable close_cv_;
   std::queue<sqlite3 *> available_connections_;
   std::vector<sqlite3 *> all_connections_;
+  std::unordered_map<sqlite3 *, uint64_t> conn_epochs_;
   size_t in_use_count_ = 0;
   std::string last_error_;
 };

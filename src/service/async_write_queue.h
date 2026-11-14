@@ -59,7 +59,13 @@ class AsyncWriteQueue {
    * @param max_queue_size High watermark for bounded backpressure (default 500)
    */
   void Start(std::shared_ptr<storage::IStorageEngine> storage_engine, size_t batch_size = 100,
-             std::chrono::milliseconds batch_timeout = std::chrono::seconds(10), size_t max_queue_size = 500);
+             std::chrono::milliseconds batch_timeout = std::chrono::seconds(10), size_t max_queue_size = 500,
+             size_t max_queue_bytes = 0);
+
+  /**
+   * @brief Dynamically update batch and backpressure watermarks at runtime.
+   */
+  void UpdateLimits(size_t batch_size, size_t max_queue_size, size_t max_queue_bytes);
 
   /**
    * @brief Stop the writer thread and drain all pending write operations.
@@ -120,8 +126,11 @@ class AsyncWriteQueue {
   std::condition_variable cv_drained_;
 
   std::queue<WriteOp> queue_;
+  size_t max_queue_bytes_ = 0;
+  size_t queued_bytes_ = 0;
   bool is_writing_batch_ = false;
   size_t flush_waiters_ = 0;
+  size_t byte_pressure_waiters_ = 0;
   bool paused_ = false;
   std::atomic<bool> stop_requested_{false};
   std::atomic<bool> running_{false};

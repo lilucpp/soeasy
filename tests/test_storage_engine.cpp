@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -8,6 +9,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/resource_profile.h"
 #include "common/snippet_highlighter.h"
 #include "storage/storage_engine.h"
 #include "tests/test_helper.h"
@@ -397,6 +399,45 @@ int main(int argc, char *argv[]) {
     std::cout << "  [+] 并发压力测试通过! 5 批次写事务 + 4 读线程并发完成 " << read_ops.load()
               << " 次查询 (零死锁/零异常)!\n";
     stress_engine.Close();
+  }
+
+  // 12. Test ResourceProfile Switching, Bulk Mode Shrink & ClearAll WAL Truncation
+  std::cout << "\n[Step 12] 验证资源模式切换、批量写模式收缩与 ClearAll WAL 物理截断...\n";
+  {
+    soeasy::storage::StorageEngine prof_engine;
+    prof_engine.SetResourceProfile(soeasy::common::ResourceProfile::kLowWrite);
+    if (!prof_engine.Open(db_path, key, dict_dir)) {
+      std::cerr << "[-] prof_engine.Open 失败: " << prof_engine.GetLastError() << "\n";
+      return 1;
+    }
+
+    assert(prof_engine.SetBulkMode(true));
+    assert(prof_engine.BeginTransaction());
+    const std::string body1 = "ResourceProfile 回归测试文档与 WAL 清空验证内容";
+    assert(prof_engine.IndexDocument(990001, "/tmp/prof_check.txt", "prof_check.txt", "txt", body1.size(), 1700000001,
+                                     1, body1));
+    assert(prof_engine.CommitTransaction());
+    assert(prof_engine.SetBulkMode(false));
+
+    // Runtime switch back to LowMemory while open
+    prof_engine.SetResourceProfile(soeasy::common::ResourceProfile::kLowMemory);
+    auto found = prof_engine.Search("回归测试", 5, 0);
+    assert(!found.empty());
+
+    // ClearAll must truncate WAL to zero and allow clean subsequent indexing
+    assert(prof_engine.ClearAll());
+    const std::string wal_path = db_path + "-wal";
+    if (std::filesystem::exists(wal_path)) {
+      assert(std::filesystem::file_size(wal_path) == 0);
+    }
+    assert(prof_engine.Search("回归测试", 5, 0).empty());
+
+    const std::string body2 = "清空后重建索引文档可用性验证";
+    assert(prof_engine.IndexDocument(990002, "/tmp/prof_after_clear.txt", "prof_after_clear.txt", "txt", body2.size(),
+                                     1700000002, 1, body2));
+    assert(!prof_engine.Search("重建索引", 5, 0).empty());
+    prof_engine.Close();
+    std::cout << "  [+] ResourceProfile 切换、SetBulkMode(false) 内存收缩及 ClearAll WAL 截断验证通过!\n";
   }
 
   std::cout << "\n========================================================\n";

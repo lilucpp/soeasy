@@ -360,6 +360,10 @@ bool IndexConfig::LoadFromFile(const std::string &file_path) {
       }
     }
 
+    if (j.contains("resource_profile") && j["resource_profile"].is_string()) {
+      resource_profile_ = common::ParseResourceProfile(j["resource_profile"].get<std::string>());
+    }
+
     if (j.contains("min_image_text_length") && j["min_image_text_length"].is_number()) {
       min_image_text_length_ = j["min_image_text_length"].get<uint32_t>();
     }
@@ -432,6 +436,7 @@ bool IndexConfig::SaveToFile(const std::string &file_path) const {
       j["max_file_size"] = max_file_size_;
       j["debounce_ms"] = debounce_ms_;
       j["worker_count"] = worker_count_;
+      j["resource_profile"] = common::ResourceProfileToString(resource_profile_);
       j["min_image_text_length"] = min_image_text_length_;
       j["filter_cache_thumbnails"] = filter_cache_thumbnails_;
       j["log_level"] = log_level_;

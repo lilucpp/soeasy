@@ -16,6 +16,8 @@
 #include "storage/istorage_engine.h"
 #include "storage/reader_connection_pool.h"
 
+struct ZSTD_CCtx_s;
+
 namespace soeasy {
 namespace storage {
 
@@ -41,6 +43,7 @@ class StorageEngine : public IStorageEngine {
 
   bool DoOptimizeFtsIndex() override;
   bool DoSetBulkMode(bool enable) override;
+  void DoSetResourceProfile(common::ResourceProfile profile) override;
   bool DoCheckpointWal() override;
   bool DoRekey(const std::string &new_key) override;
   bool DoGetFragmentation(StorageFragmentation *out_frag) override;
@@ -81,6 +84,8 @@ class StorageEngine : public IStorageEngine {
   bool CommitTransactionUnlocked();
   bool IsInTransactionUnlocked() const;
   bool CheckpointWalUnlocked();
+  void ApplyWriterPragmasUnlocked(sqlite3 *db, int wal_autocheckpoint, int cache_kb, int64_t mmap_bytes);
+  void ShrinkIdleMemoryUnlocked();
   bool GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content);
 
   std::unique_ptr<SQLite::Database> writer_cpp_db_;
@@ -100,6 +105,10 @@ class StorageEngine : public IStorageEngine {
   sqlite3_stmt *stmt_fts_del_ = nullptr;
   sqlite3_stmt *stmt_fts_ins_ = nullptr;
   sqlite3_stmt *stmt_meta_select_ = nullptr;
+  ::ZSTD_CCtx_s *zstd_cctx_ = nullptr;
+  std::vector<uint8_t> compress_buf_;
+  common::ResourceProfile resource_profile_ = common::ResourceProfile::kLowMemory;
+  bool bulk_mode_active_ = false;
 };
 
 }  // namespace storage

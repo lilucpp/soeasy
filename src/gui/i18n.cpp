@@ -69,7 +69,7 @@ void I18n::InitDictionary() {
   // -----------------------------------------------------------
   zh_dict_ = {
       // Common & Window
-      {"app_title", "SoEasy - 让电脑没有难搜的文件"},
+      {"app_title", "SoEasy | 让电脑没有难搜的文件"},
       {"app_name", "SoEasy"},
       {"app_slogan", "让电脑没有难搜的文件"},
       {"minimize", "最小化"},
@@ -265,6 +265,12 @@ void I18n::InitDictionary() {
       {"suffix_mb", " MB"},
       {"label_workers", "并发解析 Worker 进程数:"},
       {"suffix_workers", " 个进程"},
+      {"label_resource_profile", "内存与资源策略:"},
+      {"profile_low_memory", "高效低内存（默认 · 兼顾更低内存占用与最快索引/检索）"},
+      {"profile_low_write", "护盘低写入（减少磁盘写入放大，适合高频大量同步）"},
+      {"tooltip_resource_profile",
+       "高效低内存：小批高响应，积极回收空闲缓存，兼顾最低内存占用与最佳索引/检索性能；\n"
+       "护盘低写入：适度增大写队列与批量提交阈值，降低 SSD 写入放大，全量重建耗时略增。"},
       {"label_min_ocr_chars", "图片最少有效文字数（过滤表情/图标）:"},
       {"suffix_min_chars", " 个字 (0为不限制)"},
       {"check_filter_thumbs", "自动忽略应用缓存缩略图与图标 (如 WeAppIcon, Thumb)"},
@@ -374,7 +380,7 @@ void I18n::InitDictionary() {
   // -----------------------------------------------------------
   en_dict_ = {
       // Common & Window
-      {"app_title", "SoEasy - Make Every File Searchable"},
+      {"app_title", "SoEasy | Make Every File Searchable"},
       {"app_name", "SoEasy"},
       {"app_slogan", "Make Every File Searchable"},
       {"minimize", "Minimize"},
@@ -574,6 +580,13 @@ void I18n::InitDictionary() {
       {"suffix_mb", " MB"},
       {"label_workers", "Concurrent parser workers:"},
       {"suffix_workers", " workers"},
+      {"label_resource_profile", "Resource profile:"},
+      {"profile_low_memory", "Low Memory & Fast (Default · Minimal RAM & fastest search)"},
+      {"profile_low_write", "Low Disk Write (Lower SSD write amplification)"},
+      {"tooltip_resource_profile",
+       "Low Memory & Fast: compact queue and eager cache release for minimal memory usage and fastest "
+       "indexing/search.\n"
+       "Low Disk Write: larger write queue and commit batching to reduce SSD writes (slightly slower full rebuild)."},
       {"label_min_ocr_chars", "Min OCR valid character count:"},
       {"suffix_min_chars", " chars (0 = unlimited)"},
       {"check_filter_thumbs", "Filter out cache thumbnails & icons (e.g. WeAppIcon, Thumb)"},

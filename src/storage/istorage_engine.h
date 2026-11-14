@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "common/resource_profile.h"
+
 struct sqlite3;
 
 namespace soeasy {
@@ -175,6 +177,11 @@ class IStorageEngine {
   bool SetBulkMode(bool enable) { return DoSetBulkMode(enable); }
 
   /**
+   * @brief Apply a resource tuning profile at startup or runtime.
+   */
+  void SetResourceProfile(common::ResourceProfile profile) { DoSetResourceProfile(profile); }
+
+  /**
    * @brief Checkpoint and truncate the WAL file back into the main database.
    */
   bool CheckpointWal() { return DoCheckpointWal(); }
@@ -291,6 +298,7 @@ class IStorageEngine {
 
   virtual bool DoOptimizeFtsIndex() = 0;
   virtual bool DoSetBulkMode(bool enable) = 0;
+  virtual void DoSetResourceProfile(common::ResourceProfile /*profile*/) {}
   virtual bool DoCheckpointWal() = 0;
   virtual bool DoGetFragmentation(StorageFragmentation *out_frag) = 0;
   virtual bool DoIncrementalVacuum(int pages) = 0;

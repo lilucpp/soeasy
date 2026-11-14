@@ -7,6 +7,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "common/resource_profile.h"
+
 namespace soeasy {
 namespace service {
 
@@ -51,6 +53,15 @@ class IndexConfig {
   size_t worker_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return worker_count_;
+  }
+
+  void set_resource_profile(common::ResourceProfile profile) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    resource_profile_ = profile;
+  }
+  common::ResourceProfile resource_profile() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return resource_profile_;
   }
 
   void set_ui_language(const std::string &lang) {
@@ -218,6 +229,7 @@ class IndexConfig {
   uint64_t max_file_size_ = kDefaultMaxFileSize;
   uint32_t debounce_ms_ = kDefaultDebounceMs;
   size_t worker_count_ = kDefaultWorkerCount;
+  common::ResourceProfile resource_profile_ = common::ResourceProfile::kLowMemory;
   uint32_t min_image_text_length_ = 4;
   bool filter_cache_thumbnails_ = true;
   std::string log_level_ = kDefaultLogLevel;

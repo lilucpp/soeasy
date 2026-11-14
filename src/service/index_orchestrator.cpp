@@ -24,7 +24,12 @@
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
+#include "common/resource_profile.h"
 #include "service/doc_prechecker.h"
+
+#if defined(__linux__) && defined(__GLIBC__)
+#include <malloc.h>
+#endif
 
 namespace soeasy {
 namespace service {
@@ -165,7 +170,13 @@ bool IndexOrchestrator::DoInit() {
 
   watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
   write_queue_ = std::make_shared<AsyncWriteQueue>();
-  write_queue_->Start(storage_engine_, 100, std::chrono::seconds(10), 500);
+  const auto profile = config_ ? config_->resource_profile() : common::ResourceProfile::kLowMemory;
+  const auto tuning = common::GetResourceTuning(profile);
+  if (storage_engine_) {
+    storage_engine_->SetResourceProfile(profile);
+  }
+  write_queue_->Start(storage_engine_, tuning.queue_batch_size, std::chrono::seconds(10), tuning.queue_max_items,
+                      tuning.queue_max_bytes);
   return true;
 }
 
@@ -463,6 +474,9 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb) 
   if (storage_engine_) {
     storage_engine_->SetBulkMode(false);
   }
+#if defined(__linux__) && defined(__GLIBC__)
+  malloc_trim(0);
+#endif
   LOG_INFO("[IndexOrchestrator] Initial scan completed. Indexed {}/{} files (concurrency={}).", final_indexed,
            total_files, num_threads);
   return final_indexed;
@@ -828,6 +842,14 @@ void IndexOrchestrator::DoApplyRuntimeConfig() {
     worker_guard_->SetLoggingOptions(config_->log_level(), config_->log_console(), config_->log_sync(),
                                      config_->doctotext_logging(), config_->doctotext_log_path(),
                                      config_->enable_embedded_image_ocr());
+  }
+  const auto profile = config_->resource_profile();
+  const auto tuning = common::GetResourceTuning(profile);
+  if (storage_engine_) {
+    storage_engine_->SetResourceProfile(profile);
+  }
+  if (write_queue_) {
+    write_queue_->UpdateLimits(tuning.queue_batch_size, tuning.queue_max_items, tuning.queue_max_bytes);
   }
 }
 

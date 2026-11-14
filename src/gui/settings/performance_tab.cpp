@@ -7,6 +7,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 
+#include "common/resource_profile.h"
 #include "gui/i18n.h"
 #include "service/index_config.h"
 
@@ -39,6 +40,14 @@ void PerformanceTab::SetupUi() {
   workers_spin_->setSingleStep(1);
   label_workers_ = new QLabel(this);
   form_perf->addRow(label_workers_, workers_spin_);
+
+  resource_profile_combo_ = new QComboBox(this);
+  resource_profile_combo_->addItem(
+      "", QString::fromStdString(common::ResourceProfileToString(common::ResourceProfile::kLowMemory)));
+  resource_profile_combo_->addItem(
+      "", QString::fromStdString(common::ResourceProfileToString(common::ResourceProfile::kLowWrite)));
+  label_resource_profile_ = new QLabel(this);
+  form_perf->addRow(label_resource_profile_, resource_profile_combo_);
 
   filter_thumbs_check_ = new QCheckBox(this);
   form_perf->addRow("", filter_thumbs_check_);
@@ -78,6 +87,9 @@ void PerformanceTab::PopulateFromConfig(const service::IndexConfig &config) {
   debounce_spin_->setValue(static_cast<int>(config.debounce_ms()));
   max_size_spin_->setValue(static_cast<int>(config.max_file_size() / (1024 * 1024)));
   workers_spin_->setValue(static_cast<int>(config.worker_count()));
+  const QString profile_val = QString::fromStdString(common::ResourceProfileToString(config.resource_profile()));
+  const int profile_idx = resource_profile_combo_->findData(profile_val);
+  resource_profile_combo_->setCurrentIndex(profile_idx >= 0 ? profile_idx : 0);
   filter_thumbs_check_->setChecked(config.filter_cache_thumbnails());
 
   int idx = log_level_combo_->findData(QString::fromStdString(config.log_level()));
@@ -99,6 +111,8 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
   config->set_debounce_ms(static_cast<uint32_t>(debounce_spin_->value()));
   config->set_max_file_size(static_cast<uint64_t>(max_size_spin_->value()) * 1024 * 1024);
   config->set_worker_count(static_cast<size_t>(workers_spin_->value()));
+  config->set_resource_profile(
+      common::ParseResourceProfile(resource_profile_combo_->currentData().toString().toStdString()));
   config->set_filter_cache_thumbnails(filter_thumbs_check_->isChecked());
 
   config->set_log_level(log_level_combo_->currentData().toString().toStdString());
@@ -110,9 +124,16 @@ void PerformanceTab::ApplyToConfig(service::IndexConfig *config) {
 
 void PerformanceTab::RetranslateUi() {
   if (label_debounce_) label_debounce_->setText(Tr("label_debounce"));
+  if (debounce_spin_) debounce_spin_->setSuffix(Tr("suffix_ms"));
   if (label_max_size_) label_max_size_->setText(Tr("label_max_size"));
+  if (max_size_spin_) max_size_spin_->setSuffix(Tr("suffix_mb"));
   if (label_workers_) label_workers_->setText(Tr("label_workers"));
-  if (workers_spin_) workers_spin_->setSuffix(Tr("suffix_workers"));
+  if (label_resource_profile_) label_resource_profile_->setText(Tr("label_resource_profile"));
+  if (resource_profile_combo_) {
+    resource_profile_combo_->setItemText(0, Tr("profile_low_memory"));
+    resource_profile_combo_->setItemText(1, Tr("profile_low_write"));
+    resource_profile_combo_->setToolTip(Tr("tooltip_resource_profile"));
+  }
   if (filter_thumbs_check_) filter_thumbs_check_->setText(Tr("filter_thumbs_check"));
 
   if (label_log_level_) label_log_level_->setText(Tr("label_log_level"));

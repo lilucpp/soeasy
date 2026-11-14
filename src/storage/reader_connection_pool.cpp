@@ -17,7 +17,7 @@ ReaderConnectionPool::~ReaderConnectionPool() {
 }
 
 bool ReaderConnectionPool::Init(const std::string &db_path, const std::string &key, const std::string &dict_dir,
-                                size_t pool_size) {
+                                size_t pool_size, int cache_kb, int64_t mmap_bytes) {
   Close();
 
   std::lock_guard<std::mutex> lock(mutex_);
@@ -25,6 +25,8 @@ bool ReaderConnectionPool::Init(const std::string &db_path, const std::string &k
   key_ = key;
   dict_dir_ = dict_dir;
   capacity_ = pool_size > 0 ? pool_size : 2;
+  cache_kb_ = cache_kb;
+  mmap_bytes_ = mmap_bytes;
   is_closed_ = false;
   last_error_.clear();
 
@@ -38,12 +40,14 @@ bool ReaderConnectionPool::Init(const std::string &db_path, const std::string &k
         sqlite3_close_v2(c);
       }
       all_connections_.clear();
+      conn_epochs_.clear();
       while (!available_connections_.empty()) {
         available_connections_.pop();
       }
       return false;
     }
     all_connections_.push_back(conn);
+    conn_epochs_[conn] = tuning_epoch_;
     available_connections_.push(conn);
   }
 
@@ -101,11 +105,11 @@ sqlite3 *ReaderConnectionPool::CreateReaderConnection() {
   sqlite3_step(check_stmt);
   sqlite3_finalize(check_stmt);
 
-  // 4. Concurrency pragmas
+  // 4. Concurrency & memory pragmas
   sqlite3_exec(db, "PRAGMA query_only = ON;", nullptr, nullptr, nullptr);
   sqlite3_exec(db, "PRAGMA synchronous = NORMAL;", nullptr, nullptr, nullptr);
   sqlite3_exec(db, "PRAGMA temp_store = MEMORY;", nullptr, nullptr, nullptr);
-  sqlite3_exec(db, "PRAGMA mmap_size = 268435456;", nullptr, nullptr, nullptr);
+  ApplyConnectionPragmas(db);
   sqlite3_busy_timeout(db, 5000);
 
   // 5. Register custom FTS5 jieba tokenizer
@@ -143,7 +147,60 @@ void ReaderConnectionPool::Close() {
   }
 
   all_connections_.clear();
+  conn_epochs_.clear();
   capacity_ = 0;
+}
+
+void ReaderConnectionPool::ApplyConnectionPragmas(sqlite3 *conn) const {
+  if (!conn) return;
+  const std::string mmap_sql = "PRAGMA mmap_size = " + std::to_string(mmap_bytes_) + ";";
+  sqlite3_exec(conn, mmap_sql.c_str(), nullptr, nullptr, nullptr);
+  if (cache_kb_ != 0) {
+    const std::string cache_sql = "PRAGMA cache_size = " + std::to_string(cache_kb_) + ";";
+    sqlite3_exec(conn, cache_sql.c_str(), nullptr, nullptr, nullptr);
+  }
+}
+
+template <typename Fn>
+void ReaderConnectionPool::ForEachIdleConnection(Fn &&fn) {
+  std::vector<sqlite3 *> idle;
+  idle.reserve(available_connections_.size());
+  while (!available_connections_.empty()) {
+    sqlite3 *conn = available_connections_.front();
+    available_connections_.pop();
+    if (conn) {
+      fn(conn);
+      idle.push_back(conn);
+    }
+  }
+  for (sqlite3 *conn : idle) {
+    available_connections_.push(conn);
+  }
+}
+
+void ReaderConnectionPool::ShrinkMemory() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (is_closed_) {
+    return;
+  }
+  ForEachIdleConnection([](sqlite3 *conn) {
+    sqlite3_exec(conn, "PRAGMA shrink_memory;", nullptr, nullptr, nullptr);
+    sqlite3_db_release_memory(conn);
+  });
+}
+
+void ReaderConnectionPool::ConfigureTuning(int cache_kb, int64_t mmap_bytes) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  cache_kb_ = cache_kb;
+  mmap_bytes_ = mmap_bytes;
+  ++tuning_epoch_;
+  if (is_closed_) {
+    return;
+  }
+  ForEachIdleConnection([this](sqlite3 *conn) {
+    ApplyConnectionPragmas(conn);
+    conn_epochs_[conn] = tuning_epoch_;
+  });
 }
 
 ScopedReadConnection ReaderConnectionPool::Acquire(uint32_t wait_timeout_ms) {
@@ -170,9 +227,15 @@ void ReaderConnectionPool::Release(sqlite3 *conn) {
   }
 
   if (!is_closed_) {
+    auto it = conn_epochs_.find(conn);
+    if (it == conn_epochs_.end() || it->second != tuning_epoch_) {
+      ApplyConnectionPragmas(conn);
+      conn_epochs_[conn] = tuning_epoch_;
+    }
     available_connections_.push(conn);
     cv_.notify_one();
   } else {
+    conn_epochs_.erase(conn);
     // If pool is already closed, safely finalize the connection on return
     sqlite3_close_v2(conn);
     if (in_use_count_ == 0) {

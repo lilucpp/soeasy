@@ -16,6 +16,10 @@
 #include <memory>
 #include <string>
 
+#if defined(__linux__) && defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 #include "common/logger.h"
 #include "common/machine_key_provider.h"
 #include "common/system_env.h"
@@ -29,6 +33,11 @@
 #include "storage/storage_engine.h"
 
 int main(int argc, char *argv[]) {
+#if defined(__linux__) && defined(__GLIBC__)
+  // Cap glibc malloc arenas early before spawning Qt/worker/SQLite threads
+  // to avoid multi-64MB arena slab retention after bulk indexing.
+  mallopt(M_ARENA_MAX, 2);
+#endif
 #ifdef _WIN32
   // Enable Per-Monitor DPI Awareness V2 on Windows 10/11
   // This completely disables blurry OS bitmap scaling (DPI virtualization)
@@ -79,7 +88,7 @@ int main(int argc, char *argv[]) {
   QApplication app(argc, argv);
   app.setQuitOnLastWindowClosed(false);
   app.setApplicationName("SoEasy");
-  app.setApplicationDisplayName("SoEasy - 让电脑没有难搜的文件");
+  app.setApplicationDisplayName("SoEasy | 让电脑没有难搜的文件");
   app.setApplicationVersion("1.0.0");
   app.setWindowIcon(soeasy::gui::IconProvider::GetAppIcon());
 
@@ -312,6 +321,7 @@ int main(int argc, char *argv[]) {
 
   // 1. Initialize Storage Engine (SQLite3MC with AES-128 page encryption)
   auto storage_engine = std::make_shared<soeasy::storage::StorageEngine>();
+  storage_engine->SetResourceProfile(config->resource_profile());
   auto key_result = soeasy::common::MachineKeyProvider::GetOrCreateDatabaseKey(app_data_dir.toStdString());
   if (!key_result.success) {
     QMessageBox::critical(nullptr, soeasy::gui::Tr("err_key_title"),

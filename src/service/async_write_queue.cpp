@@ -11,6 +11,24 @@
 namespace soeasy {
 namespace service {
 
+namespace {
+
+inline size_t OpPayloadBytes(const WriteOp &op) {
+  return op.content.size() + op.file_path.size() + op.file_name.size();
+}
+
+struct ScopedCounter {
+  explicit ScopedCounter(size_t *counter) : counter_(counter) { ++(*counter_); }
+  ~ScopedCounter() { --(*counter_); }
+  ScopedCounter(const ScopedCounter &) = delete;
+  ScopedCounter &operator=(const ScopedCounter &) = delete;
+  ScopedCounter(ScopedCounter &&) = delete;
+  ScopedCounter &operator=(ScopedCounter &&) = delete;
+  size_t *counter_;
+};
+
+}  // namespace
+
 AsyncWriteQueue::AsyncWriteQueue() = default;
 
 AsyncWriteQueue::~AsyncWriteQueue() {
@@ -18,7 +36,7 @@ AsyncWriteQueue::~AsyncWriteQueue() {
 }
 
 void AsyncWriteQueue::Start(std::shared_ptr<storage::IStorageEngine> storage_engine, size_t batch_size,
-                            std::chrono::milliseconds batch_timeout, size_t max_queue_size) {
+                            std::chrono::milliseconds batch_timeout, size_t max_queue_size, size_t max_queue_bytes) {
   Stop();
 
   {
@@ -29,15 +47,27 @@ void AsyncWriteQueue::Start(std::shared_ptr<storage::IStorageEngine> storage_eng
     batch_size_ = (batch_size > 0) ? batch_size : 100;
     batch_timeout_ = batch_timeout;
     max_queue_size_ = (max_queue_size > 0) ? max_queue_size : 500;
+    max_queue_bytes_ = max_queue_bytes;
+    queued_bytes_ = 0;
 
     stop_requested_ = false;
     flush_waiters_ = 0;
+    byte_pressure_waiters_ = 0;
     is_writing_batch_ = false;
     paused_ = false;
     running_ = true;
   }
 
   worker_thread_ = std::thread(&AsyncWriteQueue::WorkerLoop, this);
+}
+
+void AsyncWriteQueue::UpdateLimits(size_t batch_size, size_t max_queue_size, size_t max_queue_bytes) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  batch_size_ = (batch_size > 0) ? batch_size : 100;
+  max_queue_size_ = (max_queue_size > 0) ? max_queue_size : 500;
+  max_queue_bytes_ = max_queue_bytes;
+  cv_not_full_.notify_all();
+  cv_not_empty_.notify_one();
 }
 
 void AsyncWriteQueue::Stop() {
@@ -61,13 +91,34 @@ bool AsyncWriteQueue::Enqueue(WriteOp *op) {
   if (!op) {
     return false;
   }
+  const size_t op_bytes = OpPayloadBytes(*op);
   std::unique_lock<std::mutex> lock(mutex_);
-  cv_not_full_.wait(lock, [this]() { return stop_requested_ || (!paused_ && queue_.size() < max_queue_size_); });
+  auto can_accept = [this, op_bytes]() {
+    if (stop_requested_) return true;
+    if (paused_) return false;
+    if (queue_.empty()) return true;
+    if (queue_.size() >= max_queue_size_) return false;
+    if (max_queue_bytes_ > 0 && queued_bytes_ + op_bytes > max_queue_bytes_) return false;
+    return true;
+  };
+  while (!can_accept()) {
+    const bool hit_byte_limit =
+        !paused_ && !queue_.empty() && max_queue_bytes_ > 0 && queued_bytes_ + op_bytes > max_queue_bytes_;
+    if (hit_byte_limit) {
+      // Wake worker immediately so byte-limited producers do not wait up to batch_timeout_.
+      ScopedCounter waiter(&byte_pressure_waiters_);
+      cv_not_empty_.notify_one();
+      cv_not_full_.wait(lock);
+    } else {
+      cv_not_full_.wait(lock);
+    }
+  }
 
   if (stop_requested_) {
     return false;
   }
 
+  queued_bytes_ += op_bytes;
   queue_.push(std::move(*op));
   cv_not_empty_.notify_one();
   return true;
@@ -75,15 +126,7 @@ bool AsyncWriteQueue::Enqueue(WriteOp *op) {
 
 void AsyncWriteQueue::Flush() {
   std::unique_lock<std::mutex> lock(mutex_);
-  struct FlushWaiterGuard {
-    explicit FlushWaiterGuard(size_t *counter) : counter_(counter) { ++(*counter_); }
-    ~FlushWaiterGuard() { --(*counter_); }
-    FlushWaiterGuard(const FlushWaiterGuard &) = delete;
-    FlushWaiterGuard &operator=(const FlushWaiterGuard &) = delete;
-    FlushWaiterGuard(FlushWaiterGuard &&) = delete;
-    FlushWaiterGuard &operator=(FlushWaiterGuard &&) = delete;
-    size_t *counter_;
-  } waiter_guard(&flush_waiters_);
+  ScopedCounter waiter_guard(&flush_waiters_);
 
   cv_not_empty_.notify_one();
   cv_drained_.wait(lock, [this]() { return (queue_.empty() && !is_writing_batch_) || stop_requested_; });
@@ -126,9 +169,10 @@ void AsyncWriteQueue::WorkerLoop() {
       std::unique_lock<std::mutex> lock(mutex_);
       cv_not_empty_.wait_for(lock, std::chrono::milliseconds(50), [this, &last_commit_time]() {
         if (stop_requested_) return true;
-        if ((flush_waiters_ > 0 || paused_) && !queue_.empty()) return true;
+        if ((flush_waiters_ > 0 || byte_pressure_waiters_ > 0 || paused_) && !queue_.empty()) return true;
         if (queue_.empty()) return false;
         if (queue_.size() >= batch_size_) return true;
+        if (max_queue_bytes_ > 0 && queued_bytes_ >= max_queue_bytes_) return true;
         auto now = std::chrono::steady_clock::now();
         return (now - last_commit_time) >= batch_timeout_;
       });
@@ -140,7 +184,14 @@ void AsyncWriteQueue::WorkerLoop() {
         continue;
       }
 
+      size_t batch_bytes = 0;
       while (!queue_.empty() && batch.size() < batch_size_) {
+        const size_t op_bytes = OpPayloadBytes(queue_.front());
+        if (!batch.empty() && max_queue_bytes_ > 0 && batch_bytes + op_bytes > max_queue_bytes_) {
+          break;
+        }
+        queued_bytes_ = (queued_bytes_ >= op_bytes) ? (queued_bytes_ - op_bytes) : 0;
+        batch_bytes += op_bytes;
         batch.push_back(std::move(queue_.front()));
         queue_.pop();
       }
@@ -170,6 +221,8 @@ void AsyncWriteQueue::WorkerLoop() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     while (!queue_.empty()) {
+      const size_t op_bytes = OpPayloadBytes(queue_.front());
+      queued_bytes_ = (queued_bytes_ >= op_bytes) ? (queued_bytes_ - op_bytes) : 0;
       remaining.push_back(std::move(queue_.front()));
       queue_.pop();
     }

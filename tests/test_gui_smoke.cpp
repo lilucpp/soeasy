@@ -2,10 +2,12 @@
 // Use of this source code is governed by an Apache-2.0 license.
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QLabel>
 #include <QMetaObject>
+#include <QSpinBox>
 #include <QStatusBar>
 #include <chrono>
 #include <cstdlib>
@@ -17,13 +19,16 @@
 #include <thread>
 #include <vector>
 
+#include "common/resource_profile.h"
 #include "gui/content_preview_dialog.h"
 #include "gui/hover_preview_popup.h"
 #include "gui/i18n.h"
 #include "gui/main_window.h"
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
+#include "gui/settings/performance_tab.h"
 #include "gui/settings_dialog.h"
+#include "service/async_write_queue.h"
 #include "service/index_config.h"
 #include "service/index_pipeline.h"
 #include "service/worker_guard.h"
@@ -141,13 +146,13 @@ int main(int argc, char *argv[]) {
     auto config = std::make_shared<soeasy::service::IndexConfig>();
     CHECK(config->ui_language() == "zh");
     soeasy::gui::I18n::Instance().SetLanguage("zh");
-    CHECK(soeasy::gui::Tr("app_title") == "SoEasy - 让电脑没有难搜的文件");
+    CHECK(soeasy::gui::Tr("app_title") == "SoEasy | 让电脑没有难搜的文件");
     CHECK(soeasy::gui::Tr("btn_preview") == "◨ 预览");
     CHECK(soeasy::gui::Tr("th_filename") == "文件名称");
 
     // Switch to English
     soeasy::gui::I18n::Instance().SetLanguage("en");
-    CHECK(soeasy::gui::Tr("app_title") == "SoEasy - Make Every File Searchable");
+    CHECK(soeasy::gui::Tr("app_title") == "SoEasy | Make Every File Searchable");
     CHECK(soeasy::gui::Tr("btn_preview") == "◨ Preview");
     CHECK(soeasy::gui::Tr("th_filename") == "File Name");
 
@@ -195,7 +200,7 @@ int main(int argc, char *argv[]) {
     // Switch back to Chinese
     soeasy::gui::I18n::Instance().SetLanguage("zh");
     config->set_ui_language("zh");
-    CHECK(soeasy::gui::Tr("app_title") == "SoEasy - 让电脑没有难搜的文件");
+    CHECK(soeasy::gui::Tr("app_title") == "SoEasy | 让电脑没有难搜的文件");
     CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office 新版格式 (OOXML)");
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "Word 2007+ 文本文档") == "Word 2007+ 文本文档");
 
@@ -488,6 +493,81 @@ int main(int argc, char *argv[]) {
     CHECK(total_storage_hits > 0);
     CHECK(static_cast<int>(st_hits.size()) <= 10);
     std::cout << "  -> NameIndex 与 StorageEngine 总匹配数与分页逻辑验证完全通过!\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test 7: Resource Profile Config Persistence, UI Tab & Runtime Apply
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 7] 测试 ResourceProfile 默认值、JSON 往返、设置页与运行时切换...\n";
+  {
+    auto prof_cfg = std::make_shared<soeasy::service::IndexConfig>();
+    CHECK(prof_cfg->resource_profile() == soeasy::common::ResourceProfile::kLowMemory);
+
+    soeasy::gui::PerformanceTab perf_tab;
+    perf_tab.PopulateFromConfig(*prof_cfg);
+    auto spins = perf_tab.findChildren<QSpinBox *>();
+    CHECK(spins.size() == 3);
+    CHECK(spins[0]->suffix() == " 毫秒");
+    CHECK(spins[1]->suffix() == " MB");
+    CHECK(spins[2]->suffix().isEmpty());
+    auto combos = perf_tab.findChildren<QComboBox *>();
+    QComboBox *profile_combo = nullptr;
+    for (QComboBox *cb : combos) {
+      if (cb->findData("low_write") >= 0) {
+        profile_combo = cb;
+        break;
+      }
+    }
+    CHECK(profile_combo != nullptr);
+    CHECK(profile_combo->currentData().toString() == "low_memory");
+
+    int lw_idx = profile_combo->findData("low_write");
+    CHECK(lw_idx >= 0);
+    profile_combo->setCurrentIndex(lw_idx);
+    perf_tab.ApplyToConfig(prof_cfg.get());
+    CHECK(prof_cfg->resource_profile() == soeasy::common::ResourceProfile::kLowWrite);
+
+    const std::string cfg_path = soeasy::test::GetTestTempPath("soeasy_resource_profile_cfg.json").string();
+    CHECK(prof_cfg->SaveToFile(cfg_path));
+    auto loaded = std::make_shared<soeasy::service::IndexConfig>();
+    CHECK(loaded->LoadFromFile(cfg_path));
+    CHECK(loaded->resource_profile() == soeasy::common::ResourceProfile::kLowWrite);
+
+    // Unknown string in JSON falls back safely to kLowMemory
+    WriteFile(cfg_path, R"({"resource_profile": "unknown_legacy_mode"})");
+    CHECK(loaded->LoadFromFile(cfg_path));
+    CHECK(loaded->resource_profile() == soeasy::common::ResourceProfile::kLowMemory);
+    std::remove(cfg_path.c_str());
+
+    // Exercise live pipeline ApplyRuntimeConfig() across both presets
+    config->set_resource_profile(soeasy::common::ResourceProfile::kLowWrite);
+    pipeline->ApplyRuntimeConfig();
+    config->set_resource_profile(soeasy::common::ResourceProfile::kLowMemory);
+    pipeline->ApplyRuntimeConfig();
+
+    // Verify AsyncWriteQueue byte-pressure wakes worker immediately instead of stalling for batch_timeout
+    soeasy::service::AsyncWriteQueue byte_queue;
+    byte_queue.Start(storage, /*batch_size=*/100, std::chrono::milliseconds(5000), /*max_queue_size=*/150,
+                     /*max_queue_bytes=*/1024 * 1024);
+    const auto t_start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 3; ++i) {
+      soeasy::service::WriteOp op;
+      op.type = soeasy::service::WriteOpType::kIndex;
+      op.doc_id = 880000 + i;
+      op.file_name = "byte_pressure.txt";
+      op.file_path = test_dir + "/byte_pressure_" + std::to_string(i) + ".txt";
+      op.ext = "txt";
+      op.content = std::string(600 * 1024, 'x');  // 600 KiB each: 2 fit, 3rd triggers 1 MiB byte backpressure
+      op.file_size = op.content.size();
+      op.mtime = 1700000100;
+      op.parse_level = 1;
+      CHECK(byte_queue.Enqueue(&op));
+    }
+    const auto enqueue_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t_start).count();
+    CHECK(enqueue_ms < 2500);
+    byte_queue.Stop();
+    std::cout << "  -> ResourceProfile 设置页绑定、配置持久化及字节反压即时唤醒验证通过!\n";
   }
 
   // Cleanup

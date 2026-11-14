@@ -76,16 +76,29 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
     return SQLITE_ERROR;
   }
 
-  std::string sentence(text, text_len);
+  struct Scratch {
+    std::string sentence;
+    std::string cleaned;
+    std::vector<cppjieba::Word> words;
+    std::string lower_token;
+  };
+  thread_local Scratch tls;
+
+  std::string &sentence = tls.sentence;
+  std::string &cleaned = tls.cleaned;
+  std::vector<cppjieba::Word> &words = tls.words;
+  std::string &lower_token = tls.lower_token;
+
+  sentence.assign(text, static_cast<size_t>(text_len));
 
   // Ensure valid UTF-8 sequence
   if (!utf8::is_valid(sentence.begin(), sentence.end())) {
-    std::string cleaned;
+    cleaned.clear();
     utf8::replace_invalid(sentence.begin(), sentence.end(), std::back_inserter(cleaned));
-    sentence = std::move(cleaned);
+    sentence.swap(cleaned);
   }
 
-  std::vector<cppjieba::Word> words;
+  words.clear();
 
   // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
   jieba->Cut(sentence, words, true);
@@ -108,7 +121,7 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
     }
 
     // Fold ASCII uppercase to lowercase for case-insensitive matching
-    std::string lower_token = w.word;
+    lower_token.assign(w.word);
     for (char &c : lower_token) {
       if (c >= 'A' && c <= 'Z') {
         c = static_cast<char>(c + 32);
@@ -158,10 +171,8 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
             break;
           }
           size_t char_len = next - it;
-          std::string single_char(it, next);
-
-          rc = token_cb(ctx, FTS5_TOKEN_COLOCATED, single_char.data(), static_cast<int>(single_char.size()),
-                        static_cast<int>(byte_offset), static_cast<int>(byte_offset + char_len));
+          rc = token_cb(ctx, FTS5_TOKEN_COLOCATED, &(*it), static_cast<int>(char_len), static_cast<int>(byte_offset),
+                        static_cast<int>(byte_offset + char_len));
           if (rc != SQLITE_OK) {
             return rc;
           }
@@ -173,6 +184,9 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
     }
   }
 
+  if (tls.sentence.capacity() > 512 * 1024) std::string().swap(tls.sentence);
+  if (tls.cleaned.capacity() > 512 * 1024) std::string().swap(tls.cleaned);
+  if (tls.words.capacity() > 16384) std::vector<cppjieba::Word>().swap(tls.words);
   return SQLITE_OK;
 }
 
