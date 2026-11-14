@@ -3,6 +3,10 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QLabel>
+#include <QMetaObject>
+#include <QStatusBar>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -342,6 +346,68 @@ int main(int argc, char *argv[]) {
     const QString snapshot_path = QDir::tempPath() + "/soeasy_master_detail_ui.png";
     pix.save(snapshot_path);
     std::cout << "  -> Master-Detail 双栏即时预览界面截屏已成功保存: " << snapshot_path.toStdString() << "\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test 6.5: StatusBar Index Elapsed Telemetry (Transient Banner + Persistent Indicator)
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 6.5] 测试状态栏索引耗时瞬态横幅、检索联动防覆盖与右侧持久遥测...\n";
+  {
+    soeasy::gui::MainWindow main_win(pipeline);
+    main_win.show();
+    app.processEvents();
+
+    auto *sb = main_win.statusBar();
+    auto labels = sb->findChildren<QLabel *>();
+    CHECK(labels.size() >= 3);
+    QLabel *stats_lbl = labels.front();
+    QLabel *latency_lbl = labels.back();
+
+    int finish_count = 0;
+    QObject::connect(&main_win, &soeasy::gui::MainWindow::IndexFinished,
+                     [&](int, int, bool, double, bool, quint64) { ++finish_count; });
+
+    auto pump_for = [&](int ms) {
+      QElapsedTimer t;
+      t.start();
+      while (t.elapsed() < ms) {
+        app.processEvents(QEventLoop::AllEvents, 20);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    };
+
+    // 1. Trigger rebuild while search bar has an active query: completion banner must NOT be clobbered at 0ms
+    auto *sbar = main_win.findChild<soeasy::gui::SearchBar *>();
+    CHECK(sbar != nullptr);
+    sbar->SetQuery("SoEasy");
+    pump_for(250);
+
+    CHECK(QMetaObject::invokeMethod(&main_win, "OnRebuildIndexRequested", Qt::DirectConnection));
+    while (finish_count < 1) {
+      app.processEvents(QEventLoop::AllEvents, 20);
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    pump_for(50);
+
+    CHECK(stats_lbl->text().contains("索引重建完成"));
+    CHECK(stats_lbl->text().contains("耗时"));
+    CHECK(latency_lbl->text().contains("索引:"));
+    CHECK(latency_lbl->text().contains("检索:"));
+    CHECK(latency_lbl->toolTip().contains("重建索引"));
+
+    // 2. Wait for 4s banner timer to expire: left label restores file stats, right label retains index duration
+    pump_for(4150);
+    CHECK(stats_lbl->text().contains("在索引文件:"));
+    CHECK(latency_lbl->text().contains("索引:"));
+    CHECK(latency_lbl->text().contains("检索:"));
+
+    // 3. Clear search query: right label keeps persistent rebuild duration instead of degrading to "就绪"
+    sbar->SetQuery("");
+    pump_for(250);
+    CHECK(latency_lbl->text().contains("重建耗时:"));
+    CHECK(!latency_lbl->text().contains("就绪"));
+
+    std::cout << "  -> 重建完成瞬态横幅、4s 自动收敛与右侧索引耗时持久遥测验证通过!\n";
   }
 
   // -------------------------------------------------------------

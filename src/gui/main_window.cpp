@@ -41,6 +41,33 @@ QString IndexTaskBadge(int task_type) {
   return Tr("status_badge_incremental");
 }
 
+QString IndexTaskDisplayName(int task_type) {
+  if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {
+    return Tr("status_task_name_rebuild");
+  }
+  if (task_type == static_cast<int>(service::IndexTaskKind::kInitial)) {
+    return Tr("status_task_name_initial");
+  }
+  return Tr("status_task_name_incremental");
+}
+
+QString FormatElapsedDuration(double elapsed_sec) {
+  const double clamped = std::max(0.0, elapsed_sec);
+  if (clamped < 1.0) {
+    return QString("%1 ms").arg(qRound(clamped * 1000.0));
+  }
+  if (clamped < 10.0) {
+    return QString("%1 s").arg(clamped, 0, 'f', 2);
+  }
+  if (clamped < 60.0) {
+    return QString("%1 s").arg(clamped, 0, 'f', 1);
+  }
+  const int total_secs = qRound(clamped);
+  const int mins = total_secs / 60;
+  const int rem_secs = total_secs % 60;
+  return QString("%1m %2s").arg(mins).arg(rem_secs);
+}
+
 std::vector<DisplayResultItem> BuildFulltextDisplayItems(const std::vector<service::SearchResultItem> &hits,
                                                          const std::vector<std::string> &keywords) {
   std::vector<DisplayResultItem> items;
@@ -110,6 +137,14 @@ MainWindow::MainWindow(std::shared_ptr<service::IndexPipeline> pipeline, QWidget
   connect(this, &MainWindow::IndexTaskStarted, this, &MainWindow::OnIndexTaskStarted, Qt::QueuedConnection);
   connect(this, &MainWindow::IndexProgressUpdated, this, &MainWindow::OnIndexProgressUpdated, Qt::QueuedConnection);
   connect(this, &MainWindow::IndexFinished, this, &MainWindow::OnIndexFinished, Qt::QueuedConnection);
+
+  finish_banner_timer_ = new QTimer(this);
+  finish_banner_timer_->setSingleShot(true);
+  connect(finish_banner_timer_, &QTimer::timeout, this, [this]() {
+    if (!is_task_active_ && banner_generation_ == active_generation_ && (!pipeline_ || !pipeline_->IsIndexing())) {
+      UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
+    }
+  });
 
   // Initial stats
   UpdateStatusBar(0, 0.0);
@@ -509,19 +544,78 @@ void MainWindow::RetranslateUi() {
   if (action_quit_) {
     action_quit_->setText(Tr("tray_quit"));
   }
+  if (finish_banner_timer_ && finish_banner_timer_->isActive()) {
+    finish_banner_timer_->stop();
+  }
   UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
 }
 
-void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
-  const size_t indexed_files = pipeline_ ? pipeline_->IndexedFileCount() : 0;
+void MainWindow::UpdateLatencyLabel(double cost_ms) {
+  if (!status_latency_label_) {
+    return;
+  }
 
-  status_stats_label_->setText(Tr("status_stats").arg(indexed_files).arg(total_matches));
+  QString tooltip;
+  if (has_completed_index_) {
+    const QString task_name = IndexTaskDisplayName(last_index_task_type_);
+    const QString state_name = last_index_cancelled_ ? Tr("status_task_state_cancelled") : Tr("status_task_state_done");
+    const QString elapsed_str = FormatElapsedDuration(last_index_elapsed_sec_);
+    const QString finished_str =
+        last_index_finished_at_.isValid() ? last_index_finished_at_.toString("HH:mm:ss") : QString("-");
+    tooltip = Tr("status_index_tooltip")
+                  .arg(task_name)
+                  .arg(state_name)
+                  .arg(last_index_file_count_)
+                  .arg(elapsed_str)
+                  .arg(finished_str);
+    if (cost_ms > 0.0) {
+      tooltip += Tr("status_search_tooltip_line").arg(QString::number(cost_ms, 'f', 2));
+    }
+  }
+  status_latency_label_->setToolTip(tooltip);
+  if (status_stats_label_) {
+    status_stats_label_->setToolTip(tooltip);
+  }
 
   if (cost_ms > 0.0) {
-    status_latency_label_->setText(Tr("status_latency").arg(QString::number(cost_ms, 'f', 2)));
-  } else {
-    status_latency_label_->setText(Tr("status_ready"));
+    if (has_completed_index_ && !last_index_cancelled_) {
+      status_latency_label_->setText(Tr("status_latency_with_index")
+                                         .arg(FormatElapsedDuration(last_index_elapsed_sec_))
+                                         .arg(QString::number(cost_ms, 'f', 2)));
+    } else {
+      status_latency_label_->setText(Tr("status_latency").arg(QString::number(cost_ms, 'f', 2)));
+    }
+    return;
   }
+
+  if (has_completed_index_) {
+    const QString elapsed_str = FormatElapsedDuration(last_index_elapsed_sec_);
+    if (last_index_cancelled_) {
+      status_latency_label_->setText(Tr("status_latency_cancelled").arg(elapsed_str));
+    } else if (last_index_task_type_ == static_cast<int>(service::IndexTaskKind::kRebuild)) {
+      status_latency_label_->setText(Tr("status_latency_rebuild").arg(elapsed_str));
+    } else if (last_index_task_type_ == static_cast<int>(service::IndexTaskKind::kInitial)) {
+      status_latency_label_->setText(Tr("status_latency_initial").arg(elapsed_str));
+    } else {
+      status_latency_label_->setText(Tr("status_latency_incremental").arg(elapsed_str));
+    }
+    return;
+  }
+
+  status_latency_label_->setText(Tr("status_ready"));
+}
+
+void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
+  if (is_task_active_) {
+    return;
+  }
+  const size_t indexed_files = pipeline_ ? pipeline_->IndexedFileCount() : 0;
+
+  if (!finish_banner_timer_ || !finish_banner_timer_->isActive()) {
+    status_stats_label_->setText(Tr("status_stats").arg(indexed_files).arg(total_matches));
+  }
+
+  UpdateLatencyLabel(cost_ms);
 }
 
 void MainWindow::OnSearchTriggered(const QString &query, int mode, const QString &path_scope) {
@@ -743,6 +837,9 @@ service::BackgroundIndexCallbacks MainWindow::MakeBackgroundCallbacks() {
 void MainWindow::OnIndexTaskStarted(int task_type, quint64 generation) {
   active_generation_ = generation;
   is_task_active_ = true;
+  if (finish_banner_timer_) {
+    finish_banner_timer_->stop();
+  }
 
   statusBar()->clearMessage();
   status_progress_bar_->setValue(0);
@@ -807,28 +904,34 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
   status_file_label_->setVisible(false);
   status_cancel_btn_->setVisible(false);
 
+  has_completed_index_ = true;
+  last_index_task_type_ = task_type;
+  last_index_file_count_ = total_indexed;
+  last_index_elapsed_sec_ = elapsed_sec;
+  last_index_cancelled_ = cancelled;
+  last_index_finished_at_ = QDateTime::currentDateTime();
+
+  const QString elapsed_str = FormatElapsedDuration(elapsed_sec);
   if (cancelled) {
     status_stats_label_->setText(Tr("status_task_cancelled_msg"));
-    status_latency_label_->setText(Tr("status_ready"));
   } else {
     QString finish_desc;
     if (task_type == static_cast<int>(service::IndexTaskKind::kRebuild)) {
-      finish_desc = Tr("status_finish_rebuild").arg(total_indexed).arg(QString::number(elapsed_sec, 'f', 1));
+      finish_desc = Tr("status_finish_rebuild").arg(total_indexed).arg(elapsed_str);
     } else if (task_type == static_cast<int>(service::IndexTaskKind::kInitial)) {
-      finish_desc = Tr("status_finish_initial").arg(total_indexed).arg(QString::number(elapsed_sec, 'f', 1));
+      finish_desc = Tr("status_finish_initial").arg(total_indexed).arg(elapsed_str);
     } else {
-      finish_desc = Tr("status_finish_incremental").arg(QString::number(elapsed_sec, 'f', 1));
+      finish_desc = Tr("status_finish_incremental").arg(elapsed_str);
     }
     status_stats_label_->setText(finish_desc);
-    status_latency_label_->setText(Tr("status_ready"));
   }
+  UpdateLatencyLabel(last_search_cost_ms_);
 
-  // Smoothly restore normal idle statistics after 3.5 seconds
-  QTimer::singleShot(3500, this, [this]() {
-    if (!is_task_active_ && (!pipeline_ || !pipeline_->IsIndexing())) {
-      UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
-    }
-  });
+  // Smoothly restore normal idle statistics after 4.0 seconds while keeping persistent latency telemetry
+  if (finish_banner_timer_) {
+    banner_generation_ = generation;
+    finish_banner_timer_->start(4000);
+  }
 
   // If search bar has active query, re-run search to surface newly indexed items immediately
   if (search_bar_ && (!search_bar_->query().trimmed().isEmpty() || !search_bar_->path_scope().trimmed().isEmpty())) {

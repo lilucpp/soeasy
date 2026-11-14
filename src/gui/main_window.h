@@ -3,6 +3,7 @@
 
 #include <QAction>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
@@ -11,6 +12,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QSystemTrayIcon>
+#include <QTimer>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -85,6 +87,7 @@ class MainWindow : public QMainWindow {
   void SetupTrayIcon();
   void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
+  void UpdateLatencyLabel(double cost_ms);
   [[nodiscard]] service::BackgroundIndexCallbacks MakeBackgroundCallbacks();
 
   std::shared_ptr<service::IndexPipeline> pipeline_;
@@ -115,6 +118,14 @@ class MainWindow : public QMainWindow {
   std::shared_ptr<CallbackTarget> callback_target_;
   bool is_task_active_{false};
   quint64 active_generation_{0};
+  quint64 banner_generation_{0};
+  bool has_completed_index_{false};
+  int last_index_task_type_{-1};
+  int last_index_file_count_{0};
+  double last_index_elapsed_sec_{0.0};
+  bool last_index_cancelled_{false};
+  QDateTime last_index_finished_at_;
+  QTimer *finish_banner_timer_ = nullptr;
   bool splitter_initialized_{false};
 
   QSystemTrayIcon *tray_icon_ = nullptr;
