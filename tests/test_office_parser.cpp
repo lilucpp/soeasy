@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common/snippet_highlighter.h"
@@ -51,9 +52,19 @@ void CreateSampleDocx(const std::string &path) {
   const std::string content_types =
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
       "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n"
+      "  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n"
       "  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\n"
+      "  <Override PartName=\"/word/document.xml\""
+      " ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\n"
       "</Types>";
   mz_zip_writer_add_mem(&zip, "[Content_Types].xml", content_types.data(), content_types.size(), MZ_BEST_COMPRESSION);
+
+  const std::string root_rels =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+      "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>\n"
+      "</Relationships>";
+  mz_zip_writer_add_mem(&zip, "_rels/.rels", root_rels.data(), root_rels.size(), MZ_BEST_COMPRESSION);
 
   const std::string document_xml =
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -80,6 +91,46 @@ void CreateSampleXlsx(const std::string &path) {
   mz_zip_archive zip;
   std::memset(&zip, 0, sizeof(zip));
   CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
+
+  const std::string content_types =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n"
+      "  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n"
+      "  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\n"
+      "  <Override PartName=\"/xl/workbook.xml\""
+      " ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\n"
+      "  <Override PartName=\"/xl/worksheets/sheet1.xml\""
+      " ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\n"
+      "  <Override PartName=\"/xl/sharedStrings.xml\""
+      " ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>\n"
+      "</Types>";
+  mz_zip_writer_add_mem(&zip, "[Content_Types].xml", content_types.data(), content_types.size(), MZ_BEST_COMPRESSION);
+
+  const std::string root_rels =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+      "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\n"
+      "</Relationships>";
+  mz_zip_writer_add_mem(&zip, "_rels/.rels", root_rels.data(), root_rels.size(), MZ_BEST_COMPRESSION);
+
+  const std::string workbook_xml =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\""
+      " xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n"
+      "  <sheets>\n"
+      "    <sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/>\n"
+      "  </sheets>\n"
+      "</workbook>";
+  mz_zip_writer_add_mem(&zip, "xl/workbook.xml", workbook_xml.data(), workbook_xml.size(), MZ_BEST_COMPRESSION);
+
+  const std::string workbook_rels =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+      "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\n"
+      "  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings\" Target=\"sharedStrings.xml\"/>\n"
+      "</Relationships>";
+  mz_zip_writer_add_mem(&zip, "xl/_rels/workbook.xml.rels", workbook_rels.data(), workbook_rels.size(),
+                        MZ_BEST_COMPRESSION);
 
   const std::string shared_strings =
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -109,6 +160,45 @@ void CreateSamplePptx(const std::string &path) {
   mz_zip_archive zip;
   std::memset(&zip, 0, sizeof(zip));
   CHECK(mz_zip_writer_init_file(&zip, path.c_str(), 0));
+
+  const std::string content_types =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n"
+      "  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n"
+      "  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\n"
+      "  <Override PartName=\"/ppt/presentation.xml\""
+      " ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml\"/>\n"
+      "  <Override PartName=\"/ppt/slides/slide1.xml\""
+      " ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slide+xml\"/>\n"
+      "</Types>";
+  mz_zip_writer_add_mem(&zip, "[Content_Types].xml", content_types.data(), content_types.size(), MZ_BEST_COMPRESSION);
+
+  const std::string root_rels =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+      "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"ppt/presentation.xml\"/>\n"
+      "</Relationships>";
+  mz_zip_writer_add_mem(&zip, "_rels/.rels", root_rels.data(), root_rels.size(), MZ_BEST_COMPRESSION);
+
+  const std::string presentation_xml =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<p:presentation xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\""
+      " xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\""
+      " xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\">\n"
+      "  <p:sldIdLst>\n"
+      "    <p:sldId id=\"256\" r:id=\"rId1\"/>\n"
+      "  </p:sldIdLst>\n"
+      "</p:presentation>";
+  mz_zip_writer_add_mem(&zip, "ppt/presentation.xml", presentation_xml.data(), presentation_xml.size(),
+                        MZ_BEST_COMPRESSION);
+
+  const std::string presentation_rels =
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+      "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+      "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide\" Target=\"slides/slide1.xml\"/>\n"
+      "</Relationships>";
+  mz_zip_writer_add_mem(&zip, "ppt/_rels/presentation.xml.rels", presentation_rels.data(), presentation_rels.size(),
+                        MZ_BEST_COMPRESSION);
 
   const std::string slide1 =
       "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -424,6 +514,79 @@ int main(int argc, char *argv[]) {
   CHECK(lower_log.find("sample") != std::string::npos || lower_log.find(".pdf") != std::string::npos);
   std::cout << "  [+] 开启落盘模式验证通过: 成功捕获 DocToText 底层解析日志至文件! 大小: " << log_content.size()
             << " 字节\n";
+
+  // -------------------------------------------------------------
+  // Test 9: Standard OOXML Main Path, Abnormal XLSX Fallback & Concurrent Log Race
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 9] 验证标准 OOXML 直通、异常 XLSX 兜底与并发临时日志安全...\n";
+  const std::string ooxml_log_file = test_dir + "/ooxml_concurrent.log";
+  std::filesystem::remove(ooxml_log_file);
+  soeasy::worker::L2OfficeParser::SetLogging(true, ooxml_log_file);
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 4; ++t) {
+    threads.emplace_back([&, t]() {
+      std::string text;
+      const bool use_xlsx = (t % 2 == 0);
+      bool ok = parser.Parse(use_xlsx ? xlsx_path : pptx_path, use_xlsx ? "xlsx" : "pptx", &text);
+      CHECK(ok);
+      CHECK(!text.empty());
+    });
+  }
+  for (auto &th : threads) th.join();
+  soeasy::worker::L2OfficeParser::SetLogging(false);
+
+  {
+    std::ifstream ooxml_ifs(ooxml_log_file);
+    std::string ooxml_log((std::istreambuf_iterator<char>(ooxml_ifs)), std::istreambuf_iterator<char>());
+    CHECK(ooxml_log.find("Could not locate main file") == std::string::npos);
+    for (const auto &entry : std::filesystem::directory_iterator(test_dir)) {
+      CHECK(entry.path().filename().string().find(".dt.") == std::string::npos);
+    }
+  }
+  std::cout << "  [+] 标准 XLSX/PPTX 并发走 DocToText 主链路通过且无残留 .dt.*.tmp 文件\n";
+
+  // Case A: Abnormal XLSX missing xl/workbook.xml -> falls back to ParseXlsx
+  const std::string no_wb_xlsx = test_dir + "/missing_workbook.xlsx";
+  {
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+    CHECK(mz_zip_writer_init_file(&zip, no_wb_xlsx.c_str(), 0));
+    const std::string ss =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sst><si><t>残缺工作簿兜底正文</t></si></sst>";
+    mz_zip_writer_add_mem(&zip, "xl/sharedStrings.xml", ss.data(), ss.size(), MZ_BEST_COMPRESSION);
+    CHECK(mz_zip_writer_finalize_archive(&zip));
+    CHECK(mz_zip_writer_end(&zip));
+  }
+  std::string rescued_text;
+  CHECK(parser.Parse(no_wb_xlsx, "xlsx", &rescued_text));
+  CHECK(rescued_text.find("残缺工作簿兜底正文") != std::string::npos);
+
+  // Case B: Abnormal empty XLSX with no sheets/strings -> returns false
+  const std::string empty_xlsx = test_dir + "/empty_no_content.xlsx";
+  {
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+    CHECK(mz_zip_writer_init_file(&zip, empty_xlsx.c_str(), 0));
+    const std::string wb = "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"/>";
+    mz_zip_writer_add_mem(&zip, "xl/workbook.xml", wb.data(), wb.size(), MZ_BEST_COMPRESSION);
+    CHECK(mz_zip_writer_finalize_archive(&zip));
+    CHECK(mz_zip_writer_end(&zip));
+  }
+  std::string empty_xlsx_text = "stale";
+  CHECK(!parser.Parse(empty_xlsx, "xlsx", &empty_xlsx_text));
+  CHECK(empty_xlsx_text.empty());
+
+  // Case C: Corrupted non-ZIP XLSX -> returns false
+  const std::string bad_xlsx = test_dir + "/corrupted.xlsx";
+  {
+    std::ofstream bad_ofs(bad_xlsx, std::ios::binary);
+    bad_ofs << "NOT_A_VALID_ZIP_ARCHIVE";
+  }
+  std::string bad_xlsx_text = "stale";
+  CHECK(!parser.Parse(bad_xlsx, "xlsx", &bad_xlsx_text));
+  CHECK(bad_xlsx_text.empty());
+  std::cout << "  [+] 异常 XLSX (缺 workbook.xml / 无内容 / 损坏文件) 兜底与失败语义验证通过\n";
 
   // Cleanup
   worker_guard.reset();

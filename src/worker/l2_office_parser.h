@@ -42,7 +42,9 @@ class L2OfficeParser : public IDocumentParser {
    * @param file_path Canonical filesystem path
    * @param ext Extension in lowercase
    * @param out_utf8_text Output extracted text
-   * @param is_scanned_pdf Optional flag indicating scanned / image-only PDF
+   * @param is_scanned_pdf Optional flag set to true when a PDF > 10 KB yields fewer than 15
+   *                       non-whitespace characters (e.g., OCR disabled or unextracted scanned pages;
+   *                       false once embedded OCR succeeds with sufficient text)
    * @return true on success
    */
   bool Parse(const std::string &file_path, const std::string &ext, std::string *out_utf8_text,

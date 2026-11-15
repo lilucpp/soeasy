@@ -25,6 +25,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "common/encoding_utils.h"
@@ -52,6 +53,54 @@ static bool g_dt_logging_enabled = false;
 static std::string g_dt_log_path = "";
 static std::unique_ptr<std::ofstream> g_dt_file_stream;
 static std::atomic<bool> s_embedded_image_ocr{false};
+static std::atomic<uint64_t> g_dt_tmp_seq{0};
+
+/// Convert an ASCII extension string to lowercase safely without unsigned char UB.
+std::string ToLowerAscii(const std::string &s) {
+  std::string lower = s;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower;
+}
+
+/// Map lowercase file extension to explicit DocToText parser type.
+int ResolveDocToTextParserType(const std::string &lower_ext) {
+  static const std::unordered_map<std::string, int> kParserTypeMap = {
+      {"docx", DOCTOTEXT_PARSER_ODF_OOXML}, {"xlsx", DOCTOTEXT_PARSER_ODF_OOXML},
+      {"pptx", DOCTOTEXT_PARSER_ODF_OOXML}, {"odt", DOCTOTEXT_PARSER_ODF_OOXML},
+      {"ods", DOCTOTEXT_PARSER_ODF_OOXML},  {"odp", DOCTOTEXT_PARSER_ODF_OOXML},
+      {"odg", DOCTOTEXT_PARSER_ODF_OOXML},  {"doc", DOCTOTEXT_PARSER_DOC},
+      {"wps", DOCTOTEXT_PARSER_DOC},        {"xls", DOCTOTEXT_PARSER_XLS},
+      {"et", DOCTOTEXT_PARSER_XLS},         {"ppt", DOCTOTEXT_PARSER_PPT},
+      {"dps", DOCTOTEXT_PARSER_PPT},        {"rtf", DOCTOTEXT_PARSER_RTF},
+      {"pdf", DOCTOTEXT_PARSER_PDF},        {"xlsb", DOCTOTEXT_PARSER_XLSB},
+      {"eml", DOCTOTEXT_PARSER_EML},        {"fodt", DOCTOTEXT_PARSER_ODFXML},
+      {"fods", DOCTOTEXT_PARSER_ODFXML},    {"fodp", DOCTOTEXT_PARSER_ODFXML},
+      {"pages", DOCTOTEXT_PARSER_IWORK},    {"numbers", DOCTOTEXT_PARSER_IWORK},
+      {"key", DOCTOTEXT_PARSER_IWORK},      {"keynote", DOCTOTEXT_PARSER_IWORK},
+  };
+  auto it = kParserTypeMap.find(lower_ext);
+  return it != kParserTypeMap.end() ? it->second : DOCTOTEXT_PARSER_AUTO;
+}
+
+bool HasMeaningfulText(const std::string &text) {
+  return std::any_of(text.begin(), text.end(),
+                     [](unsigned char c) { return !std::isspace(c); });
+}
+
+/// Count non-whitespace Unicode codepoints in sanitized valid UTF-8 text.
+size_t CountNonWhitespaceCodepoints(const std::string &sanitized_utf8) {
+  size_t count = 0;
+  auto it = sanitized_utf8.begin();
+  const auto end = sanitized_utf8.end();
+  while (it != end) {
+    uint32_t cp = utf8::next(it, end);
+    if (cp > 0x7Fu || !std::isspace(static_cast<unsigned char>(cp))) {
+      ++count;
+    }
+  }
+  return count;
+}
 
 uint64_t GetFileSize(const std::string &path) {
   uint64_t size = 0;
@@ -108,6 +157,159 @@ const char *DocToTextImageParserCallbackC(const char *image_name, const char *im
   return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
 }
 
+/// RAII guard for miniz zip archive handles opened via UTF-8 safe FILE*.
+class ZipFileScope {
+ public:
+  ZipFileScope() : file_(nullptr) { std::memset(&zip_, 0, sizeof(zip_)); }
+  ~ZipFileScope() { Close(); }
+
+  ZipFileScope(const ZipFileScope &) = delete;
+  ZipFileScope &operator=(const ZipFileScope &) = delete;
+
+  bool Open(const std::string &file_path) {
+    Close();
+    file_ = common::EncodingUtils::FopenUtf8(file_path, "rb");
+    if (!file_) return false;
+    if (mz_zip_reader_init_cfile(&zip_, file_, 0, 0) != MZ_TRUE) {
+      std::fclose(file_);
+      file_ = nullptr;
+      return false;
+    }
+    return true;
+  }
+
+  void Close() {
+    if (file_) {
+      mz_zip_reader_end(&zip_);
+      std::fclose(file_);
+      file_ = nullptr;
+    }
+  }
+
+  mz_zip_archive *zip() { return &zip_; }
+
+ private:
+  mz_zip_archive zip_;
+  FILE *file_;
+};
+
+/// Helper to safely extract and parse an XML entry from a zip archive using RAII.
+std::string ExtractZipEntryXmlText(mz_zip_archive *zip, const char *entry_name, bool strip_tags) {
+  size_t uncomp_size = 0;
+  void *data = mz_zip_reader_extract_file_to_heap(zip, entry_name, &uncomp_size, 0);
+  if (!data) {
+    return "";
+  }
+  std::unique_ptr<char, decltype(&mz_free)> data_guard(static_cast<char *>(data), mz_free);
+  std::string xml(data_guard.get(), uncomp_size);
+  return L2OfficeParser::ExtractXmlText(xml, strip_tags);
+}
+
+/// Remove a temporary DocToText log file automatically on scope exit.
+struct TempFileCleaner {
+  std::string path;
+  ~TempFileCleaner() {
+    if (!path.empty()) {
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
+  }
+};
+
+/// Extract text via DocToText using RAII resource guards and unique per-call temp logs.
+void ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext, std::string *out_utf8_text) {
+  TempFileCleaner temp_cleaner;
+  bool enable_logging = false;
+  try {
+    std::string log_file_path;
+    {
+      std::lock_guard<std::mutex> lock(g_dt_mutex);
+      if (g_dt_logging_enabled && g_dt_file_stream && g_dt_file_stream->is_open()) {
+        enable_logging = true;
+        log_file_path = g_dt_log_path;
+        *g_dt_file_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower_ext << ")\n" << std::flush;
+      }
+    }
+
+    std::unique_ptr<DocToTextExtractorParams, decltype(&doctotext_free_extractor_params)> params(
+        doctotext_create_extractor_params(), &doctotext_free_extractor_params);
+    if (!params) return;
+
+    doctotext_extractor_params_set_verbose_logging(params.get(), enable_logging ? 1 : 0);
+    if (enable_logging && !log_file_path.empty()) {
+      const uint64_t seq = g_dt_tmp_seq.fetch_add(1, std::memory_order_relaxed);
+      temp_cleaner.path = log_file_path + ".dt." + std::to_string(seq) + ".tmp";
+      doctotext_extractor_params_set_log_file(params.get(), temp_cleaner.path.c_str());
+    }
+    doctotext_extractor_params_set_parser_type(params.get(), ResolveDocToTextParserType(lower_ext));
+    if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {
+      doctotext_extractor_params_set_image_parser_callback(params.get(), &DocToTextImageParserCallbackC, nullptr);
+    } else {
+      doctotext_extractor_params_set_image_parser_callback(params.get(), nullptr, nullptr);
+    }
+
+    DocToTextException *raw_exc = nullptr;
+    std::string native_path = common::EncodingUtils::ToNativeAnsiPath(file_path);
+    std::unique_ptr<DocToTextExtractedData, decltype(&doctotext_free_extracted_data)> data(
+        doctotext_process_file(native_path.c_str(), params.get(), &raw_exc), &doctotext_free_extracted_data);
+    std::unique_ptr<DocToTextException, decltype(&doctotext_free_exception)> exc(raw_exc, &doctotext_free_exception);
+
+    if (data) {
+      const char *txt = doctotext_extracted_data_get_text(data.get());
+      if (txt && *txt) {
+        *out_utf8_text = txt;
+      }
+    }
+
+    if (!temp_cleaner.path.empty()) {
+      std::error_code ec;
+      if (std::filesystem::exists(temp_cleaner.path, ec)) {
+        std::ifstream tmp_ifs(temp_cleaner.path);
+        if (tmp_ifs.is_open()) {
+          std::string dt_logs((std::istreambuf_iterator<char>(tmp_ifs)), std::istreambuf_iterator<char>());
+          tmp_ifs.close();
+          std::lock_guard<std::mutex> lock(g_dt_mutex);
+          if (g_dt_file_stream && g_dt_file_stream->is_open()) {
+            *g_dt_file_stream << dt_logs << std::flush;
+          }
+        }
+      }
+    }
+
+    if (enable_logging) {
+      std::lock_guard<std::mutex> lock(g_dt_mutex);
+      if (g_dt_file_stream && g_dt_file_stream->is_open()) {
+        g_dt_file_stream->flush();
+      }
+    }
+  } catch (...) {
+    // Graceful fallback to secondary extractors
+  }
+}
+
+/// Dispatch secondary extractors when DocToText yields empty or whitespace-only text.
+bool ApplyFallbackExtractor(const std::string &file_path, const std::string &lower_ext, std::string *out_utf8_text,
+                            bool *is_scanned_pdf) {
+  out_utf8_text->clear();
+  bool ok = false;
+  if (lower_ext == "docx") {
+    ok = L2OfficeParser::ParseDocx(file_path, out_utf8_text);
+  } else if (lower_ext == "xlsx") {
+    ok = L2OfficeParser::ParseXlsx(file_path, out_utf8_text);
+  } else if (lower_ext == "pptx") {
+    ok = L2OfficeParser::ParsePptx(file_path, out_utf8_text);
+  } else if (lower_ext == "pdf") {
+    ok = L2OfficeParser::ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
+  } else if (lower_ext == "doc" || lower_ext == "xls" || lower_ext == "ppt" || lower_ext == "wps" ||
+             lower_ext == "et" || lower_ext == "dps" || lower_ext == "rtf") {
+    ok = L2OfficeParser::ParseLegacyOffice(file_path, lower_ext, out_utf8_text);
+  }
+  if (!ok) {
+    out_utf8_text->clear();
+  }
+  return ok;
+}
+
 }  // namespace
 
 L2OfficeParser::L2OfficeParser() {
@@ -116,9 +318,7 @@ L2OfficeParser::L2OfficeParser() {
 }
 
 bool L2OfficeParser::IsSupported(const std::string &ext) const {
-  std::string lower = ext;
-  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-  return supported_exts_.find(lower) != supported_exts_.end();
+  return supported_exts_.find(ToLowerAscii(ext)) != supported_exts_.end();
 }
 
 void L2OfficeParser::SetLogging(bool enable, const std::string &log_file_path) {
@@ -165,224 +365,40 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
   out_utf8_text->clear();
   if (is_scanned_pdf) *is_scanned_pdf = false;
 
-  std::string lower = ext;
-  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+  const std::string lower = ToLowerAscii(ext);
 
-  // 1. Direct specialized extractors for modern OOXML spreadsheets, presentations & PDF documents
-  // (DocToText does not support XLSX/PPTX archive formats; using internal high-speed extractors)
-  if (lower == "xlsx") {
-    return ParseXlsx(file_path, out_utf8_text);
-  }
-  if (lower == "pptx") {
-    return ParsePptx(file_path, out_utf8_text);
-  }
-  if (lower == "pdf") {
-    bool ok = ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
-    std::lock_guard<std::mutex> lock(g_dt_mutex);
-    if (g_dt_logging_enabled && g_dt_file_stream && g_dt_file_stream->is_open()) {
-      *g_dt_file_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower << ")\n"
-                        << "[DocToText] Extracted " << out_utf8_text->size() << " characters\n"
-                        << std::flush;
-    }
-    return ok;
-  }
-
-  // 2. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
-  try {
-    bool enable_logging = false;
-    std::string log_file_path;
-    {
-      std::lock_guard<std::mutex> lock(g_dt_mutex);
-      if (g_dt_logging_enabled && g_dt_file_stream && g_dt_file_stream->is_open()) {
-        enable_logging = true;
-        log_file_path = g_dt_log_path;
-        *g_dt_file_stream << "\n[DocToText] Parsing: " << file_path << " (ext: " << lower << ")\n" << std::flush;
-      }
-    }
-
-    int ptype = DOCTOTEXT_PARSER_AUTO;
-    if (lower == "docx" || lower == "odt" || lower == "ods" || lower == "odp" || lower == "odg") {
-      ptype = DOCTOTEXT_PARSER_ODF_OOXML;
-    } else if (lower == "doc" || lower == "wps") {
-      ptype = DOCTOTEXT_PARSER_DOC;
-    } else if (lower == "xls" || lower == "et") {
-      ptype = DOCTOTEXT_PARSER_XLS;
-    } else if (lower == "ppt" || lower == "dps") {
-      ptype = DOCTOTEXT_PARSER_PPT;
-    } else if (lower == "rtf") {
-      ptype = DOCTOTEXT_PARSER_RTF;
-    } else if (lower == "pdf") {
-      ptype = DOCTOTEXT_PARSER_PDF;
-    } else if (lower == "xlsb") {
-      ptype = DOCTOTEXT_PARSER_XLSB;
-    } else if (lower == "eml") {
-      ptype = DOCTOTEXT_PARSER_EML;
-    } else if (lower == "fodt" || lower == "fods" || lower == "fodp") {
-      ptype = DOCTOTEXT_PARSER_ODFXML;
-    } else if (lower == "pages" || lower == "numbers" || lower == "key" || lower == "keynote") {
-      ptype = DOCTOTEXT_PARSER_IWORK;
-    }
-
-    DocToTextExtractorParams *params = doctotext_create_extractor_params();
-    if (params) {
-      doctotext_extractor_params_set_verbose_logging(params, enable_logging ? 1 : 0);
-      std::string tmp_log_path;
-      if (enable_logging && !log_file_path.empty()) {
-        tmp_log_path = log_file_path + ".dt.tmp";
-        doctotext_extractor_params_set_log_file(params, tmp_log_path.c_str());
-      }
-      doctotext_extractor_params_set_parser_type(params, ptype);
-      if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {
-        doctotext_extractor_params_set_image_parser_callback(params, &DocToTextImageParserCallbackC, nullptr);
-      } else {
-        doctotext_extractor_params_set_image_parser_callback(params, nullptr, nullptr);
-      }
-
-      DocToTextException *exc = nullptr;
-      std::string native_path = common::EncodingUtils::ToNativeAnsiPath(file_path);
-      DocToTextExtractedData *data = doctotext_process_file(native_path.c_str(), params, &exc);
-      if (data) {
-        const char *txt = doctotext_extracted_data_get_text(data);
-        if (txt && *txt) {
-          *out_utf8_text = txt;
-        }
-        doctotext_free_extracted_data(data);
-      }
-      if (exc) {
-        doctotext_free_exception(exc);
-      }
-      doctotext_free_extractor_params(params);
-
-      if (!tmp_log_path.empty() && std::filesystem::exists(tmp_log_path)) {
-        std::ifstream tmp_ifs(tmp_log_path);
-        if (tmp_ifs.is_open()) {
-          std::string dt_logs((std::istreambuf_iterator<char>(tmp_ifs)), std::istreambuf_iterator<char>());
-          tmp_ifs.close();
-          std::lock_guard<std::mutex> lock(g_dt_mutex);
-          if (g_dt_file_stream && g_dt_file_stream->is_open()) {
-            *g_dt_file_stream << dt_logs << std::flush;
-          }
-        }
-        std::error_code ec;
-        std::filesystem::remove(tmp_log_path, ec);
-      }
-    }
-
-    if (enable_logging) {
-      std::lock_guard<std::mutex> lock(g_dt_mutex);
-      if (g_dt_file_stream && g_dt_file_stream->is_open()) {
-        g_dt_file_stream->flush();
-      }
-    }
-  } catch (...) {
-    // Graceful fallback to secondary extractors
-  }
-
-  bool has_meaningful_text = false;
-  for (char c : *out_utf8_text) {
-    if (!std::isspace(static_cast<unsigned char>(c))) {
-      has_meaningful_text = true;
-      break;
-    }
-  }
+  // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
+  ExtractWithDocToText(file_path, lower, out_utf8_text);
 
   // 2. Secondary / Fallback: If DocToText extraction was empty or purely whitespace, use internal extractors
-  if (!has_meaningful_text) {
-    out_utf8_text->clear();
-    if (lower == "docx") {
-      ParseDocx(file_path, out_utf8_text);
-    } else if (lower == "xlsx") {
-      ParseXlsx(file_path, out_utf8_text);
-    } else if (lower == "pptx") {
-      ParsePptx(file_path, out_utf8_text);
-    } else if (lower == "pdf") {
-      ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
-    } else if (lower == "doc" || lower == "xls" || lower == "ppt" || lower == "wps" || lower == "et" ||
-               lower == "dps" || lower == "rtf") {
-      ParseLegacyOffice(file_path, lower, out_utf8_text);
-    }
+  if (!HasMeaningfulText(*out_utf8_text)) {
+    ApplyFallbackExtractor(file_path, lower, out_utf8_text, is_scanned_pdf);
   }
 
-  // Check if PDF is a scanned image
-  if (lower == "pdf") {
-    size_t non_whitespace = 0;
-    for (char c : *out_utf8_text) {
-      if (!std::isspace(static_cast<unsigned char>(c))) {
-        non_whitespace++;
-      }
-    }
-    uint64_t file_size = GetFileSize(file_path);
-    if (non_whitespace < 15 && file_size > 10 * 1024) {
-      if (is_scanned_pdf) *is_scanned_pdf = true;
-    }
-  }
-
-  // 3. Sanitize UTF-8 output
+  // 3. Sanitize UTF-8 output before counting Unicode codepoints
   if (!out_utf8_text->empty()) {
     std::string sanitized;
     sanitized.reserve(out_utf8_text->size());
     utf8::replace_invalid(out_utf8_text->begin(), out_utf8_text->end(), std::back_inserter(sanitized), ' ');
     *out_utf8_text = std::move(sanitized);
+  }
+
+  // 4. Flag scanned / image-only PDFs that still lack meaningful text (> 10 KB & < 15 codepoints)
+  if (lower == "pdf" && is_scanned_pdf) {
+    const size_t non_ws_codepoints = CountNonWhitespaceCodepoints(*out_utf8_text);
+    const uint64_t file_size = GetFileSize(file_path);
+    if (non_ws_codepoints < 15 && file_size > 10 * 1024) {
+      *is_scanned_pdf = true;
+    }
+  }
+
+  if (!out_utf8_text->empty()) {
     return true;
   }
 
   // If this is a valid scanned PDF, treat as successful extraction with empty text
-  if (lower == "pdf" && is_scanned_pdf && *is_scanned_pdf) {
-    return true;
-  }
-
-  return false;
+  return lower == "pdf" && is_scanned_pdf && *is_scanned_pdf;
 }
-
-namespace {
-
-class ZipFileScope {
- public:
-  ZipFileScope() : file_(nullptr) { std::memset(&zip_, 0, sizeof(zip_)); }
-  ~ZipFileScope() { Close(); }
-
-  bool Open(const std::string &file_path) {
-    Close();
-    file_ = common::EncodingUtils::FopenUtf8(file_path, "rb");
-    if (!file_) return false;
-    if (mz_zip_reader_init_cfile(&zip_, file_, 0, 0) != MZ_TRUE) {
-      std::fclose(file_);
-      file_ = nullptr;
-      return false;
-    }
-    return true;
-  }
-
-  void Close() {
-    if (file_) {
-      mz_zip_reader_end(&zip_);
-      std::fclose(file_);
-      file_ = nullptr;
-    }
-  }
-
-  mz_zip_archive *zip() { return &zip_; }
-
- private:
-  mz_zip_archive zip_;
-  FILE *file_;
-};
-
-/**
- * @brief Helper to safely extract and parse an XML entry from a zip archive using RAII.
- */
-std::string ExtractZipEntryXmlText(mz_zip_archive *zip, const char *entry_name, bool strip_tags) {
-  size_t uncomp_size = 0;
-  void *data = mz_zip_reader_extract_file_to_heap(zip, entry_name, &uncomp_size, 0);
-  if (!data) {
-    return "";
-  }
-  std::unique_ptr<char, decltype(&mz_free)> data_guard(static_cast<char *>(data), mz_free);
-  std::string xml(data_guard.get(), uncomp_size);
-  return L2OfficeParser::ExtractXmlText(xml, strip_tags);
-}
-
-}  // namespace
 
 bool L2OfficeParser::ParseDocx(const std::string &file_path, std::string *out_utf8) {
   ZipFileScope zip_scope;
