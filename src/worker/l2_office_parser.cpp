@@ -65,25 +65,20 @@ std::string DocToTextImageParserCallback(const std::string &image_name, const ch
                                          void *user_data) {
   if (!image_buffer || image_size < 128 || image_size > 30ULL * 1024ULL * 1024ULL) return "";
 
+  const ocr::ImageFilter filter;
   // 1. Fast zero-copy header probe before decoding (< 1 microsecond, 0 memory allocation)
   auto dim = ocr::ImageFilter::ProbeBufferDimensions(reinterpret_cast<const uint8_t *>(image_buffer), image_size);
-  if (dim.valid) {
-    if (dim.width < 64 || dim.height < 64 || (dim.width * dim.height < 4096)) {
-      return "";  // Drop icons, bullets, decorative buttons immediately without decoding
-    }
-    float aspect = static_cast<float>(dim.width) / static_cast<float>(dim.height);
-    if (aspect > 20.0f || aspect < 0.05f) {
-      return "";  // Drop divider bars and border stripes
-    }
+  if (dim.valid && filter.CheckDimensions(dim.width, dim.height) != ocr::FilterDecision::kPass) {
+    return "";  // Drop icons, bullets, extreme strips, and pixel bombs without decoding
   }
 
   try {
     std::vector<uint8_t> buf(reinterpret_cast<const uint8_t *>(image_buffer),
                              reinterpret_cast<const uint8_t *>(image_buffer) + image_size);
-    cv::Mat img = cv::imdecode(buf, cv::IMREAD_COLOR);
+    cv::Mat raw_img = cv::imdecode(buf, cv::IMREAD_UNCHANGED);
+    cv::Mat img = ocr::ImageFilter::NormalizeToBgr(raw_img);
     if (img.empty()) return "";
 
-    ocr::ImageFilter filter;
     if (filter.CheckDecodedImage(img) != ocr::FilterDecision::kPass) {
       return "";
     }
@@ -92,13 +87,13 @@ std::string DocToTextImageParserCallback(const std::string &image_name, const ch
     static std::unique_ptr<ocr::IOcrEngine> s_ocr_engine;
     std::lock_guard<std::mutex> lock(s_ocr_mutex);
     if (!s_ocr_engine) {
-      // Use limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
+      // Use max limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
       s_ocr_engine = ocr::OcrEngineFactory::CreateDefaultEngine("", ocr::OcrMode::kNormal, 640);
     }
     if (!s_ocr_engine) return "";
 
     auto ocr_res = s_ocr_engine->Recognize(img);
-    if (ocr_res.success && !ocr_res.full_text.empty()) {
+    if (ocr_res.success && ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text) >= filter.options().min_effective_chars) {
       return ocr_res.full_text;
     }
   } catch (...) {

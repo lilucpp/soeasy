@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <opencv2/imgproc.hpp>
 #include <vector>
 
 #include "common/encoding_utils.h"
@@ -17,6 +18,24 @@ namespace worker {
 namespace ocr {
 
 ImageFilter::ImageFilter(FilterOptions options) : options_(options) {}
+
+FilterDecision ImageFilter::CheckDimensions(int width, int height) const {
+  if (width <= 0 || height <= 0) {
+    return FilterDecision::kUnreadable;
+  }
+  if (width <= options_.min_side && height <= options_.min_side) {
+    return FilterDecision::kTooSmallIconOrThumbnail;
+  }
+  const uint64_t pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+  if (options_.max_image_pixels > 0 && pixels > options_.max_image_pixels) {
+    return FilterDecision::kTooManyPixels;
+  }
+  const float aspect = static_cast<float>(width) / static_cast<float>(height);
+  if (aspect > options_.max_aspect_ratio || aspect < (1.0f / options_.max_aspect_ratio)) {
+    return FilterDecision::kExtremeAspectRatioStrip;
+  }
+  return FilterDecision::kPass;
+}
 
 FilterDecision ImageFilter::PrecheckFile(const std::string &file_path, uint64_t file_size) const {
   if (options_.filter_cache_thumbnails && IsCacheOrThumbnailPath(file_path)) {
@@ -36,15 +55,7 @@ FilterDecision ImageFilter::PrecheckFile(const std::string &file_path, uint64_t 
   // Fast probe header dimensions
   ImageDimension dim = ProbeHeaderDimensions(file_path);
   if (dim.valid) {
-    if (dim.width <= options_.min_side && dim.height <= options_.min_side) {
-      return FilterDecision::kTooSmallIconOrThumbnail;
-    }
-    if (dim.width > 0 && dim.height > 0) {
-      float aspect = static_cast<float>(dim.width) / static_cast<float>(dim.height);
-      if (aspect > options_.max_aspect_ratio || aspect < (1.0f / options_.max_aspect_ratio)) {
-        return FilterDecision::kExtremeAspectRatioStrip;
-      }
-    }
+    return CheckDimensions(dim.width, dim.height);
   }
 
   return FilterDecision::kPass;
@@ -53,6 +64,7 @@ FilterDecision ImageFilter::PrecheckFile(const std::string &file_path, uint64_t 
 bool ImageFilter::IsCacheOrThumbnailPath(const std::string &file_path) {
   std::string lower = file_path;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+  std::replace(lower.begin(), lower.end(), '\\', '/');
 
   static const char *kPathKeywords[] = {"/weappicon/", "/thumb/",     "/thumbs/", "/emoji/",  "/emojis/",
                                         "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"};
@@ -106,24 +118,70 @@ size_t ImageFilter::CountEffectiveChars(const std::string &text) {
   return count;
 }
 
+cv::Mat ImageFilter::NormalizeToBgr(const cv::Mat &src) {
+  if (src.empty()) {
+    return cv::Mat();
+  }
+  cv::Mat img8;
+  if (src.depth() == CV_16U) {
+    src.convertTo(img8, CV_8U, 255.0 / 65535.0);
+  } else if (src.depth() != CV_8U) {
+    src.convertTo(img8, CV_8U);
+  } else {
+    img8 = src;
+  }
+
+  if (img8.channels() == 3) {
+    return img8;
+  }
+  if (img8.channels() == 1) {
+    cv::Mat bgr;
+    cv::cvtColor(img8, bgr, cv::COLOR_GRAY2BGR);
+    return bgr;
+  }
+  if (img8.channels() == 4) {
+    // Composite BGRA onto solid white so transparent dark-text PNGs do not turn solid black.
+    cv::Mat bgr(img8.size(), CV_8UC3);
+    for (int y = 0; y < img8.rows; ++y) {
+      const cv::Vec4b *sp = img8.ptr<cv::Vec4b>(y);
+      cv::Vec3b *dp = bgr.ptr<cv::Vec3b>(y);
+      for (int x = 0; x < img8.cols; ++x) {
+        const uint8_t a = sp[x][3];
+        if (a == 255) {
+          dp[x] = cv::Vec3b(sp[x][0], sp[x][1], sp[x][2]);
+        } else if (a == 0) {
+          dp[x] = cv::Vec3b(255, 255, 255);
+        } else {
+          const int inv = 255 - a;
+          dp[x][0] = static_cast<uint8_t>((sp[x][0] * a + 255 * inv + 127) / 255);
+          dp[x][1] = static_cast<uint8_t>((sp[x][1] * a + 255 * inv + 127) / 255);
+          dp[x][2] = static_cast<uint8_t>((sp[x][2] * a + 255 * inv + 127) / 255);
+        }
+      }
+    }
+    return bgr;
+  }
+  return cv::Mat();
+}
+
 FilterDecision ImageFilter::CheckDecodedImage(const cv::Mat &bgr_image) const {
   if (bgr_image.empty()) {
     return FilterDecision::kUnreadable;
   }
 
-  if (bgr_image.cols <= options_.min_side && bgr_image.rows <= options_.min_side) {
-    return FilterDecision::kTooSmallIconOrThumbnail;
-  }
-
-  float aspect = static_cast<float>(bgr_image.cols) / static_cast<float>(bgr_image.rows);
-  if (aspect > options_.max_aspect_ratio || aspect < (1.0f / options_.max_aspect_ratio)) {
-    return FilterDecision::kExtremeAspectRatioStrip;
+  FilterDecision dim_decision = CheckDimensions(bgr_image.cols, bgr_image.rows);
+  if (dim_decision != FilterDecision::kPass) {
+    return dim_decision;
   }
 
   // Tier 2: Check pixel variance (stddev)
   cv::Scalar mean, stddev;
   cv::meanStdDev(bgr_image, mean, stddev);
-  if (stddev[0] < options_.min_std_dev && stddev[1] < options_.min_std_dev && stddev[2] < options_.min_std_dev) {
+  if (bgr_image.channels() == 1) {
+    if (stddev[0] < options_.min_std_dev) {
+      return FilterDecision::kSolidColorOrBlank;
+    }
+  } else if (stddev[0] < options_.min_std_dev && stddev[1] < options_.min_std_dev && stddev[2] < options_.min_std_dev) {
     return FilterDecision::kSolidColorOrBlank;
   }
 

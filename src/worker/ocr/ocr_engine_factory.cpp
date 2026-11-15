@@ -65,6 +65,7 @@ std::unique_ptr<IOcrEngine> OcrEngineFactory::CreateDefaultEngine(const std::str
   config.rec_model_path = found_dir + "/PP-OCRv6_tiny_rec_onnx/inference.onnx";
   config.dict_path = found_dir + "/PP-OCRv6_tiny_rec_onnx/chars.txt";
   config.mode = mode;
+  config.det_limit_type = DetLimitType::kMax;
   config.limit_side_len = limit_side_len;
 
   if (!engine->Initialize(config)) {

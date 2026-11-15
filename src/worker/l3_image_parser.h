@@ -77,7 +77,7 @@ class L3ImageParser : public IDocumentParser {
   ocr::OcrMode mode_ = ocr::OcrMode::kNormal;
   std::string models_dir_;
   std::chrono::steady_clock::time_point last_ocr_active_time_;
-  size_t min_effective_chars_ = 4;
+  size_t min_effective_chars_ = ocr::FilterOptions::kDefaultMinEffectiveChars;
 };
 
 }  // namespace worker

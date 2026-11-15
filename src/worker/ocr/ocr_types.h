@@ -19,6 +19,11 @@ enum class OcrMode {
 
 enum class OcrEngineType { kPPOCRv6 = 0, kCustom = 1 };
 
+enum class DetLimitType {
+  kMax = 0,  // Cap longest side to limit_side_len (no upscaling for small images)
+  kMin = 1   // Ensure shortest side >= limit_side_len (clamped by max_side_limit)
+};
+
 struct OcrPoint {
   float x = 0.0f;
   float y = 0.0f;
@@ -49,8 +54,9 @@ struct OcrConfig {
   std::string rec_model_path;
   std::string dict_path;
   OcrMode mode = OcrMode::kNormal;
-  int limit_side_len = 736;
-  int max_side_limit = 4000;
+  DetLimitType det_limit_type = DetLimitType::kMax;
+  int limit_side_len = 960;
+  int max_side_limit = 2048;
   float det_db_thresh = 0.3f;
   float det_box_thresh = 0.6f;
   float unclip_ratio = 1.5f;

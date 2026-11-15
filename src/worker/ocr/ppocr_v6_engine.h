@@ -34,7 +34,8 @@ class PPOCRv6Engine : public IOcrEngine {
   void SetMode(OcrMode mode) override;
   OcrEngineType GetType() const override { return OcrEngineType::kPPOCRv6; }
 
-  static cv::Size DetResize(cv::Mat &img, int limit_side_len = 736, int max_side_limit = 4000, int align = 32);
+  static cv::Size DetResize(cv::Mat &img, int limit_side_len = 960, int max_side_limit = 2048, int align = 32,
+                            DetLimitType limit_type = DetLimitType::kMax);
   static std::vector<float> DetPreprocess(const cv::Mat &img_bgr);
   static cv::Mat GetRotateCrop(const cv::Mat &img, const std::vector<OcrPoint> &pts);
   static std::vector<float> RecPreprocess(const cv::Mat &crop_bgr, int target_h = 48, int target_w = 320,

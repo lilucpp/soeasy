@@ -17,6 +17,7 @@
 #include "worker/l3_image_parser.h"
 #include "worker/ocr/image_filter.h"
 #include "worker/ocr/ocr_engine_factory.h"
+#include "worker/ocr/ppocr_v6_engine.h"
 
 using namespace soeasy::worker;
 using namespace soeasy::worker::ocr;
@@ -135,11 +136,26 @@ void TestImageFilter() {
             << "): " << (dec_real == FilterDecision::kPass ? "PASS (Preserved for OCR)" : "FAIL") << "\n";
   assert(dec_real == FilterDecision::kPass);
 
-  // 5. Test path precheck for cache & thumbnails
+  // 5. Test path precheck for cache & thumbnails (POSIX & Windows separators)
   assert(ImageFilter::IsCacheOrThumbnailPath("/tmp/cache/WeAppIcon/123.jpg"));
+  assert(ImageFilter::IsCacheOrThumbnailPath("C:\\Users\\demo\\Thumb\\574_1788.jpg"));
   assert(ImageFilter::IsCacheOrThumbnailPath("/tmp/msg/Thumb/574_1788_thumb.jpg"));
   assert(!ImageFilter::IsCacheOrThumbnailPath("/tmp/work/invoice_2026.png"));
   std::cout << "  Path-based cache & thumbnail filter check: PASS\n";
+
+  // 5b. Test long-image aspect ratio rejection, panoramic acceptance, pixel ceiling, and RGBA normalization
+  assert(filter.CheckDimensions(1080, 10000) == FilterDecision::kExtremeAspectRatioStrip);
+  assert(filter.CheckDimensions(1080, 4000) == FilterDecision::kPass);
+  assert(filter.CheckDimensions(10000, 10000) == FilterDecision::kTooManyPixels);
+  {
+    // Transparent BGRA image with dark pixels on transparent (0,0,0,0) canvas
+    cv::Mat rgba(200, 500, CV_8UC4, cv::Scalar(0, 0, 0, 0));
+    cv::putText(rgba, "Invoice 2026", cv::Point(30, 120), cv::FONT_HERSHEY_SIMPLEX, 1.5, cv::Scalar(0, 0, 0, 255), 3);
+    cv::Mat bgr = ImageFilter::NormalizeToBgr(rgba);
+    assert(bgr.channels() == 3);
+    assert(filter.CheckDecodedImage(bgr) == FilterDecision::kPass);
+  }
+  std::cout << "  Long-strip, pixel-cap & RGBA white-composite check: PASS\n";
 
   // 6. Test CountEffectiveChars
   assert(ImageFilter::CountEffectiveChars("福") == 1);
@@ -217,6 +233,39 @@ void TestPPOCRv6Engine() {
   std::cout << "  [HighPerf Mode (multi)] Det: " << res_hp.det_ms << "ms | Rec: " << res_hp.rec_ms
             << "ms | Total: " << res_hp.total_ms << "ms\n";
   assert(res_hp.success);
+
+  // Verify DetResize strategies: empty guard, kMax(960) downscale/no-upscale, and strict kMin cap
+  {
+    cv::Mat empty_mat;
+    assert(PPOCRv6Engine::DetResize(empty_mat).empty());
+
+    cv::Mat shot4k(2160, 3840, CV_8UC3, cv::Scalar(255, 255, 255));
+    PPOCRv6Engine::DetResize(shot4k, 960, 2048, 32, DetLimitType::kMax);
+    assert(shot4k.cols == 960 && shot4k.rows == 544);
+
+    cv::Mat small_ui(140, 260, CV_8UC3, cv::Scalar(255, 255, 255));
+    PPOCRv6Engine::DetResize(small_ui, 960, 2048, 32, DetLimitType::kMax);
+    assert(small_ui.cols == 256 && small_ui.rows == 128);
+
+    cv::Mat narrow_kmin(2000, 200, CV_8UC3, cv::Scalar(255, 255, 255));
+    PPOCRv6Engine::DetResize(narrow_kmin, 736, 2000, 32, DetLimitType::kMin);
+    assert(std::max(narrow_kmin.cols, narrow_kmin.rows) <= 2000);
+  }
+  std::cout << "  DetResize kMax(960) & kMin clamp checks: PASS\n";
+
+  // Verify vertical 90-degree rotated text crop support
+  {
+    cv::Mat horiz(160, 560, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::putText(horiz, "VERTICAL HEADER 2026", cv::Point(24, 100), cv::FONT_HERSHEY_SIMPLEX, 1.1,
+                cv::Scalar(0, 0, 0), 2);
+    cv::Mat vert;
+    cv::rotate(horiz, vert, cv::ROTATE_90_COUNTERCLOCKWISE);
+    auto vres = engine->Recognize(vert);
+    assert(vres.success);
+    assert(vres.full_text.find("VERTICAL") != std::string::npos ||
+           vres.full_text.find("HEADER") != std::string::npos || vres.full_text.find("2026") != std::string::npos);
+  }
+  std::cout << "  Vertical text crop 90-deg rotation check: PASS\n";
 
   std::cout << ">>> Test 2 (PP-OCRv6 Engine): SUCCESS!\n";
 }

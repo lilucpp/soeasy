@@ -19,6 +19,7 @@
 #endif
 
 #include "common/logger.h"
+#include "worker/ocr/image_filter.h"
 
 namespace soeasy {
 namespace worker {
@@ -96,24 +97,48 @@ void PPOCRv6Engine::SetMode(OcrMode mode) {
   }
 }
 
-cv::Size PPOCRv6Engine::DetResize(cv::Mat &img, int limit_side_len, int max_side_limit, int align) {
-  int h = img.rows, w = img.cols;
-  float ratio = 1.0f;
-  int limit = (std::min)(h, w);
-  if (limit < limit_side_len) {
-    ratio = float(limit_side_len) / float(limit);
-  } else {
-    limit = (std::max)(h, w);
-    if (limit > max_side_limit) ratio = float(max_side_limit) / float(limit);
+cv::Size PPOCRv6Engine::DetResize(cv::Mat &img, int limit_side_len, int max_side_limit, int align,
+                                  DetLimitType limit_type) {
+  if (img.empty()) {
+    return cv::Size();
   }
+  int h = img.rows, w = img.cols;
   cv::Size orig(w, h);
-  int new_w = int(std::round(w * ratio));
-  int new_h = int(std::round(h * ratio));
-  // Critical fix: input dimensions to DBNet must always be aligned to multiples of 32
-  new_w = (std::max)(((new_w + align - 1) / align) * align, align);
-  new_h = (std::max)(((new_h + align - 1) / align) * align, align);
+  float ratio = 1.0f;
+
+  if (limit_type == DetLimitType::kMax) {
+    int max_side = (std::max)(h, w);
+    if (limit_side_len > 0 && max_side > limit_side_len) {
+      ratio = static_cast<float>(limit_side_len) / static_cast<float>(max_side);
+    }
+  } else {
+    int min_side = (std::min)(h, w);
+    if (limit_side_len > 0 && min_side < limit_side_len) {
+      ratio = static_cast<float>(limit_side_len) / static_cast<float>(min_side);
+    }
+  }
+
+  // Always clamp longest side with max_side_limit to prevent narrow strips from blowing up in kMin mode.
+  if (max_side_limit > 0) {
+    int max_side = (std::max)(h, w);
+    if (static_cast<float>(max_side) * ratio > static_cast<float>(max_side_limit)) {
+      ratio = static_cast<float>(max_side_limit) / static_cast<float>(max_side);
+    }
+  }
+
+  int new_w = static_cast<int>(std::round(w * ratio));
+  int new_h = static_cast<int>(std::round(h * ratio));
+  // Align input dimensions to nearest multiple of 32 required by DBNet backbone.
+  new_w = (std::max)(static_cast<int>(std::round(static_cast<double>(new_w) / align)) * align, align);
+  new_h = (std::max)(static_cast<int>(std::round(static_cast<double>(new_h) / align)) * align, align);
+  // Keep rounded dimensions strictly within max_side_limit when max_side_limit >= align.
+  if (max_side_limit >= align) {
+    if (new_w > max_side_limit) new_w = (std::max)((max_side_limit / align) * align, align);
+    if (new_h > max_side_limit) new_h = (std::max)((max_side_limit / align) * align, align);
+  }
   if (new_w != w || new_h != h) {
-    cv::resize(img, img, cv::Size(new_w, new_h));
+    const int interp = (new_w < w || new_h < h) ? cv::INTER_AREA : cv::INTER_CUBIC;
+    cv::resize(img, img, cv::Size(new_w, new_h), 0, 0, interp);
   }
   return orig;
 }
@@ -220,7 +245,8 @@ std::string PPOCRv6Engine::CtcDecode(const float *logits, int T, int C, const st
 }
 
 OcrResult PPOCRv6Engine::RecognizeFile(const std::string &file_path) {
-  cv::Mat img = cv::imread(file_path);
+  cv::Mat raw = cv::imread(file_path, cv::IMREAD_UNCHANGED);
+  cv::Mat img = ImageFilter::NormalizeToBgr(raw);
   if (img.empty()) {
     OcrResult res;
     res.success = false;
@@ -237,9 +263,12 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
   try {
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // 1. Detection preprocessing
-    cv::Mat det_img = bgr_image.clone();
-    cv::Size orig_size = DetResize(det_img, config_.limit_side_len, config_.max_side_limit, 32);
+    // 1. Detection preprocessing (normalize input once and reuse across detection & crop)
+    cv::Mat norm_bgr = ImageFilter::NormalizeToBgr(bgr_image);
+    if (norm_bgr.empty()) return result;
+    cv::Mat det_img = norm_bgr.clone();
+    cv::Size orig_size =
+        DetResize(det_img, config_.limit_side_len, config_.max_side_limit, 32, config_.det_limit_type);
     int det_h = det_img.rows, det_w = det_img.cols;
 
     std::vector<float> det_in = DetPreprocess(det_img);
@@ -306,10 +335,22 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
       double perimeter = cv::arcLength(approx, true);
       double distance = (perimeter > 1e-4) ? (area * config_.unclip_ratio / perimeter) : 0;
 
-      cv::Mat poly_mask = cv::Mat::zeros(det_h, det_w, CV_8U);
-      cv::drawContours(poly_mask, std::vector<std::vector<cv::Point>>{approx}, 0, cv::Scalar(255), cv::FILLED);
-
       int ksize = (std::max)(1, (int)std::ceil(distance));
+      // Dilate only within padded bounding ROI to avoid allocating a full det_h x det_w mask per box.
+      const int pad = ksize + 2;
+      cv::Rect roi = cv::boundingRect(approx);
+      const int rx = (std::max)(0, roi.x - pad);
+      const int ry = (std::max)(0, roi.y - pad);
+      const int rw = (std::min)(det_w - rx, roi.width + (roi.x - rx) + pad);
+      const int rh = (std::min)(det_h - ry, roi.height + (roi.y - ry) + pad);
+      cv::Rect exp_roi(rx, ry, rw, rh);
+      if (exp_roi.area() <= 0) continue;
+
+      cv::Mat poly_mask = cv::Mat::zeros(exp_roi.size(), CV_8U);
+      std::vector<cv::Point> local_approx = approx;
+      for (auto &p : local_approx) p -= exp_roi.tl();
+      cv::drawContours(poly_mask, std::vector<std::vector<cv::Point>>{local_approx}, 0, cv::Scalar(255), cv::FILLED);
+
       cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(ksize, ksize));
       cv::dilate(poly_mask, poly_mask, kernel);
 
@@ -324,6 +365,9 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
       cv::RotatedRect rrect = cv::minAreaRect(unclipped);
       std::vector<cv::Point2f> pts(4);
       rrect.points(pts.data());
+      for (auto &p : pts) {
+        p += cv::Point2f(static_cast<float>(exp_roi.x), static_cast<float>(exp_roi.y));
+      }
 
       std::sort(pts.begin(), pts.end(), [](const cv::Point2f &a, const cv::Point2f &b) {
         if (a.y < b.y - 1e-3f) return true;
@@ -373,8 +417,11 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
     // 4. Recognition pipeline
     auto tr0 = std::chrono::high_resolution_clock::now();
     for (const auto &b : boxes) {
-      cv::Mat crop = GetRotateCrop(bgr_image, b.points);
+      cv::Mat crop = GetRotateCrop(norm_bgr, b.points);
       if (crop.empty()) continue;
+      if (crop.rows > crop.cols * 1.5f) {
+        cv::rotate(crop, crop, cv::ROTATE_90_CLOCKWISE);
+      }
 
       int target_h = 48;
       int target_w = (std::max)(320, int(crop.cols * (float(target_h) / crop.rows)));
@@ -395,8 +442,8 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
       float conf = 0.0f;
       std::string text = CtcDecode(logits, T, C, dict_, &conf);
       if (!text.empty()) {
-        // Filter out extreme low-confidence noise lines
-        if (conf < 0.35f && text.size() <= 6) {
+        // Filter out extreme low-confidence noise lines by effective character count
+        if (conf < 0.35f && ImageFilter::CountEffectiveChars(text) <= 2) {
           continue;
         }
 

@@ -134,11 +134,12 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
   // 3. Multi-page TIFF handling
   if (lower_ext == "tiff" || lower_ext == "tif") {
     std::vector<cv::Mat> pages;
-    if (cv::imreadmulti(file_path, pages) && !pages.empty()) {
+    if (cv::imreadmulti(file_path, pages, cv::IMREAD_UNCHANGED) && !pages.empty()) {
       std::string full_text;
       for (size_t i = 0; i < pages.size(); ++i) {
-        if (filter_.CheckDecodedImage(pages[i]) != ocr::FilterDecision::kPass) continue;
-        auto ocr_res = ocr_engine_->Recognize(pages[i]);
+        cv::Mat bgr_page = ocr::ImageFilter::NormalizeToBgr(pages[i]);
+        if (filter_.CheckDecodedImage(bgr_page) != ocr::FilterDecision::kPass) continue;
+        auto ocr_res = ocr_engine_->Recognize(bgr_page);
         if (ocr_res.success && !ocr_res.full_text.empty()) {
           if (!full_text.empty()) full_text += "\n";
           full_text += ocr_res.full_text;
@@ -154,7 +155,8 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
 
   // 4. Standard raster bitmap decoding directly from disk using native path
   std::string native_path = common::EncodingUtils::ToNativeAnsiPath(file_path);
-  cv::Mat img = cv::imread(native_path);
+  cv::Mat raw_img = cv::imread(native_path, cv::IMREAD_UNCHANGED);
+  cv::Mat img = ocr::ImageFilter::NormalizeToBgr(raw_img);
   if (img.empty()) {
     LOG_ERROR("[L3ImageParser] Failed to decode image file '{}'", file_path);
     return false;

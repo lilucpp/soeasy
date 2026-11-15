@@ -19,7 +19,8 @@ enum class FilterDecision {
   kFileTooLarge = 3,
   kSolidColorOrBlank = 4,
   kUnreadable = 5,
-  kIconOrThumbnailPath = 6
+  kIconOrThumbnailPath = 6,
+  kTooManyPixels = 7
 };
 
 struct ImageDimension {
@@ -29,11 +30,15 @@ struct ImageDimension {
 };
 
 struct FilterOptions {
-  int min_side = 120;                                  // Below 120x120 is treated as icon/avatar/emoji
-  float max_aspect_ratio = 20.0f;                      // Aspect ratio > 20 is divider/border stripe
-  uint64_t max_file_size = 40ULL * 1024ULL * 1024ULL;  // 40 MB max
-  double min_std_dev = 8.0;                            // stddev < 8 is solid single color
-  bool filter_cache_thumbnails = true;                 // Pre-filter WeAppIcon, Thumb, Emoji, etc.
+  static constexpr size_t kDefaultMinEffectiveChars = 4;
+
+  int min_side = 120;                                     // Below 120x120 is treated as icon/avatar/emoji
+  float max_aspect_ratio = 8.0f;                          // Aspect ratio > 8 (dividers or unreadable long strips)
+  uint64_t max_file_size = 40ULL * 1024ULL * 1024ULL;     // 40 MB max
+  uint64_t max_image_pixels = 36ULL * 1024ULL * 1024ULL;  // 36 MP ceiling to guard against decompression OOM
+  double min_std_dev = 8.0;                               // stddev < 8 is solid single color
+  size_t min_effective_chars = kDefaultMinEffectiveChars; // Minimum informative chars to keep OCR result
+  bool filter_cache_thumbnails = true;                    // Pre-filter WeAppIcon, Thumb, Emoji, etc.
 };
 
 class ImageFilter {
@@ -41,6 +46,8 @@ class ImageFilter {
   using FilterOptions = soeasy::worker::ocr::FilterOptions;
 
   explicit ImageFilter(FilterOptions options = FilterOptions{});
+
+  const FilterOptions &options() const { return options_; }
 
   /**
    * @brief Tier 1 fast probe: check file size, magic header, path patterns, and dimensions without decoding image.
@@ -52,6 +59,16 @@ class ImageFilter {
    * @brief Tier 2 variance probe: check if decoded image is solid color / blank canvas.
    */
   FilterDecision CheckDecodedImage(const cv::Mat &bgr_image) const;
+
+  /**
+   * @brief Shared dimension/aspect/pixel-budget check usable before or after image decoding.
+   */
+  FilterDecision CheckDimensions(int width, int height) const;
+
+  /**
+   * @brief Normalize decoded Mat (gray / 16-bit / BGRA with alpha composited onto white) to 8-bit 3-channel BGR.
+   */
+  static cv::Mat NormalizeToBgr(const cv::Mat &src);
 
   /**
    * @brief Helper to probe image width and height directly from file header bytes.
