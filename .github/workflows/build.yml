@@ -122,10 +122,12 @@ jobs:
           cmake -B /tmp/capnproto/build -S /tmp/capnproto/c++ -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-Wno-error -include cstdint" \
+            -DCMAKE_CXX_FLAGS="-Wno-error -include cstdint -Wno-array-bounds -Wno-maybe-uninitialized" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
+            -DWITH_OPENSSL=OFF \
             -DBUILD_TESTING=OFF \
             -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}"
-          cmake --build /tmp/capnproto/build --target install -- -j1
+          cmake --build /tmp/capnproto/build -j4 --target install
 
       - name: Build SoEasy and Test Suite (Windows x64)
         run: |
