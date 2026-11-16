@@ -121,9 +121,11 @@ jobs:
           git clone --depth 1 --branch v1.0.1 https://github.com/capnproto/capnproto.git /tmp/capnproto
           cmake -B /tmp/capnproto/build -S /tmp/capnproto/c++ -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_CXX_FLAGS="-Wno-error -include cstdint" \
             -DBUILD_TESTING=OFF \
             -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}"
-          cmake --build /tmp/capnproto/build --target install
+          cmake --build /tmp/capnproto/build --target install -- -j1
 
       - name: Build SoEasy and Test Suite (Windows x64)
         run: |
