@@ -8,6 +8,7 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QMetaObject>
+#include <QMouseEvent>
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTreeWidget>
@@ -28,6 +29,7 @@
 #include "gui/main_window.h"
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
+#include "gui/title_bar.h"
 #include "gui/settings/extensions_tab.h"
 #include "gui/settings/general_tab.h"
 #include "gui/settings/performance_tab.h"
@@ -728,6 +730,69 @@ int main(int argc, char *argv[]) {
     std::remove((lock_db + "-shm").c_str());
     std::remove(lock_cfg_path.c_str());
     std::cout << "  -> SettingsDialog 运行期结构只读锁定、语言仍可调及停止后自动解锁验证通过!\n";
+  }
+
+  // -------------------------------------------------------------
+  // TitleBar drag threshold, system move fallback, and double-click maximize
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 9] 测试 TitleBar 拖拽阈值防抖、拖动兜底与双击最大化...\n";
+  {
+    soeasy::gui::MainWindow drag_win(pipeline);
+    drag_win.move(100, 100);
+    drag_win.show();
+    app.processEvents();
+
+    auto *tb = drag_win.findChild<soeasy::gui::TitleBar *>();
+    CHECK(tb != nullptr);
+    const QPoint initial_top_left = drag_win.frameGeometry().topLeft();
+    const QPoint local_pt(80, 18);
+    const QPoint global_press = tb->mapToGlobal(local_pt);
+
+    QMouseEvent press_ev(QEvent::MouseButtonPress, local_pt, global_press, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(tb, &press_ev);
+
+    // 1. Sub-threshold jitter (< startDragDistance()) must not move window
+    const int jitter = std::max(1, QApplication::startDragDistance() - 1);
+    QMouseEvent jitter_ev(QEvent::MouseMove, local_pt + QPoint(jitter, 0), global_press + QPoint(jitter, 0),
+                          Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(tb, &jitter_ev);
+    app.processEvents();
+    CHECK(drag_win.frameGeometry().topLeft() == initial_top_left);
+
+    // 2. Exceeding drag threshold moves window (fallback path under offscreen platform)
+    const int delta = std::max(20, QApplication::startDragDistance() + 10);
+    const QPoint moved_global = global_press + QPoint(delta, delta);
+    QMouseEvent move_ev(QEvent::MouseMove, local_pt + QPoint(delta, delta), moved_global, Qt::NoButton, Qt::LeftButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(tb, &move_ev);
+    app.processEvents();
+    CHECK(drag_win.frameGeometry().topLeft() == initial_top_left + QPoint(delta, delta));
+
+    // 2.5 Dragging back near press origin must move smoothly without a threshold deadzone
+    const QPoint back_near_origin = global_press + QPoint(2, 0);
+    QMouseEvent back_ev(QEvent::MouseMove, tb->mapFromGlobal(back_near_origin), back_near_origin, Qt::NoButton,
+                        Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(tb, &back_ev);
+    app.processEvents();
+    CHECK(drag_win.frameGeometry().topLeft() == initial_top_left + QPoint(2, 0));
+
+    QMouseEvent release_ev(QEvent::MouseButtonRelease, tb->mapFromGlobal(back_near_origin), back_near_origin,
+                           Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(tb, &release_ev);
+
+    // 3. Double-click toggles maximize and restores cleanly
+    QMouseEvent dbl_ev1(QEvent::MouseButtonDblClick, local_pt, global_press, Qt::LeftButton, Qt::LeftButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(tb, &dbl_ev1);
+    app.processEvents();
+    CHECK(drag_win.isMaximized());
+
+    QMouseEvent dbl_ev2(QEvent::MouseButtonDblClick, local_pt, global_press, Qt::LeftButton, Qt::LeftButton,
+                        Qt::NoModifier);
+    QApplication::sendEvent(tb, &dbl_ev2);
+    app.processEvents();
+    CHECK(!drag_win.isMaximized());
+    std::cout << "  -> TitleBar 拖拽防误触、移动与双击最大化切换验证通过!\n";
   }
 
   // Cleanup

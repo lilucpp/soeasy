@@ -24,6 +24,7 @@ class TitleBar : public QWidget {
  protected:
   void mousePressEvent(QMouseEvent *event) override;
   void mouseMoveEvent(QMouseEvent *event) override;
+  void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseDoubleClickEvent(QMouseEvent *event) override;
 
  private slots:
@@ -43,6 +44,9 @@ class TitleBar : public QWidget {
   QPushButton *btn_close_ = nullptr;
 
   QPoint drag_pos_;
+  QPoint press_global_pos_;
+  bool is_dragging_ = false;
+  bool drag_started_ = false;
 };
 
 }  // namespace gui

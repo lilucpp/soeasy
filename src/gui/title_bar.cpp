@@ -1,5 +1,13 @@
 #include "gui/title_bar.h"
 
+#include <QApplication>
+#include <QWindow>
+#include <QtGlobal>
+
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+#error "SoEasy GUI requires Qt 5.15 or later for QWindow::startSystemMove()."
+#endif
+
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
 
@@ -187,21 +195,59 @@ void TitleBar::OnCloseClicked() {
 }
 
 void TitleBar::mousePressEvent(QMouseEvent *event) {
-  if (event->button() == Qt::LeftButton) {
-    drag_pos_ = event->globalPos() - window()->frameGeometry().topLeft();
+  QWidget *win = window();
+  drag_started_ = false;
+  if (event->button() == Qt::LeftButton && win && !win->isMaximized()) {
+    is_dragging_ = true;
+    press_global_pos_ = event->globalPos();
+    drag_pos_ = event->globalPos() - win->frameGeometry().topLeft();
     event->accept();
+    return;
   }
+  is_dragging_ = false;
 }
 
 void TitleBar::mouseMoveEvent(QMouseEvent *event) {
-  if ((event->buttons() & Qt::LeftButton) && !window()->isMaximized()) {
-    window()->move(event->globalPos() - drag_pos_);
-    event->accept();
+  QWidget *win = window();
+  if (!is_dragging_ || !(event->buttons() & Qt::LeftButton) || !win || win->isMaximized()) {
+    return;
   }
+
+  // Defer drag engagement until pointer exceeds threshold once; preserves double-click without deadzone on fallback.
+  if (!drag_started_) {
+    if ((event->globalPos() - press_global_pos_).manhattanLength() < QApplication::startDragDistance()) {
+      return;
+    }
+    drag_started_ = true;
+  }
+
+  if (QWindow *wh = win->windowHandle()) {
+    if (wh->startSystemMove()) {
+      // WM takes over the interactive move and may swallow the release event.
+      is_dragging_ = false;
+      drag_started_ = false;
+      event->accept();
+      return;
+    }
+  }
+
+  // Fallback for headless/offscreen platforms where startSystemMove() is unsupported.
+  win->move(event->globalPos() - drag_pos_);
+  event->accept();
+}
+
+void TitleBar::mouseReleaseEvent(QMouseEvent *event) {
+  if (event->button() == Qt::LeftButton) {
+    is_dragging_ = false;
+    drag_started_ = false;
+  }
+  QWidget::mouseReleaseEvent(event);
 }
 
 void TitleBar::mouseDoubleClickEvent(QMouseEvent *event) {
   if (event->button() == Qt::LeftButton) {
+    is_dragging_ = false;
+    drag_started_ = false;
     OnMaximizeClicked();
     event->accept();
   }

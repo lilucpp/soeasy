@@ -14,7 +14,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt5 COMPONENTS Core Gui Widgets Network REQUIRED)
+find_package(Qt5 5.15 COMPONENTS Core Gui Widgets Network REQUIRED)
 find_package(OpenCV REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 find_package(Boost 1.73 REQUIRED COMPONENTS nowide)
