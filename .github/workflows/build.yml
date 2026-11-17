@@ -99,13 +99,21 @@ jobs:
             --repo "$GH_REPO" \
             --pattern "soeasy-win64-msys2-env.tar.zst" \
             --dir "D:/"
-          mkdir -p "/d/msys64"
+          rm -rf "/d/msys64" "/d/msys64_tmp"
+          mkdir -p "/d/msys64_tmp"
           if command -v zstd >/dev/null 2>&1; then
-            tar --zstd -xf "/d/soeasy-win64-msys2-env.tar.zst" -C "/d/msys64"
+            tar --warning=no-unknown-keyword --zstd -xf "/d/soeasy-win64-msys2-env.tar.zst" -C "/d/msys64_tmp"
           else
-            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar -xf - -C "/d/msys64"
+            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar --warning=no-unknown-keyword -xf - -C "/d/msys64_tmp"
+          fi
+          if [ -d "/d/msys64_tmp/msys64/mingw64" ]; then
+            mv "/d/msys64_tmp/msys64" "/d/msys64"
+            rm -rf "/d/msys64_tmp"
+          else
+            mv "/d/msys64_tmp" "/d/msys64"
           fi
           rm -f "/d/soeasy-win64-msys2-env.tar.zst"
+          ls -la "/d/msys64" "/d/msys64/opt/qt5/lib/cmake/Qt5/Qt5Config.cmake"
           echo "D:\msys64\mingw64\bin" >> "$GITHUB_PATH"
           echo "D:\msys64\usr\bin" >> "$GITHUB_PATH"
 

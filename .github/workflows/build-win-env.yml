@@ -21,10 +21,11 @@ jobs:
         shell: msys2 {0}
     steps:
       - name: Setup MSYS2
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          location: D:\msys64
+          location: D:\
           install: >-
             git
             base-devel
@@ -78,9 +79,10 @@ jobs:
       - name: Pack Golden Environment Archive (.tar.zst)
         shell: pwsh
         run: |
-          $env:PATH = "D:\msys64\usr\bin;$env:PATH"
+          $msysRoot = "${{ steps.msys2.outputs.msys2-location }}"
+          $env:PATH = "$msysRoot\usr\bin;$env:PATH"
           $archive = "D:\soeasy-win64-msys2-env.tar.zst"
-          tar.exe --zstd -C D:\msys64 -cf $archive .
+          tar.exe --zstd -C $msysRoot -cf $archive .
           Get-Item $archive | Format-List Name, Length
 
       - name: Publish Environment Archive to GitHub Release
