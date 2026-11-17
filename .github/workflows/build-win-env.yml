@@ -87,13 +87,17 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           ENV_TAG: ${{ inputs.env_tag }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
-          ARCHIVE="/d/soeasy-win64-msys2-env.tar.zst"
-          if gh release view "$ENV_TAG" >/dev/null 2>&1; then
-            gh release upload "$ENV_TAG" "$ARCHIVE" --clobber
+          ARCHIVE="D:/soeasy-win64-msys2-env.tar.zst"
+          if gh release view "$ENV_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$ENV_TAG" "$ARCHIVE" --repo "$GH_REPO" --clobber
           else
             gh release create "$ENV_TAG" "$ARCHIVE" \
+              --repo "$GH_REPO" \
+              --target "$TARGET_SHA" \
               --title "Windows Build Environment ($ENV_TAG)" \
               --notes "Prebuilt MSYS2 MINGW64 + Qt 5.15.2 (win64_mingw81) + Cap'n Proto v1.0.1 environment archive for SoEasy CI." \
               --prerelease
