@@ -1,0 +1,100 @@
+name: Build Windows MSYS2 + Qt Environment Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_tag:
+        description: 'Release tag for the prebuilt Windows environment archive'
+        required: true
+        default: 'win-env-v1'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-win-env:
+    name: Package MSYS2 + Qt5.15.2 + CapnProto v1.0.1 (Win64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          location: D:\msys64
+          install: >-
+            git
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-opencv
+            mingw-w64-x86_64-libxml2
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-uchardet
+            mingw-w64-x86_64-libiconv
+            mingw-w64-x86_64-boost
+            mingw-w64-x86_64-python
+            zstd
+            zip
+          update: true
+
+      - name: Install Official Qt 5.15.2 (MinGW 64-bit, No ICU)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_mingw81'
+          cache: 'false'
+
+      - name: Build and Install Cap'n Proto v1.0.1
+        run: |
+          git clone --depth 1 --branch v1.0.1 https://github.com/capnproto/capnproto.git /tmp/capnproto
+          cmake -B /tmp/capnproto/build -S /tmp/capnproto/c++ -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_CXX_FLAGS="-Wno-error -include cstdint -Wno-array-bounds -Wno-maybe-uninitialized" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
+            -DWITH_OPENSSL=OFF \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}"
+          cmake --build /tmp/capnproto/build -j4 --target install
+          rm -rf /tmp/capnproto
+
+      - name: Bundle Qt into MSYS2 and Clean Package Cache
+        run: |
+          QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
+          mkdir -p /opt/qt5
+          cp -a "${QT_UNIX_DIR}/." /opt/qt5/
+
+          # Strip pacman tarball cache, docs, and man pages to keep archive compact
+          pacman -Scc --noconfirm || true
+          rm -rf /var/cache/pacman/pkg/* /mingw64/share/doc /mingw64/share/man /usr/share/doc /usr/share/man
+
+      - name: Pack Golden Environment Archive (.tar.zst)
+        shell: pwsh
+        run: |
+          $env:PATH = "D:\msys64\usr\bin;$env:PATH"
+          $archive = "D:\soeasy-win64-msys2-env.tar.zst"
+          tar.exe --zstd -C D:\msys64 -cf $archive .
+          Get-Item $archive | Format-List Name, Length
+
+      - name: Publish Environment Archive to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENV_TAG: ${{ inputs.env_tag }}
+        run: |
+          ARCHIVE="/d/soeasy-win64-msys2-env.tar.zst"
+          if gh release view "$ENV_TAG" >/dev/null 2>&1; then
+            gh release upload "$ENV_TAG" "$ARCHIVE" --clobber
+          else
+            gh release create "$ENV_TAG" "$ARCHIVE" \
+              --title "Windows Build Environment ($ENV_TAG)" \
+              --notes "Prebuilt MSYS2 MINGW64 + Qt 5.15.2 (win64_mingw81) + Cap'n Proto v1.0.1 environment archive for SoEasy CI." \
+              --prerelease
+          fi
