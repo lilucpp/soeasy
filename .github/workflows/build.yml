@@ -80,62 +80,41 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        shell: msys2 {0}
+        shell: bash
+    env:
+      MINGW_PREFIX: D:/msys64/mingw64
+      QT_ROOT_DIR: D:/msys64/opt/qt5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          install: >-
-            git
-            base-devel
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-opencv
-            mingw-w64-x86_64-libxml2
-            mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-uchardet
-            mingw-w64-x86_64-libiconv
-            mingw-w64-x86_64-boost
-            mingw-w64-x86_64-python
-            zip
-          update: true
-
-      - name: Install Official Qt 5.15.2 (MinGW 64-bit, No ICU)
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '5.15.2'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_mingw81'
-          cache: 'true'
-
-      - name: Build and Install Cap'n Proto
+      - name: Download and Extract Prebuilt Windows Env (win-env-v1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          git clone --depth 1 --branch v1.0.1 https://github.com/capnproto/capnproto.git /tmp/capnproto
-          cmake -B /tmp/capnproto/build -S /tmp/capnproto/c++ -G "Ninja" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_CXX_FLAGS="-Wno-error -include cstdint -Wno-array-bounds -Wno-maybe-uninitialized" \
-            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
-            -DWITH_OPENSSL=OFF \
-            -DBUILD_TESTING=OFF \
-            -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}"
-          cmake --build /tmp/capnproto/build -j4 --target install
+          gh release download win-env-v1 \
+            --repo "$GH_REPO" \
+            --pattern "soeasy-win64-msys2-env.tar.zst" \
+            --dir "D:/"
+          mkdir -p "D:/msys64"
+          if command -v zstd >/dev/null 2>&1; then
+            tar --zstd -xf "D:/soeasy-win64-msys2-env.tar.zst" -C "D:/msys64"
+          else
+            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar -xf - -C "D:/msys64"
+          fi
+          rm -f "D:/soeasy-win64-msys2-env.tar.zst"
+          echo "D:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "D:\msys64\usr\bin" >> "$GITHUB_PATH"
 
       - name: Build SoEasy and Test Suite (Windows x64)
         run: |
-          QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=ON \
-            -DCMAKE_PREFIX_PATH="${QT_UNIX_DIR}"
+            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR};${MINGW_PREFIX}"
           cmake --build build -j4
 
       - name: Deploy Runtime DLLs to Build Directory
