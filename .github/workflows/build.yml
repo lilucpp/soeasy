@@ -99,13 +99,13 @@ jobs:
             --repo "$GH_REPO" \
             --pattern "soeasy-win64-msys2-env.tar.zst" \
             --dir "D:/"
-          mkdir -p "D:/msys64"
+          mkdir -p "/d/msys64"
           if command -v zstd >/dev/null 2>&1; then
-            tar --zstd -xf "D:/soeasy-win64-msys2-env.tar.zst" -C "D:/msys64"
+            tar --zstd -xf "/d/soeasy-win64-msys2-env.tar.zst" -C "/d/msys64"
           else
-            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar -xf - -C "D:/msys64"
+            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar -xf - -C "/d/msys64"
           fi
-          rm -f "D:/soeasy-win64-msys2-env.tar.zst"
+          rm -f "/d/soeasy-win64-msys2-env.tar.zst"
           echo "D:\msys64\mingw64\bin" >> "$GITHUB_PATH"
           echo "D:\msys64\usr\bin" >> "$GITHUB_PATH"
 
