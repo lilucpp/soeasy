@@ -162,6 +162,8 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           QT_PLUGIN_PATH: ${{ github.workspace }}/build
+          TMP: D:/tmp
+          TEMP: D:/tmp
         run: |
           mkdir -p /tmp /d/tmp D:/tmp 2>/dev/null || true
           QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
