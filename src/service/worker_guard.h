@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -52,7 +53,7 @@ struct ParseTaskResult {
   double elapsed_ms = 0.0;
 };
 
-enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2 };
+enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2, kCrashed = 3 };
 
 struct SubprocessDeleter {
   void operator()(subprocess_s *proc) const noexcept {
@@ -89,6 +90,7 @@ inline SubprocessHandle MakeSubprocess() {
 
 struct WorkerInstance {
   SubprocessHandle process;
+  std::thread stdio_drain_thread;
   pid_t pid = 0;
 #ifdef _WIN32
   HANDLE pipe_handle = nullptr;
@@ -113,7 +115,7 @@ struct WorkerInstance {
   bool is_busy() const { return state == WorkerState::kBusy; }
 
   void CloseTransport() noexcept;
-  void Reset() noexcept;
+  void Reset(WorkerState next_state = WorkerState::kIdle) noexcept;
 };
 
 struct WorkerLoggingOptions {
@@ -123,6 +125,7 @@ struct WorkerLoggingOptions {
   bool doctotext_logging = false;
   std::string doctotext_log_path;
   bool embedded_image_ocr = false;
+  std::string worker_log_dir;
 };
 
 class WorkerGuard {
@@ -198,7 +201,7 @@ class WorkerGuard {
 
   void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                          bool doctotext_logging = false, const std::string &doctotext_log_path = "",
-                         bool embedded_image_ocr = false);
+                         bool embedded_image_ocr = false, const std::string &worker_log_dir = "");
 
  private:
   bool SpawnWorker(size_t index);
@@ -207,7 +210,11 @@ class WorkerGuard {
 #else
   bool SpawnWorkerPosix(size_t index);
 #endif
-  std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param) const;
+  void FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid);
+  void FinalizeBusyWorkerOnFailure(size_t worker_idx, uint32_t slot_id, TaskStatus status,
+                                   const std::string &reason);
+  static void DrainWorkerStdio(FILE *stream, size_t index, bool log_as_info);
+  std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param, size_t index) const;
   void KillWorker(size_t index, TaskStatus status, const std::string &reason);
   void WatchdogLoop();
   static size_t GetProcessRssBytes(pid_t pid);
@@ -221,6 +228,7 @@ class WorkerGuard {
   bool doctotext_logging_ = false;
   std::string doctotext_log_path_;
   bool embedded_image_ocr_ = false;
+  std::string worker_log_dir_ = "logs";
   common::ShmSlotPool shm_pool_;
 
   std::vector<WorkerInstance> workers_;

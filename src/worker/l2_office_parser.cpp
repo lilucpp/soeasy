@@ -9,6 +9,7 @@
 #else
 #include <direct.h>
 #include <io.h>
+#include <process.h>
 #endif
 
 #include <algorithm>
@@ -40,13 +41,13 @@ namespace worker {
 
 namespace {
 
-class NullStreamBuf : public std::streambuf {
- public:
-  int overflow(int c) override { return c; }
-};
-
-static NullStreamBuf g_null_buf;
-static std::ostream g_null_stream(&g_null_buf);
+#ifdef _WIN32
+constexpr const char *kNullDevice = "NUL";
+inline unsigned long CurrentProcessId() { return static_cast<unsigned long>(_getpid()); }
+#else
+constexpr const char *kNullDevice = "/dev/null";
+inline unsigned long CurrentProcessId() { return static_cast<unsigned long>(getpid()); }
+#endif
 
 static std::mutex g_dt_mutex;
 static bool g_dt_logging_enabled = false;
@@ -238,8 +239,12 @@ void ExtractWithDocToText(const std::string &file_path, const std::string &lower
     doctotext_extractor_params_set_verbose_logging(params.get(), enable_logging ? 1 : 0);
     if (enable_logging && !log_file_path.empty()) {
       const uint64_t seq = g_dt_tmp_seq.fetch_add(1, std::memory_order_relaxed);
-      temp_cleaner.path = log_file_path + ".dt." + std::to_string(seq) + ".tmp";
+      temp_cleaner.path =
+          log_file_path + ".dt." + std::to_string(CurrentProcessId()) + "." + std::to_string(seq) + ".tmp";
       doctotext_extractor_params_set_log_file(params.get(), temp_cleaner.path.c_str());
+    } else {
+      // DocToText defaults to stderr even with verbose=0; redirect to null device when disabled.
+      doctotext_extractor_params_set_log_file(params.get(), kNullDevice);
     }
     doctotext_extractor_params_set_parser_type(params.get(), ResolveDocToTextParserType(lower_ext));
     if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {

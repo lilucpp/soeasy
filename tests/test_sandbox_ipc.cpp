@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstring>
@@ -6,6 +7,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common/shm_pool.h"
@@ -23,6 +25,18 @@ void WriteFile(const std::string &path, const std::string &content) {
 }  // namespace
 
 int main(int argc, char *argv[]) {
+  if (argc >= 2 && std::strcmp(argv[1], "--child-noisy-stdio") == 0) {
+    // Emit >512 KB to both stdout and stderr to exceed Windows (4 KB) and POSIX (64 KB) pipe buffers.
+    const std::string line = "Using ODF/OOXML parser. Regression check line for pipe deadlock.\n";
+    for (int i = 0; i < 8192; ++i) {
+      std::cout << line;
+      std::cerr << line;
+    }
+    std::cout.flush();
+    std::cerr.flush();
+    return 0;
+  }
+
   std::cout << "========================================================\n";
   std::cout << "   SoEasy (Sou Easy) 混合 IPC 与解析沙箱独立实证 Demo (Phase 2)\n";
   std::cout << "   Cap'n Proto + 共享内存槽位池 + 多进程沙箱守卫 (熔断/自愈)\n";
@@ -154,6 +168,20 @@ int main(int argc, char *argv[]) {
   std::cout << "[+] 超时熔断拦截成功! 耗时: " << hang_ms << " ms, 状态: TaskStatus::kTimeout ("
             << res_hang.error_message << ")\n";
   std::cout << "[+] 恶性卡死子进程已被安全强杀，且无内存槽位泄漏!\n\n";
+
+  // -------------------------------------------------------------
+  // Test 3b: Watchdog Stall Kill (5s heartbeat stall < 15s task timeout)
+  // -------------------------------------------------------------
+  std::cout << "[Step 4b] 验证 Watchdog 心跳失活强杀 (5s < 15s timeout) 状态保真...\n";
+  soeasy::service::ParseTask task_stall{1030, hang_doc_path, "txt", 1, 15000};
+  soeasy::service::ParseTaskResult res_stall;
+  guard.ExecuteTask(task_stall, &res_stall);
+  if (res_stall.status != soeasy::service::TaskStatus::kTimeout) {
+    std::cerr << "[-] Watchdog 心跳失活状态误判! 期望 kTimeout(3), 实际状态: "
+              << static_cast<int>(res_stall.status) << " (" << res_stall.error_message << ")\n";
+    return 1;
+  }
+  std::cout << "[+] Watchdog 5s 心跳失活正确归类为 TaskStatus::kTimeout (" << res_stall.error_message << ")\n\n";
 
   // -------------------------------------------------------------
   // Test 4: Segfault Crash Recovery
@@ -306,6 +334,142 @@ int main(int argc, char *argv[]) {
   std::cout << "[+] Worker 懒加载、闲置归零与无缝拉起验证 100% 通过!\n\n";
 
   guard.Shutdown();
+
+  // -------------------------------------------------------------
+  // Test 9: Combined stdout/stderr pipe drain (>512KB non-blocking)
+  // -------------------------------------------------------------
+  std::cout << "[Step 10] 验证 subprocess_option_combined_stdout_stderr 持续排空防管道写满死锁 (>512KB)...\n";
+  {
+    const char *noisy_cmd[] = {argv[0], "--child-noisy-stdio", nullptr};
+    subprocess_s noisy_proc{};
+    int spawn_ret = subprocess_create(
+        noisy_cmd, subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr, &noisy_proc);
+    if (spawn_ret != 0 || subprocess_stdout(&noisy_proc) == nullptr) {
+      std::cerr << "[-] subprocess_create(combined_stdout_stderr) failed: " << spawn_ret << "\n";
+      return 1;
+    }
+    size_t drained_bytes = 0;
+    std::thread drain_thread([&]() {
+      char buf[4096];
+      while (size_t n = std::fread(buf, 1, sizeof(buf), subprocess_stdout(&noisy_proc))) {
+        drained_bytes += n;
+      }
+    });
+    int noisy_exit = -1;
+    int join_ret = subprocess_join(&noisy_proc, &noisy_exit);
+    drain_thread.join();
+    if (join_ret != 0 || noisy_exit != 0 || drained_bytes < 512 * 1024) {
+      std::cerr << "[-] noisy stdio child failed: join_ret=" << join_ret << " exit=" << noisy_exit
+                << " drained=" << drained_bytes << "\n";
+      subprocess_destroy(&noisy_proc);
+      return 1;
+    }
+    subprocess_destroy(&noisy_proc);
+    std::cout << "[+] 持续排空验证通过: 成功无阻塞读取 " << drained_bytes << " 字节并正常退出!\n\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test 10: High-Concurrency Crash Storm (8 threads x 4 workers)
+  // -------------------------------------------------------------
+  std::cout << "[Step 11] 验证高并发崩溃风暴下多 Worker 状态与 SHM 槽位零竞态 (8 线程 x 4 Worker)...\n";
+  {
+    const std::filesystem::path storm_dir =
+        std::filesystem::temp_directory_path() / "soeasy_crash_storm_test";
+    std::error_code ec_storm;
+    std::filesystem::remove_all(storm_dir, ec_storm);
+    std::filesystem::create_directories(storm_dir / "logs", ec_storm);
+
+    soeasy::service::WorkerGuard storm_guard;
+    storm_guard.SetLoggingOptions("warn", false, false, false, "", false, (storm_dir / "logs").string());
+    if (!storm_guard.Init(worker_bin, /*worker_count=*/4, /*timeout_ms=*/8000)) {
+      std::cerr << "[-] storm_guard Init failed!\n";
+      return 1;
+    }
+
+    constexpr int kThreads = 8;
+    constexpr int kItersPerThread = 12;
+    std::atomic<int> normal_ok{0};
+    std::atomic<int> crash_ok{0};
+    std::atomic<int> anomalies{0};
+    std::vector<std::thread> workers_threads;
+    workers_threads.reserve(kThreads);
+
+    for (int t = 0; t < kThreads; ++t) {
+      workers_threads.emplace_back([&, t]() {
+        for (int k = 0; k < kItersPerThread; ++k) {
+          if (k % 3 == 0) {
+            soeasy::service::ParseTask ctask{10000 + t * 100 + k, crash_doc_path, "bin", 1};
+            soeasy::service::ParseTaskResult cres;
+            if (!storm_guard.ExecuteTask(ctask, &cres) || cres.status != soeasy::service::TaskStatus::kCrashed) {
+              std::cerr << "[-] Crash task unexpected status=" << static_cast<int>(cres.status)
+                        << " err=" << cres.error_message << "\n";
+              anomalies.fetch_add(1, std::memory_order_relaxed);
+            } else {
+              crash_ok.fetch_add(1, std::memory_order_relaxed);
+            }
+          } else {
+            const std::string token = "StormToken_T" + std::to_string(t) + "_K" + std::to_string(k);
+            const std::string p = (storm_dir / ("doc_" + std::to_string(t) + "_" + std::to_string(k) + ".txt")).string();
+            WriteFile(p, token);
+            soeasy::service::ParseTask ntask{20000 + t * 100 + k, p, "txt", 1};
+            soeasy::service::ParseTaskResult nres;
+            if (!storm_guard.ExecuteTask(ntask, &nres) || nres.status != soeasy::service::TaskStatus::kSuccess) {
+              std::cerr << "[-] Normal task failed during crash storm: status=" << static_cast<int>(nres.status)
+                        << " err=" << nres.error_message << "\n";
+              anomalies.fetch_add(1, std::memory_order_relaxed);
+            } else {
+              const uint8_t *ptr = nullptr;
+              size_t len = 0;
+              const bool read_ok = storm_guard.shm_pool()->ReadSlot(nres.slot_id, &ptr, &len);
+              std::string extracted = read_ok ? std::string(reinterpret_cast<const char *>(ptr), len) : "";
+              storm_guard.shm_pool()->ReleaseSlot(nres.slot_id);
+              if (!read_ok || extracted.find(token) == std::string::npos) {
+                std::cerr << "[-] SHM payload mismatch/corruption! expected token=" << token
+                          << " got len=" << len << "\n";
+                anomalies.fetch_add(1, std::memory_order_relaxed);
+              } else {
+                normal_ok.fetch_add(1, std::memory_order_relaxed);
+              }
+            }
+            std::remove(p.c_str());
+          }
+        }
+      });
+    }
+
+    for (auto &th : workers_threads) {
+      th.join();
+    }
+
+    // Verify all SHM slots remain free and allocatable with zero leaks or double-release corruption.
+    const size_t total_slots = storm_guard.shm_pool()->slot_count();
+    std::vector<uint32_t> held_slots;
+    for (size_t s = 0; s < total_slots; ++s) {
+      uint32_t sid = 0;
+      uint8_t *sptr = nullptr;
+      if (!storm_guard.shm_pool()->AllocateSlot(&sid, &sptr)) {
+        std::cerr << "[-] SHM slot leak detected after crash storm! allocated=" << s << "/" << total_slots << "\n";
+        anomalies.fetch_add(1, std::memory_order_relaxed);
+        break;
+      }
+      held_slots.push_back(sid);
+    }
+    for (uint32_t sid : held_slots) {
+      storm_guard.shm_pool()->ReleaseSlot(sid);
+    }
+
+    storm_guard.Shutdown();
+    std::filesystem::remove_all(storm_dir, ec_storm);
+
+    if (anomalies.load() != 0 || crash_ok.load() != kThreads * (kItersPerThread / 3) ||
+        normal_ok.load() != kThreads * (kItersPerThread - kItersPerThread / 3)) {
+      std::cerr << "[-] Crash storm check failed: anomalies=" << anomalies.load() << " crash_ok=" << crash_ok.load()
+                << " normal_ok=" << normal_ok.load() << "\n";
+      return 1;
+    }
+    std::cout << "[+] 8 线程 x 4 Worker 高并发崩溃风暴通过: crash_ok=" << crash_ok.load()
+              << ", normal_ok=" << normal_ok.load() << ", 槽位 0 泄漏/0 误杀/0 串包!\n\n";
+  }
 
   // Cleanup temporary files
   std::remove(large_doc_path.c_str());

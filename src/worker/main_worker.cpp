@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -19,6 +20,22 @@
 #include "common/system_env.h"
 #include "worker/l2_office_parser.h"
 #include "worker/worker_loop.h"
+
+namespace {
+
+void RedirectStdioToNull(const char *null_device) {
+  if (!std::freopen(null_device, "r", stdin)) {
+    LOG_WARN("Failed to redirect stdin to '{}'", null_device);
+  }
+  if (!std::freopen(null_device, "w", stdout)) {
+    LOG_WARN("Failed to redirect stdout to '{}'", null_device);
+  }
+  if (!std::freopen(null_device, "w", stderr)) {
+    LOG_WARN("Failed to redirect stderr to '{}'", null_device);
+  }
+}
+
+}  // namespace
 
 int main(int argc, char *argv[]) {
 #if defined(__GLIBC__) || defined(__linux__)
@@ -112,6 +129,10 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  if (!enable_console) {
+    RedirectStdioToNull("NUL");
+  }
+
   int ret = soeasy::worker::RunWorkerLoop(h_pipe, shm_name, slot_count, slot_capacity);
   CloseHandle(h_pipe);
   return ret;
@@ -139,6 +160,10 @@ int main(int argc, char *argv[]) {
     std::cerr << "Usage: soeasy-worker (--socket-name=<name> | --socket-fd=<fd>) --shm-name=<name> "
               << "[--slot-count=<N>] [--slot-capacity=<bytes>]\n";
     return 1;
+  }
+
+  if (!enable_console) {
+    RedirectStdioToNull("/dev/null");
   }
 
   int ret = soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count, slot_capacity);

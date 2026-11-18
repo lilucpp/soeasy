@@ -64,7 +64,10 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  const std::string worker_log_dir = test_dir + "/logs";
+  const std::string dt_base_log = worker_log_dir + "/doctotext.log";
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
+  worker_guard->SetLoggingOptions("info", false, false, true, dt_base_log, false, worker_log_dir);
   std::string worker_bin = soeasy::test::FindWorkerBin();
   if (!worker_guard->Init(worker_bin, 2, 8000)) {
     std::cerr << "[-] WorkerGuard failed to init\n";
@@ -73,6 +76,8 @@ int main(int argc, char *argv[]) {
 
   auto config = std::make_shared<soeasy::service::IndexConfig>();
   config->set_debounce_ms(100);
+  config->set_doctotext_logging(true);
+  config->set_doctotext_log_path(dt_base_log);
 
   auto pipeline = std::make_shared<soeasy::service::IndexPipeline>(config, worker_guard, storage);
   if (!pipeline->Init()) {
@@ -168,6 +173,12 @@ int main(int argc, char *argv[]) {
   soeasy::common::Logger::Shutdown();  // Flush and close log file
 
   assert(std::filesystem::exists(test_log) && "Log file must exist on disk");
+  if (!std::filesystem::exists(worker_log_dir + "/soeasy_worker_0.log") ||
+      !std::filesystem::exists(worker_log_dir + "/doctotext_worker_0.log") ||
+      std::filesystem::exists(dt_base_log)) {
+    std::cerr << "[-] Per-slot worker log isolation check failed in " << worker_log_dir << "\n";
+    return 1;
+  }
   uintmax_t log_size = std::filesystem::file_size(test_log);
   std::cout << "  [+] 日志文件大小: " << log_size << " 字节\n";
 

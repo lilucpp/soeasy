@@ -81,6 +81,19 @@ std::string ResolveWorkerBinary(const std::string &hint_path) {
   return "";
 }
 
+std::string DeriveWorkerDocToTextLogPath(const std::string &configured_path, const std::string &log_dir,
+                                         size_t index) {
+  const std::string suffix = "_worker_" + std::to_string(index);
+  if (configured_path.empty()) {
+    return (std::filesystem::path(log_dir) / ("doctotext" + suffix + ".log")).generic_string();
+  }
+  const std::filesystem::path p(configured_path);
+  if (!p.has_filename()) {
+    return (p / ("doctotext" + suffix + ".log")).generic_string();
+  }
+  return (p.parent_path() / (p.stem().string() + suffix + p.extension().string())).generic_string();
+}
+
 }  // namespace
 
 void WorkerInstance::CloseTransport() noexcept {
@@ -98,11 +111,22 @@ void WorkerInstance::CloseTransport() noexcept {
 #endif
 }
 
-void WorkerInstance::Reset() noexcept {
+void WorkerInstance::Reset(WorkerState next_state) noexcept {
   CloseTransport();
+  // Terminate and join the child before joining the stdio drain thread so its pipe write end closes cleanly.
+  if (process) {
+    if (subprocess_alive(process.get())) {
+      subprocess_terminate(process.get());
+    }
+    int exit_code = 0;
+    subprocess_join(process.get(), &exit_code);
+  }
+  if (stdio_drain_thread.joinable()) {
+    stdio_drain_thread.join();
+  }
   process.reset();
   pid = 0;
-  state = WorkerState::kIdle;
+  state = next_state;
   current_doc_id = 0;
   current_slot_id = 0;
 }
@@ -240,19 +264,55 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
   return true;
 }
 
-std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_param) const {
+std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_param, size_t index) const {
+  const std::string log_dir = worker_log_dir_.empty() ? "logs" : worker_log_dir_;
+  const std::string worker_log_file =
+      (std::filesystem::path(log_dir) / ("soeasy_worker_" + std::to_string(index) + ".log")).generic_string();
+  const std::string worker_dt_log_file = DeriveWorkerDocToTextLogPath(doctotext_log_path_, log_dir, index);
   return {
       worker_bin_path_,
       ipc_param,
       "--shm-name=" + shm_pool_.shm_name(),
       "--slot-count=" + std::to_string(shm_pool_.slot_count()),
       "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
+      "--log-file=" + worker_log_file,
       "--log-level=" + log_level_,
       log_console_ ? "--log-console" : "--no-log-console",
       log_sync_ ? "--log-sync" : "--no-log-sync",
       doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
-      "--doctotext-log-path=" + doctotext_log_path_,
+      "--doctotext-log-path=" + worker_dt_log_file,
       embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
+}
+
+void WorkerGuard::DrainWorkerStdio(FILE *stream, size_t index, bool log_as_info) {
+  if (!stream) return;
+  char buf[4096];
+  while (std::fgets(buf, sizeof(buf), stream) != nullptr) {
+    size_t len = std::strlen(buf);
+    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+      buf[--len] = '\0';
+    }
+    if (len == 0) continue;
+    if (log_as_info) {
+      LOG_INFO("[Worker {} stdio] {}", index, buf);
+    } else {
+      LOG_WARN("[Worker {} stdio] {}", index, buf);
+    }
+  }
+}
+
+void WorkerGuard::FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid) {
+  WorkerInstance &inst = workers_[index];
+  inst.process = std::move(proc);
+  inst.pid = pid;
+  inst.state = WorkerState::kIdle;
+  inst.idle_start_time = std::chrono::steady_clock::now();
+  inst.current_doc_id = 0;
+  inst.current_slot_id = 0;
+  inst.total_tasks_processed = 0;
+  if (inst.process && inst.process->stdout_file) {
+    inst.stdio_drain_thread = std::thread(&WorkerGuard::DrainWorkerStdio, inst.process->stdout_file, index, log_console_);
+  }
 }
 
 #ifdef _WIN32
@@ -267,10 +327,11 @@ bool WorkerGuard::SpawnWorkerWindows(size_t index) {
     return false;
   }
 
-  std::vector<std::string> args = BuildWorkerArgs("--pipe-name=" + pipe_name);
+  std::vector<std::string> args = BuildWorkerArgs("--pipe-name=" + pipe_name, index);
   auto cmd = ToArgv(args);
 
-  int options = subprocess_option_inherit_environment | subprocess_option_no_window;
+  int options = subprocess_option_inherit_environment | subprocess_option_no_window |
+                subprocess_option_combined_stdout_stderr;
   auto proc = MakeSubprocess();
   int r = subprocess_create(cmd.data(), options, proc.get());
   if (r != 0) {
@@ -292,15 +353,8 @@ bool WorkerGuard::SpawnWorkerWindows(size_t index) {
     return false;
   }
 
-  WorkerInstance &inst = workers_[index];
-  inst.process = std::move(proc);
-  inst.pid = pid;
-  inst.pipe_handle = hPipe;
-  inst.state = WorkerState::kIdle;
-  inst.idle_start_time = std::chrono::steady_clock::now();
-  inst.current_doc_id = 0;
-  inst.current_slot_id = 0;
-  inst.total_tasks_processed = 0;
+  workers_[index].pipe_handle = hPipe;
+  FinalizeSpawnedWorker(index, std::move(proc), pid);
   return true;
 }
 #else
@@ -332,10 +386,10 @@ bool WorkerGuard::SpawnWorkerPosix(size_t index) {
     return false;
   }
 
-  std::vector<std::string> args = BuildWorkerArgs("--socket-name=" + sock_name);
+  std::vector<std::string> args = BuildWorkerArgs("--socket-name=" + sock_name, index);
   auto cmd = ToArgv(args);
 
-  int options = subprocess_option_inherit_environment;
+  int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr;
   auto proc = MakeSubprocess();
   int r = subprocess_create(cmd.data(), options, proc.get());
   if (r != 0) {
@@ -365,16 +419,8 @@ bool WorkerGuard::SpawnWorkerPosix(size_t index) {
   }
 
   pid_t pid = proc->child;
-
-  WorkerInstance &inst = workers_[index];
-  inst.process = std::move(proc);
-  inst.pid = pid;
-  inst.socket_fd = client_fd;
-  inst.state = WorkerState::kIdle;
-  inst.idle_start_time = std::chrono::steady_clock::now();
-  inst.current_doc_id = 0;
-  inst.current_slot_id = 0;
-  inst.total_tasks_processed = 0;
+  workers_[index].socket_fd = client_fd;
+  FinalizeSpawnedWorker(index, std::move(proc), pid);
   return true;
 }
 #endif
@@ -391,6 +437,7 @@ bool WorkerGuard::SpawnWorker(size_t index) {
 }
 
 void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string &reason) {
+  (void)status;
   if (index >= workers_.size()) {
     return;
   }
@@ -400,6 +447,19 @@ void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string 
     shm_pool_.ReleaseSlot(inst.current_slot_id);
   }
   inst.Reset();
+}
+
+void WorkerGuard::FinalizeBusyWorkerOnFailure(size_t worker_idx, uint32_t slot_id, TaskStatus status,
+                                              const std::string &reason) {
+  WorkerInstance &worker = workers_[worker_idx];
+  const bool watchdog_handled =
+      (worker.state == WorkerState::kKilledByWatchdog || worker.state == WorkerState::kCrashed);
+  if (!watchdog_handled) {
+    shm_pool_.ReleaseSlot(slot_id);
+    KillWorker(worker_idx, status, reason);
+  }
+  worker.state = WorkerState::kIdle;
+  worker.idle_start_time = std::chrono::steady_clock::now();
 }
 
 void WorkerGuard::WatchdogLoop() {
@@ -430,11 +490,15 @@ void WorkerGuard::WatchdogLoop() {
           subprocess_join(inst.process.get(), &exit_code);
         }
         LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
-        if (inst.is_busy()) {
+        const bool was_busy = inst.is_busy();
+        if (was_busy) {
           shm_pool_.ReleaseSlot(inst.current_slot_id);
         }
-        inst.Reset();
-        worker_available_cv_.notify_all();
+        // Defer returning to kIdle until the owning ExecuteTask finishes cleanup so no other task reuses slot i/slot_id.
+        inst.Reset(was_busy ? WorkerState::kCrashed : WorkerState::kIdle);
+        if (!was_busy) {
+          worker_available_cv_.notify_all();
+        }
         continue;
       }
 
@@ -451,9 +515,8 @@ void WorkerGuard::WatchdogLoop() {
           LOG_WARN(
               "[WorkerGuard] Watchdog killing worker {}: is_stalled={}, is_overtime={}, elapsed={}ms, timeout={}ms", i,
               is_stalled, is_overtime, elapsed, inst.current_timeout_ms);
-          inst.state = WorkerState::kKilledByWatchdog;
           shm_pool_.ReleaseSlot(inst.current_slot_id);
-          inst.Reset();
+          inst.Reset(WorkerState::kKilledByWatchdog);
           continue;
         }
       }
@@ -575,8 +638,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     capnp::writeMessage(out_stream, req_builder);
   } catch (...) {
     std::unique_lock<std::mutex> lock(pool_mutex_);
-    shm_pool_.ReleaseSlot(slot_id);
-    KillWorker(assigned_worker_idx, TaskStatus::kFailed, "Pipe write failure");
+    FinalizeBusyWorkerOnFailure(assigned_worker_idx, slot_id, TaskStatus::kFailed, "Pipe write failure");
     out_result->status = TaskStatus::kFailed;
     out_result->error_message = "Failed to send request to worker pipe";
     worker_available_cv_.notify_all();
@@ -587,8 +649,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     capnp::writeMessageToFd(worker_fd, req_builder);
   } catch (...) {
     std::unique_lock<std::mutex> lock(pool_mutex_);
-    shm_pool_.ReleaseSlot(slot_id);
-    KillWorker(assigned_worker_idx, TaskStatus::kFailed, "Socket write failure");
+    FinalizeBusyWorkerOnFailure(assigned_worker_idx, slot_id, TaskStatus::kFailed, "Socket write failure");
     out_result->status = TaskStatus::kFailed;
     out_result->error_message = "Failed to send request to worker socket";
     worker_available_cv_.notify_all();
@@ -675,16 +736,12 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     std::unique_lock<std::mutex> lock(pool_mutex_);
     WorkerInstance &worker = workers_[assigned_worker_idx];
 
-    if (worker.state == WorkerState::kKilledByWatchdog || is_timeout) {
+    if (worker.state == WorkerState::kKilledByWatchdog ||
+        (worker.state != WorkerState::kCrashed && is_timeout)) {
       out_result->status = TaskStatus::kTimeout;
       out_result->error_message = "Task timed out or stalled (killed by watchdog)";
-      if (worker.state != WorkerState::kKilledByWatchdog) {
-        shm_pool_.ReleaseSlot(slot_id);
-        out_result->slot_id = 0;
-        KillWorker(assigned_worker_idx, TaskStatus::kTimeout, out_result->error_message);
-      }
-      worker.state = WorkerState::kIdle;
-      worker.idle_start_time = std::chrono::steady_clock::now();
+      out_result->slot_id = 0;
+      FinalizeBusyWorkerOnFailure(assigned_worker_idx, slot_id, TaskStatus::kTimeout, out_result->error_message);
     } else if (success_response) {
       worker.state = WorkerState::kIdle;
       worker.idle_start_time = std::chrono::steady_clock::now();
@@ -697,9 +754,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     } else {
       out_result->status = TaskStatus::kCrashed;
       out_result->error_message = "Worker crashed (SIGSEGV/abort) during file parsing";
-      shm_pool_.ReleaseSlot(slot_id);
       out_result->slot_id = 0;
-      KillWorker(assigned_worker_idx, out_result->status, out_result->error_message);
+      FinalizeBusyWorkerOnFailure(assigned_worker_idx, slot_id, out_result->status, out_result->error_message);
     }
     worker_available_cv_.notify_all();
   }
@@ -734,16 +790,18 @@ void WorkerGuard::Shutdown() {
 
 void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
   std::lock_guard<std::mutex> lock(pool_mutex_);
+  const std::string &next_log_dir = options.worker_log_dir.empty() ? worker_log_dir_ : options.worker_log_dir;
   bool changed = (log_level_ != options.level || log_console_ != options.enable_console ||
                   log_sync_ != options.enable_sync || doctotext_logging_ != options.doctotext_logging ||
                   doctotext_log_path_ != options.doctotext_log_path ||
-                  embedded_image_ocr_ != options.embedded_image_ocr);
+                  embedded_image_ocr_ != options.embedded_image_ocr || worker_log_dir_ != next_log_dir);
   log_level_ = options.level;
   log_console_ = options.enable_console;
   log_sync_ = options.enable_sync;
   doctotext_logging_ = options.doctotext_logging;
   doctotext_log_path_ = options.doctotext_log_path;
   embedded_image_ocr_ = options.embedded_image_ocr;
+  worker_log_dir_ = next_log_dir;
 
   if (changed) {
     // Respawn idle workers with new arguments
@@ -757,7 +815,7 @@ void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
 
 void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                                     bool doctotext_logging, const std::string &doctotext_log_path,
-                                    bool embedded_image_ocr) {
+                                    bool embedded_image_ocr, const std::string &worker_log_dir) {
   WorkerLoggingOptions opts;
   opts.level = level;
   opts.enable_console = enable_console;
@@ -765,6 +823,7 @@ void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_consol
   opts.doctotext_logging = doctotext_logging;
   opts.doctotext_log_path = doctotext_log_path;
   opts.embedded_image_ocr = embedded_image_ocr;
+  opts.worker_log_dir = worker_log_dir;
   SetLoggingOptions(opts);
 }
 
