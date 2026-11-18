@@ -66,6 +66,35 @@ jobs:
           cmake --build /tmp/capnproto/build -j4 --target install
           rm -rf /tmp/capnproto
 
+      - name: Bundle ONNX Runtime v1.20.0 (Win64) into MSYS2
+        run: |
+          python3 -c "
+          import urllib.request, zipfile, os, shutil
+          urls = [
+              'https://github.com/lilucpp/soeasy/releases/download/win-env-v1/onnxruntime-win-x64-1.20.0.zip',
+              'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.20.0/microsoft.ml.onnxruntime.1.20.0.nupkg',
+          ]
+          os.makedirs('/opt/onnxruntime/lib', exist_ok=True)
+          for url in urls:
+              try:
+                  urllib.request.urlretrieve(url, '/tmp/ort.zip')
+                  with zipfile.ZipFile('/tmp/ort.zip') as z:
+                      names = [n for n in z.namelist() if n.startswith('runtimes/win-x64/native/') and n.endswith(('.dll', '.lib'))]
+                      if not names:
+                          names = [n for n in z.namelist() if n.endswith(('.dll', '.lib'))]
+                      for name in names:
+                          dst = os.path.join('/opt/onnxruntime/lib', os.path.basename(name))
+                          with z.open(name) as s, open(dst, 'wb') as f:
+                              shutil.copyfileobj(s, f)
+                  os.remove('/tmp/ort.zip')
+                  if os.path.exists('/opt/onnxruntime/lib/onnxruntime.lib'):
+                      break
+              except Exception as e:
+                  print(f'Mirror failed ({url}): {e}')
+          assert os.path.exists('/opt/onnxruntime/lib/onnxruntime.lib'), 'Failed to bundle ONNX Runtime'
+          "
+          ls -la /opt/onnxruntime/lib/
+
       - name: Bundle Qt into MSYS2 and Clean Package Cache
         run: |
           QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
@@ -101,6 +130,6 @@ jobs:
               --repo "$GH_REPO" \
               --target "$TARGET_SHA" \
               --title "Windows Build Environment ($ENV_TAG)" \
-              --notes "Prebuilt MSYS2 MINGW64 + Qt 5.15.2 (win64_mingw81) + Cap'n Proto v1.0.1 environment archive for SoEasy CI." \
+              --notes "Prebuilt MSYS2 MINGW64 + Qt 5.15.2 (win64_mingw81) + Cap'n Proto v1.0.1 + ONNX Runtime v1.20.0 environment archive for SoEasy CI." \
               --prerelease
           fi

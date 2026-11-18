@@ -57,30 +57,66 @@ endif()
 # DocToText prebuilt binary dependency
 include(third_party/doctotext/doctotext.cmake)
 
-# ONNX Runtime Windows dependency download if missing
-if(WIN32 AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib/onnxruntime.lib")
-    message(STATUS "[ONNXRuntime] Downloading official Microsoft ONNX Runtime Windows x64 v1.20.0...")
-    set(ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-win-x64-1.20.0.zip")
-    set(ORT_ZIP "${CMAKE_BINARY_DIR}/onnxruntime-win-x64-1.20.0.zip")
-    file(DOWNLOAD "${ORT_URL}" "${ORT_ZIP}" SHOW_PROGRESS STATUS ORT_DL_STATUS TIMEOUT 120)
-    list(GET ORT_DL_STATUS 0 ORT_DL_RET)
-    if(ORT_DL_RET EQUAL 0)
-        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ort_unpack")
-        execute_process(
-            COMMAND ${CMAKE_COMMAND} -E tar xvf "${ORT_ZIP}"
-            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/ort_unpack"
+# ONNX Runtime Windows dependency setup (local win-env -> win-env release -> NuGet -> GitHub fallback)
+set(_ORT_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib")
+if(WIN32 AND NOT EXISTS "${_ORT_LIB_DIR}/onnxruntime.lib")
+    if(EXISTS "D:/msys64/opt/onnxruntime/lib/onnxruntime.lib")
+        message(STATUS "[ONNXRuntime] Copying prebuilt Windows x64 binaries from D:/msys64/opt/onnxruntime/lib...")
+        file(GLOB _ORT_LOCAL_LIBS
+            "D:/msys64/opt/onnxruntime/lib/*.lib"
+            "D:/msys64/opt/onnxruntime/lib/*.dll"
         )
-        file(GLOB_RECURSE ORT_FOUND_LIBS
-            "${CMAKE_BINARY_DIR}/ort_unpack/*.lib"
-            "${CMAKE_BINARY_DIR}/ort_unpack/*.dll"
-        )
-        foreach(f ${ORT_FOUND_LIBS})
-            file(COPY "${f}" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime/lib/")
-        endforeach()
-        message(STATUS "[ONNXRuntime] Windows x64 binaries installed successfully.")
+        file(COPY ${_ORT_LOCAL_LIBS} DESTINATION "${_ORT_LIB_DIR}/")
     else()
-        message(WARNING "[ONNXRuntime] Failed to download Windows ONNX Runtime binaries.")
+        set(_ORT_MIRRORS
+            "https://github.com/lilucpp/soeasy/releases/download/win-env-v1/onnxruntime-win-x64-1.20.0.zip"
+            "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.20.0/microsoft.ml.onnxruntime.1.20.0.nupkg"
+            "https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-win-x64-1.20.0.zip"
+        )
+        foreach(_ORT_URL ${_ORT_MIRRORS})
+            if(EXISTS "${_ORT_LIB_DIR}/onnxruntime.lib")
+                break()
+            endif()
+            message(STATUS "[ONNXRuntime] Downloading Windows x64 v1.20.0 from: ${_ORT_URL}")
+            set(_ORT_ZIP "${CMAKE_BINARY_DIR}/onnxruntime-win-x64-1.20.0.zip")
+            file(REMOVE "${_ORT_ZIP}")
+            file(DOWNLOAD "${_ORT_URL}" "${_ORT_ZIP}" SHOW_PROGRESS STATUS _ORT_DL_STATUS TIMEOUT 120)
+            list(GET _ORT_DL_STATUS 0 _ORT_DL_RET)
+            if(_ORT_DL_RET EQUAL 0)
+                set(_ORT_UNPACK "${CMAKE_BINARY_DIR}/ort_unpack")
+                file(REMOVE_RECURSE "${_ORT_UNPACK}")
+                file(MAKE_DIRECTORY "${_ORT_UNPACK}")
+                execute_process(
+                    COMMAND ${CMAKE_COMMAND} -E tar xvf "${_ORT_ZIP}"
+                    WORKING_DIRECTORY "${_ORT_UNPACK}"
+                    RESULT_VARIABLE _ORT_TAR_RET
+                )
+                if(_ORT_TAR_RET EQUAL 0)
+                    file(GLOB_RECURSE _ORT_FOUND_LIBS
+                        "${_ORT_UNPACK}/runtimes/win-x64/native/*.lib"
+                        "${_ORT_UNPACK}/runtimes/win-x64/native/*.dll"
+                    )
+                    if(NOT _ORT_FOUND_LIBS)
+                        file(GLOB_RECURSE _ORT_FOUND_LIBS
+                            "${_ORT_UNPACK}/*.lib"
+                            "${_ORT_UNPACK}/*.dll"
+                        )
+                    endif()
+                    foreach(f ${_ORT_FOUND_LIBS})
+                        file(COPY "${f}" DESTINATION "${_ORT_LIB_DIR}/")
+                    endforeach()
+                endif()
+            else()
+                list(GET _ORT_DL_STATUS 1 _ORT_DL_MSG)
+                message(WARNING "[ONNXRuntime] Download failed from ${_ORT_URL}: ${_ORT_DL_MSG}")
+            endif()
+        endforeach()
     endif()
+
+    if(NOT EXISTS "${_ORT_LIB_DIR}/onnxruntime.lib")
+        message(FATAL_ERROR "[ONNXRuntime] Failed to install Windows x64 ONNX Runtime binaries from all mirrors.")
+    endif()
+    message(STATUS "[ONNXRuntime] Windows x64 binaries installed successfully.")
 endif()
 
 include_directories(
