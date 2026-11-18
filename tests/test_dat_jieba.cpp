@@ -1,7 +1,7 @@
 // Copyright 2026 SoEasy Team. All rights reserved.
 // Use of this source code is governed by an Apache-2.0 license.
 
-#include <reproc++/reproc.hpp>
+#include "subprocess.h"
 
 #include <atomic>
 #include <cassert>
@@ -319,24 +319,22 @@ int main(int argc, char *argv[]) {
   // [Test 6] 跨进程 mmap 映射与子进程异常崩溃隔离测试 (Crash & Leak Defense)
   // -------------------------------------------------------------------------
   std::cout << "\n[Test 6/6] 验证: 跨进程只读映射与子进程异常崩溃隔离 (Crash Isolation)...\n";
-  reproc::process child_proc;
-  std::vector<std::string> child_args = {argv[0], "--child-crash", dict_dir};
-  reproc::options child_opts;
-  child_opts.redirect.out.type = reproc::redirect::discard;
-  child_opts.redirect.err.type = reproc::redirect::discard;
-
-  std::error_code child_ec = child_proc.start(child_args, child_opts);
-  if (child_ec) {
-    std::cerr << "[-] Failed to start child crash test: " << child_ec.message() << std::endl;
+  const char *child_cmd[] = {argv[0], "--child-crash", dict_dir.c_str(), nullptr};
+  subprocess_s child_proc{};
+  int child_ret = subprocess_create(child_cmd, subprocess_option_inherit_environment, &child_proc);
+  if (child_ret != 0) {
+    std::cerr << "[-] Failed to start child crash test: " << child_ret << std::endl;
     assert(false);
   }
 
-  auto [exit_code, wait_ec] = child_proc.wait(reproc::milliseconds(5000));
-  if (wait_ec) {
-    std::cerr << "[-] Child crash test wait failed: " << wait_ec.message() << std::endl;
+  int exit_code = 0;
+  int wait_ret = subprocess_join(&child_proc, &exit_code);
+  if (wait_ret != 0) {
+    std::cerr << "[-] Child crash test wait failed: " << wait_ret << std::endl;
     assert(false);
   }
   assert(exit_code == 42);
+  subprocess_destroy(&child_proc);
 
   // 验证父进程的 DatJieba 依然完好无损，底层 mmap 映射文件没有损坏
   std::vector<std::string> parent_words;

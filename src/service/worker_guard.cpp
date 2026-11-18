@@ -39,6 +39,16 @@ namespace service {
 
 namespace {
 
+std::vector<const char *> ToArgv(const std::vector<std::string> &args) {
+  std::vector<const char *> cmd;
+  cmd.reserve(args.size() + 1);
+  for (const auto &arg : args) {
+    cmd.push_back(arg.c_str());
+  }
+  cmd.push_back(nullptr);
+  return cmd;
+}
+
 std::string ResolveWorkerBinary(const std::string &hint_path) {
   std::error_code ec;
   if (!hint_path.empty() && std::filesystem::exists(hint_path, ec)) {
@@ -72,6 +82,30 @@ std::string ResolveWorkerBinary(const std::string &hint_path) {
 }
 
 }  // namespace
+
+void WorkerInstance::CloseTransport() noexcept {
+#ifdef _WIN32
+  if (pipe_handle) {
+    CloseHandle(pipe_handle);
+    pipe_handle = nullptr;
+  }
+#else
+  if (socket_fd >= 0) {
+    shutdown(socket_fd, SHUT_RDWR);
+    close(socket_fd);
+    socket_fd = -1;
+  }
+#endif
+}
+
+void WorkerInstance::Reset() noexcept {
+  CloseTransport();
+  process.reset();
+  pid = 0;
+  state = WorkerState::kIdle;
+  current_doc_id = 0;
+  current_slot_id = 0;
+}
 
 WorkerGuard::WorkerGuard() = default;
 
@@ -206,12 +240,23 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
   return true;
 }
 
-bool WorkerGuard::SpawnWorker(size_t index) {
-  if (index >= workers_.size()) {
-    return false;
-  }
+std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_param) const {
+  return {
+      worker_bin_path_,
+      ipc_param,
+      "--shm-name=" + shm_pool_.shm_name(),
+      "--slot-count=" + std::to_string(shm_pool_.slot_count()),
+      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
+      "--log-level=" + log_level_,
+      log_console_ ? "--log-console" : "--no-log-console",
+      log_sync_ ? "--log-sync" : "--no-log-sync",
+      doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
+      "--doctotext-log-path=" + doctotext_log_path_,
+      embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
+}
 
 #ifdef _WIN32
+bool WorkerGuard::SpawnWorkerWindows(size_t index) {
   std::string pipe_name = "\\\\.\\pipe\\soeasy_ipc_" + std::to_string(GetCurrentProcessId()) + "_" +
                           std::to_string(index) + "_" + std::to_string(rand() % 1000000);
   HANDLE hPipe =
@@ -222,46 +267,27 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     return false;
   }
 
-  std::vector<std::string> args = {
-      worker_bin_path_,
-      "--pipe-name=" + pipe_name,
-      "--shm-name=" + shm_pool_.shm_name(),
-      "--slot-count=" + std::to_string(shm_pool_.slot_count()),
-      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
-      "--log-level=" + log_level_,
-      log_console_ ? "--log-console" : "--no-log-console",
-      log_sync_ ? "--log-sync" : "--no-log-sync",
-      doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
-      "--doctotext-log-path=" + doctotext_log_path_,
-      embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
+  std::vector<std::string> args = BuildWorkerArgs("--pipe-name=" + pipe_name);
+  auto cmd = ToArgv(args);
 
-  reproc::options opts;
-  opts.redirect.parent = false;
-
-  auto proc = std::make_unique<reproc::process>();
-  std::error_code ec = proc->start(args, opts);
-  if (ec) {
-    LOG_ERROR("[WorkerGuard] reproc failed to start worker {}: {}", index, ec.message());
+  int options = subprocess_option_inherit_environment | subprocess_option_no_window;
+  auto proc = MakeSubprocess();
+  int r = subprocess_create(cmd.data(), options, proc.get());
+  if (r != 0) {
+    LOG_ERROR("[WorkerGuard] subprocess_create failed to start worker {}: error={}", index, r);
     CloseHandle(hPipe);
     return false;
   }
 
-  auto [pid, pid_ec] = proc->pid();
+  pid_t pid = static_cast<pid_t>(GetProcessId(proc->hProcess));
 
-  if (job_handle_ && pid > 0) {
-    HANDLE hProc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, pid);
-    if (hProc) {
-      AssignProcessToJobObject(job_handle_, hProc);
-      CloseHandle(hProc);
-    }
+  if (job_handle_ && proc->hProcess) {
+    AssignProcessToJobObject(job_handle_, proc->hProcess);
   }
 
   BOOL connected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
   if (!connected) {
     LOG_ERROR("[WorkerGuard] ConnectNamedPipe failed for worker {}: {}", index, GetLastError());
-    reproc::stop_actions stop = {
-        {reproc::stop::kill, reproc::milliseconds(100)}, {}, {}};
-    proc->stop(stop);
     CloseHandle(hPipe);
     return false;
   }
@@ -276,7 +302,9 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   inst.current_slot_id = 0;
   inst.total_tasks_processed = 0;
   return true;
+}
 #else
+bool WorkerGuard::SpawnWorkerPosix(size_t index) {
   int listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (listen_fd < 0) {
     LOG_ERROR("[WorkerGuard] Failed to create socket for worker {}", index);
@@ -304,31 +332,14 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     return false;
   }
 
-  reproc::options opts;
-  opts.redirect.parent = false;
-  if (!log_console_) {
-    opts.redirect.out.type = reproc::redirect::discard;
-    opts.redirect.err.type = reproc::redirect::discard;
-  }
+  std::vector<std::string> args = BuildWorkerArgs("--socket-name=" + sock_name);
+  auto cmd = ToArgv(args);
 
-  auto proc = std::make_unique<reproc::process>();
-
-  std::vector<std::string> args = {
-      worker_bin_path_,
-      "--socket-name=" + sock_name,
-      "--shm-name=" + shm_pool_.shm_name(),
-      "--slot-count=" + std::to_string(shm_pool_.slot_count()),
-      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
-      "--log-level=" + log_level_,
-      log_console_ ? "--log-console" : "--no-log-console",
-      log_sync_ ? "--log-sync" : "--no-log-sync",
-      doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
-      "--doctotext-log-path=" + doctotext_log_path_,
-      embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
-
-  std::error_code ec = proc->start(args, opts);
-  if (ec) {
-    LOG_ERROR("[WorkerGuard] Failed to start worker binary {}: {}", index, ec.message());
+  int options = subprocess_option_inherit_environment;
+  auto proc = MakeSubprocess();
+  int r = subprocess_create(cmd.data(), options, proc.get());
+  if (r != 0) {
+    LOG_ERROR("[WorkerGuard] Failed to start worker binary {}: error={}", index, r);
     close(listen_fd);
     return false;
   }
@@ -342,9 +353,6 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   if (pret <= 0 || !(pfd.revents & POLLIN)) {
     LOG_ERROR("[WorkerGuard] Worker {} connect timeout or failed", index);
     close(listen_fd);
-    reproc::stop_actions stop = {
-        {reproc::stop::kill, reproc::milliseconds(100)}, {}, {}};
-    proc->stop(stop);
     return false;
   }
 
@@ -353,13 +361,10 @@ bool WorkerGuard::SpawnWorker(size_t index) {
 
   if (client_fd < 0) {
     LOG_ERROR("[WorkerGuard] Failed to accept connection for worker {}: {}", index, strerror(errno));
-    reproc::stop_actions stop = {
-        {reproc::stop::kill, reproc::milliseconds(100)}, {}, {}};
-    proc->stop(stop);
     return false;
   }
 
-  auto [pid, pid_ec] = proc->pid();
+  pid_t pid = proc->child;
 
   WorkerInstance &inst = workers_[index];
   inst.process = std::move(proc);
@@ -371,6 +376,17 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   inst.current_slot_id = 0;
   inst.total_tasks_processed = 0;
   return true;
+}
+#endif
+
+bool WorkerGuard::SpawnWorker(size_t index) {
+  if (index >= workers_.size()) {
+    return false;
+  }
+#ifdef _WIN32
+  return SpawnWorkerWindows(index);
+#else
+  return SpawnWorkerPosix(index);
 #endif
 }
 
@@ -380,31 +396,10 @@ void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string 
   }
   WorkerInstance &inst = workers_[index];
   LOG_WARN("[WorkerGuard] KillWorker index={}: reason={}", index, reason);
-#ifdef _WIN32
-  if (inst.pipe_handle) {
-    CloseHandle(inst.pipe_handle);
-    inst.pipe_handle = nullptr;
-  }
-#else
-  if (inst.socket_fd >= 0) {
-    shutdown(inst.socket_fd, SHUT_RDWR);
-    close(inst.socket_fd);
-    inst.socket_fd = -1;
-  }
-#endif
-  if (inst.process) {
-    reproc::stop_actions stop = {
-        {reproc::stop::terminate, reproc::milliseconds(50)},
-        {reproc::stop::kill, reproc::milliseconds(100)},
-        {}};
-    inst.process->stop(stop);
-    inst.process.reset();
-  }
-  inst.pid = 0;
   if (inst.is_busy()) {
     shm_pool_.ReleaseSlot(inst.current_slot_id);
   }
-  inst.state = WorkerState::kIdle;
+  inst.Reset();
 }
 
 void WorkerGuard::WatchdogLoop() {
@@ -429,28 +424,16 @@ void WorkerGuard::WatchdogLoop() {
       }
 
       // 1. Check if child crashed or exited unexpectedly
-      auto [events, poll_ec] = inst.process->poll(reproc::event::exit, reproc::milliseconds(0));
-      if (!poll_ec && (events & reproc::event::exit)) {
-        auto [exit_code, wait_ec] = inst.process->wait(reproc::milliseconds(0));
+      if (!subprocess_alive(inst.process.get())) {
+        int exit_code = 0;
+        if (inst.process) {
+          subprocess_join(inst.process.get(), &exit_code);
+        }
         LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
-#ifdef _WIN32
-        if (inst.pipe_handle) {
-          CloseHandle(inst.pipe_handle);
-          inst.pipe_handle = nullptr;
-        }
-#else
-        if (inst.socket_fd >= 0) {
-          shutdown(inst.socket_fd, SHUT_RDWR);
-          close(inst.socket_fd);
-          inst.socket_fd = -1;
-        }
-#endif
         if (inst.is_busy()) {
           shm_pool_.ReleaseSlot(inst.current_slot_id);
         }
-        inst.process.reset();
-        inst.pid = 0;
-        inst.state = WorkerState::kIdle;
+        inst.Reset();
         worker_available_cv_.notify_all();
         continue;
       }
@@ -470,25 +453,7 @@ void WorkerGuard::WatchdogLoop() {
               is_stalled, is_overtime, elapsed, inst.current_timeout_ms);
           inst.state = WorkerState::kKilledByWatchdog;
           shm_pool_.ReleaseSlot(inst.current_slot_id);
-#ifdef _WIN32
-          if (inst.pipe_handle) {
-            CloseHandle(inst.pipe_handle);
-            inst.pipe_handle = nullptr;
-          }
-#else
-          if (inst.socket_fd >= 0) {
-            shutdown(inst.socket_fd, SHUT_RDWR);
-            close(inst.socket_fd);
-            inst.socket_fd = -1;
-          }
-#endif
-          reproc::stop_actions stop = {
-              {reproc::stop::terminate, reproc::milliseconds(50)},
-              {reproc::stop::kill, reproc::milliseconds(100)},
-              {}};
-          inst.process->stop(stop);
-          inst.process.reset();
-          inst.pid = 0;
+          inst.Reset();
           continue;
         }
       }
@@ -498,26 +463,7 @@ void WorkerGuard::WatchdogLoop() {
         auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.idle_start_time).count();
         if (idle_ms >= idle_evict_ms_) {
           LOG_INFO("[WorkerGuard] Worker {} idle for {:.1f}s. Evicted to reclaim memory.", i, idle_ms / 1000.0);
-#ifdef _WIN32
-          if (inst.pipe_handle) {
-            CloseHandle(inst.pipe_handle);
-            inst.pipe_handle = nullptr;
-          }
-#else
-          if (inst.socket_fd >= 0) {
-            shutdown(inst.socket_fd, SHUT_RDWR);
-            close(inst.socket_fd);
-            inst.socket_fd = -1;
-          }
-#endif
-          reproc::stop_actions stop = {
-              {reproc::stop::terminate, reproc::milliseconds(50)},
-              {reproc::stop::kill, reproc::milliseconds(100)},
-              {}};
-          inst.process->stop(stop);
-          inst.process.reset();
-          inst.pid = 0;
-          inst.state = WorkerState::kIdle;
+          inst.Reset();
           continue;
         }
 
@@ -774,27 +720,7 @@ void WorkerGuard::Shutdown() {
 
   std::unique_lock<std::mutex> lock(pool_mutex_);
   for (auto &inst : workers_) {
-#ifdef _WIN32
-    if (inst.pipe_handle) {
-      CloseHandle(inst.pipe_handle);
-      inst.pipe_handle = nullptr;
-    }
-#else
-    if (inst.socket_fd >= 0) {
-      shutdown(inst.socket_fd, SHUT_RDWR);
-      close(inst.socket_fd);
-      inst.socket_fd = -1;
-    }
-#endif
-    if (inst.process) {
-      reproc::stop_actions stop = {
-          {reproc::stop::terminate, reproc::milliseconds(50)},
-          {reproc::stop::kill, reproc::milliseconds(100)},
-          {}};
-      inst.process->stop(stop);
-      inst.process.reset();
-    }
-    inst.pid = 0;
+    inst.Reset();
   }
 #ifdef _WIN32
   if (job_handle_) {

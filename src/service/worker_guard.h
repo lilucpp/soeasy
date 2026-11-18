@@ -17,7 +17,7 @@
 #include <thread>
 #include <vector>
 
-#include <reproc++/reproc.hpp>
+#include "subprocess.h"
 
 #include "common/shm_pool.h"
 
@@ -54,8 +54,41 @@ struct ParseTaskResult {
 
 enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2 };
 
+struct SubprocessDeleter {
+  void operator()(subprocess_s *proc) const noexcept {
+    if (!proc) {
+      return;
+    }
+#if defined(_WIN32)
+    if (proc->hProcess) {
+      if (subprocess_alive(proc)) {
+        subprocess_terminate(proc);
+      }
+      int exit_code = 0;
+      subprocess_join(proc, &exit_code);
+    }
+#else
+    if (proc->child > 0 || proc->alive) {
+      if (subprocess_alive(proc)) {
+        subprocess_terminate(proc);
+      }
+      int exit_code = 0;
+      subprocess_join(proc, &exit_code);
+    }
+#endif
+    subprocess_destroy(proc);
+    delete proc;
+  }
+};
+
+using SubprocessHandle = std::unique_ptr<subprocess_s, SubprocessDeleter>;
+
+inline SubprocessHandle MakeSubprocess() {
+  return SubprocessHandle(new subprocess_s{}, SubprocessDeleter{});
+}
+
 struct WorkerInstance {
-  std::unique_ptr<reproc::process> process;
+  SubprocessHandle process;
   pid_t pid = 0;
 #ifdef _WIN32
   HANDLE pipe_handle = nullptr;
@@ -71,13 +104,16 @@ struct WorkerInstance {
   uint64_t total_tasks_processed = 0;
 
   WorkerInstance() = default;
-  ~WorkerInstance() = default;
+  ~WorkerInstance() { Reset(); }
   WorkerInstance(WorkerInstance &&) noexcept = default;
   WorkerInstance &operator=(WorkerInstance &&) noexcept = default;
   WorkerInstance(const WorkerInstance &) = delete;
   WorkerInstance &operator=(const WorkerInstance &) = delete;
 
   bool is_busy() const { return state == WorkerState::kBusy; }
+
+  void CloseTransport() noexcept;
+  void Reset() noexcept;
 };
 
 struct WorkerLoggingOptions {
@@ -166,6 +202,12 @@ class WorkerGuard {
 
  private:
   bool SpawnWorker(size_t index);
+#ifdef _WIN32
+  bool SpawnWorkerWindows(size_t index);
+#else
+  bool SpawnWorkerPosix(size_t index);
+#endif
+  std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param) const;
   void KillWorker(size_t index, TaskStatus status, const std::string &reason);
   void WatchdogLoop();
   static size_t GetProcessRssBytes(pid_t pid);

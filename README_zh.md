@@ -54,7 +54,7 @@ flowchart TD
         subgraph CommandSide ["命令侧 (Write Path)"]
             Orchestrator["IndexOrchestrator (并发扫描调度)"]
             WatchEngine["WatchEngine & EventDebouncer (efsw 监听)"]
-            WorkerGuard["WorkerGuard (reproc++ 沙箱看门狗)"]
+            WorkerGuard["WorkerGuard (subprocess.h 沙箱看门狗)"]
             WriteQueue["AsyncWriteQueue (异步批量入库队列)"]
             Orchestrator --> WatchEngine
             Orchestrator --> WorkerGuard

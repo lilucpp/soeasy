@@ -101,7 +101,7 @@ flowchart TD
     StorageEnginePool --> ReaderPool
 
     %% IPC 隔离边界
-    WorkerGuard ==>|IPC / SHM / reproc++| WorkerLoop
+    WorkerGuard ==>|IPC / SHM / subprocess.h| WorkerLoop
 
     %% Worker 内部策略
     WorkerLoop --> ParserRegistry

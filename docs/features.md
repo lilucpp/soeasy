@@ -19,7 +19,7 @@ All file parsing and content extraction workloads are isolated inside dedicated 
                                v
 +--------------------------------------------------------------+
 |                    Host Guard (WorkerGuard)                  |
-|  - Modern Process Management via reproc++ & Stop Actions     |
+|  - Single-header subprocess.h & Custom RAII SubprocessHandle |
 |  - Watchdog Probe (Kills hangs, OOM, and loops in ms)        |
 +--------------------------------------------------------------+
                                |
@@ -34,7 +34,7 @@ All file parsing and content extraction workloads are isolated inside dedicated 
 ```
 
 ### Architectural Principles
-- **Zombie-Free Process Lifecycle (`<defunct>`)**: Powered by modern `reproc++` with strict `stop_actions`, ensuring all worker subprocesses are cleanly reaped upon host shutdown.
+- **Zombie-Free Process Lifecycle (`<defunct>`)**: Powered by lightweight `subprocess.h` and RAII `SubprocessDeleter` (`terminate` + `join` + `destroy`), ensuring all worker subprocesses are cleanly reaped upon termination or host shutdown.
 - **Zero Disk Residue IPC**: Uses Linux Abstract UNIX Domain Sockets, completely bypassing filesystem socket files (`/tmp/*.sock`) to prevent orphaned disk artifacts.
 - **Automatic Self-Healing**: If an external library encounters corrupted files or infinite loops, the watchdog terminates the faulted worker process and transparently restores indexing without freezing the user interface.
 
@@ -97,5 +97,5 @@ SoEasy upholds absolute local privacy with zero telemetry and zero cloud depende
 | **Jieba Tokenizer RAM** | **7.2 MB** (↓ 94% RAM) | Darts-clone binary DAT + kernel `mmap` zero-copy mapping |
 | **OCR Throughput & RAM** | **Speed ↑ 42% \| RAM ↓ 34%** | Zero-copy Header Probe + dual-limit resolution scaling (736/640) |
 | **Full-Text Query Latency** | **< 0.5 ms** (Instant Response) | SQLite FTS5 inverted index + DAT tokenization + BM25 scoring |
-| **Process Stability** | **0 Zombie Processes** | Modern `reproc++` with standard `stop_actions` |
+| **Process Stability** | **0 Zombie Processes** | Single-header `subprocess.h` with RAII `SubprocessDeleter` & kernel object probing |
 | **Data Security & Disk** | **100% Local Encrypted** | Page-level AES-128 (SQLite3MC) + real-time Zstandard compression |

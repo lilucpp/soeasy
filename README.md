@@ -20,7 +20,7 @@ Zero Electron bloat, zero cloud telemetry, and complete crash resilience through
 ## Highlights
 
 - **Instant Full-Text & Filename Search**: Powered by SQLite FTS5 with Double-Array Trie Jieba tokenization and BM25 ranking. Features live debounced in-document keyword preview.
-- **Crash-Resilient Sandbox Isolation**: All document parsing runs within an isolated subprocess (`soeasy-worker`) governed by modern `reproc++`. Malformed or looping files are killed and self-healed in milliseconds without freezing the UI.
+- **Crash-Resilient Sandbox Isolation**: All document parsing runs within an isolated subprocess (`soeasy-worker`) governed by lightweight `subprocess.h` with custom RAII lifecycle management. Malformed or looping files are killed and self-healed in milliseconds without freezing the UI.
 - **Double-Array Trie (DAT) + mmap Tokenization**: Precompiles 350,000 dictionary words into contiguous DAT binary blocks, mapped via kernel `mmap`. Memory footprint plunges from **120 MB down to 7.2 MB** (94% RAM reduction).
 - **Lightweight Deep Learning OCR**: Bundles PP-OCRv6 with zero-allocation Header Probe nanosecond sniffing ($< 1\,\mu\text{s}$) to filter micro-icons and borders before decoding. Cuts RAM by 34% and accelerates inference by >40%.
 - **Hardware-Bound Local Encryption**: Zero cloud dependence. Index databases are protected with page-level AES-128 encryption (SQLite3MultipleCiphers) and Zstandard Level 3 compression, bound to host hardware to prevent offline theft.
@@ -54,7 +54,7 @@ flowchart TD
         subgraph CommandSide ["Command Side (Write Path)"]
             Orchestrator["IndexOrchestrator (Concurrent Scheduler)"]
             WatchEngine["WatchEngine & EventDebouncer (efsw)"]
-            WorkerGuard["WorkerGuard (reproc++ Sandbox Watchdog)"]
+            WorkerGuard["WorkerGuard (subprocess.h Sandbox Watchdog)"]
             WriteQueue["AsyncWriteQueue (Batched Writer)"]
             Orchestrator --> WatchEngine
             Orchestrator --> WorkerGuard

@@ -548,7 +548,7 @@
           </div>
           <h3 class="pillar-title" data-i18n="p1-title">物理多进程沙箱隔离与现代进程治理</h3>
           <p class="pillar-desc" data-i18n="p1-desc">
-            解析子进程 (<code>soeasy-worker</code>) 与主服务物理隔离，引入现代进程库 <code>reproc++</code> 严格治理生命周期，杜绝僵死进程 (&lt;defunct&gt;)。Linux 下采用抽象命名空间套接字零磁盘残留。遇死循环或格式损坏，看门狗毫秒级强杀自愈，界面零卡死。
+            解析子进程 (<code>soeasy-worker</code>) 与主服务物理隔离，采用轻量级进程库 <code>subprocess.h</code> 配合 RAII 全生命周期托管，杜绝僵死进程 (&lt;defunct&gt;)。Linux 下采用抽象命名空间套接字零磁盘残留。遇死循环或格式损坏，看门狗毫秒级强杀自愈，界面零卡死。
           </p>
         </div>
 
@@ -674,7 +674,7 @@
         "desc-pillars": "基于现代 C++17 与高性能系统工程实践，为本地内容检索提供坚固底层支持。",
         "p1-tag": "进程隔离",
         "p1-title": "物理多进程沙箱隔离与现代进程治理",
-        "p1-desc": "解析子进程 (soeasy-worker) 与主服务物理隔离，引入现代进程库 reproc++ 严格治理生命周期，杜绝僵死进程 (&lt;defunct&gt;)。Linux 下采用抽象命名空间套接字零磁盘残留。遇死循环或格式损坏，看门狗毫秒级强杀自愈，界面零卡死。",
+        "p1-desc": "解析子进程 (soeasy-worker) 与主服务物理隔离，采用轻量级进程库 subprocess.h 配合 RAII 全生命周期托管，杜绝僵死进程 (&lt;defunct&gt;)。Linux 下采用抽象命名空间套接字零磁盘残留。遇死循环或格式损坏，看门狗毫秒级强杀自愈，界面零卡死。",
         "p2-tag": "极速分词",
         "p2-title": "双数组 Trie (DAT) + mmap 极速分词",
         "p2-desc": "35 万词词典预编译为双数组字典树 (DAT) 二进制文件，运行时通过 mmap 零拷贝映射入内核只读页，堆内存占用从 120MB 直降至 7MB，实现瞬间冷启动，并提供 Overlay 叠加层无缝支持用户动态添加自定义专有名词。",
@@ -711,7 +711,7 @@
         "desc-pillars": "High-performance architecture engineered with modern C++17 for fast, robust, and private local search.",
         "p1-tag": "Sandbox Isolation",
         "p1-title": "Crash-Resilient Sandbox & Modern Process Governance",
-        "p1-desc": "Parsing workers execute in isolated subprocesses governed by modern reproc++ with standard stop_actions, eliminating zombie (&lt;defunct&gt;) and orphan processes. Linux utilizes Abstract UNIX Domain Sockets for zero disk residue. Malformed or hanging files are killed and auto-healed with zero UI freezing.",
+        "p1-desc": "Parsing workers execute in isolated subprocesses governed by lightweight subprocess.h with RAII lifecycle management, eliminating zombie (&lt;defunct&gt;) and orphan processes. Linux utilizes Abstract UNIX Domain Sockets for zero disk residue. Malformed or hanging files are killed and auto-healed with zero UI freezing.",
         "p2-tag": "Fast Tokenization",
         "p2-title": "Double-Array Trie (DAT) + mmap Zero-Heap Tokenization",
         "p2-desc": "The 350,000-word dictionary is precompiled into a Double-Array Trie (DAT) binary and mapped directly via mmap. Reduces heap memory from 120MB down to 7MB with instantaneous cold-boot startup and an overlay dictionary for custom vocabularies.",
