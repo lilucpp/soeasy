@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "gui/document_viewer_widget.h"
+#include "gui/gui_utils.h"
 #include "service/isearch_coordinator.h"
 
 namespace soeasy {
@@ -63,8 +64,8 @@ class PreviewPanel : public QWidget {
 
   // UI elements
   QLabel *icon_label_ = nullptr;
-  QLabel *title_label_ = nullptr;
-  QLabel *path_label_ = nullptr;
+  ElidedLabel *title_label_ = nullptr;
+  ElidedLabel *path_label_ = nullptr;
   QPushButton *btn_open_file_ = nullptr;
   QPushButton *btn_open_folder_ = nullptr;
   QPushButton *btn_close_ = nullptr;

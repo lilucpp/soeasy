@@ -397,6 +397,9 @@ void SettingsDialog::OnSaveAndApply() {
 
   emit SettingsAppliedWithDiff(diff);
   emit SettingsApplied();
+  if (diff.worker_count_changed) {
+    QMessageBox::information(this, Tr("dlg_tip"), Tr("msg_worker_count_restart"));
+  }
   accept();
 }
 

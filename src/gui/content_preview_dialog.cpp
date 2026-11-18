@@ -53,7 +53,8 @@ void ContentPreviewDialog::SetupUi() {
   icon_label->setPixmap(IconProvider::GetFileIcon(fi.suffix()).pixmap(24, 24));
   icon_label->setStyleSheet("border: none;");
 
-  auto *title_label = new QLabel(file_name_, header_card);
+  auto *title_label = new ElidedLabel(Qt::ElideMiddle, true, header_card);
+  title_label->SetFullText(file_name_);
   title_label->setStyleSheet("font-size: 14px; font-weight: bold; color: #0F172A; border: none;");
   title_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
@@ -81,10 +82,10 @@ void ContentPreviewDialog::SetupUi() {
   title_row->addWidget(btn_open_folder);
   header_layout->addLayout(title_row);
 
-  path_label_ = new QLabel(file_path_, header_card);
+  path_label_ = new ElidedLabel(Qt::ElideMiddle, true, header_card);
+  path_label_->SetFullText(file_path_);
   path_label_->setStyleSheet("font-size: 11px; color: #64748B; border: none; font-family: monospace;");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  path_label_->setWordWrap(true);
   header_layout->addWidget(path_label_);
 
   main_layout->addWidget(header_card);

@@ -125,6 +125,17 @@ TEST_F(IndexStateMachineTest, DiffIndexConfigDetectsAllTransitions) {
     const auto d = DiffIndexConfig(before, cfg.CaptureSnapshot());
     EXPECT_TRUE(d.runtime_changed);
     EXPECT_TRUE(d.debounce_changed);
+    EXPECT_FALSE(d.worker_count_changed);
+    EXPECT_FALSE(d.HasStructuralChanges());
+  }
+
+  // Worker count change triggers runtime + worker_count_changed (restart-required notification).
+  const IndexConfigSnapshot base_workers = cfg.CaptureSnapshot();
+  cfg.set_worker_count(base_workers.worker_count + 2);
+  {
+    const auto d = DiffIndexConfig(base_workers, cfg.CaptureSnapshot());
+    EXPECT_TRUE(d.runtime_changed);
+    EXPECT_TRUE(d.worker_count_changed);
     EXPECT_FALSE(d.HasStructuralChanges());
   }
 

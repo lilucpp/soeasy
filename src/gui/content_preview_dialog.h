@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "gui/document_viewer_widget.h"
+#include "gui/gui_utils.h"
 #include "service/isearch_coordinator.h"
 
 namespace soeasy {
@@ -42,7 +43,7 @@ class ContentPreviewDialog : public QDialog {
   std::shared_ptr<service::ISearchCoordinator> search_coordinator_;
 
   DocumentViewerWidget *viewer_ = nullptr;
-  QLabel *path_label_ = nullptr;
+  ElidedLabel *path_label_ = nullptr;
 };
 
 }  // namespace gui

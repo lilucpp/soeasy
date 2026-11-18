@@ -727,7 +727,10 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
     storage_engine_->SetBulkMode(true);
   }
 
-  const size_t worker_concurrency = std::max<size_t>(1, config_ ? config_->worker_count() : 1);
+  const size_t configured_concurrency = std::max<size_t>(1, config_ ? config_->worker_count() : 1);
+  const size_t guard_capacity = worker_guard_ ? worker_guard_->worker_count() : 0;
+  const size_t worker_concurrency =
+      guard_capacity > 0 ? std::min(configured_concurrency, guard_capacity) : configured_concurrency;
   const size_t num_threads = std::min<size_t>(worker_concurrency, total_files > 0 ? total_files : 1);
   std::atomic<size_t> file_idx{0};
   std::atomic<size_t> indexed_count{0};

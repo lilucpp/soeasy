@@ -42,6 +42,7 @@ class PerformanceTab : public ISettingsTab {
   QSpinBox *max_size_spin_ = nullptr;
   QLabel *label_workers_ = nullptr;
   QSpinBox *workers_spin_ = nullptr;
+  QLabel *label_workers_hint_ = nullptr;
   QLabel *label_resource_profile_ = nullptr;
   QComboBox *resource_profile_combo_ = nullptr;
 

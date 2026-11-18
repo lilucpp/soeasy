@@ -47,7 +47,7 @@ void PreviewPanel::SetupUi() {
   icon_label_ = new QLabel(header_card);
   icon_label_->setStyleSheet("border: none;");
 
-  title_label_ = new QLabel(header_card);
+  title_label_ = new ElidedLabel(Qt::ElideMiddle, true, header_card);
   title_label_->setStyleSheet("font-size: 13px; font-weight: bold; color: #0F172A; border: none;");
   title_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
@@ -107,10 +107,9 @@ void PreviewPanel::SetupUi() {
   title_row->addWidget(btn_close_);
   header_layout->addLayout(title_row);
 
-  path_label_ = new QLabel(header_card);
+  path_label_ = new ElidedLabel(Qt::ElideMiddle, true, header_card);
   path_label_->setStyleSheet("font-size: 11px; color: #64748B; border: none; font-family: monospace;");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  path_label_->setWordWrap(true);
   header_layout->addWidget(path_label_);
 
   main_layout->addWidget(header_card);
@@ -141,8 +140,8 @@ void PreviewPanel::RetranslateUi() {
     viewer_->RetranslateUi();
   }
   if (current_file_path_.isEmpty()) {
-    if (title_label_) title_label_->setText(Tr("no_file_selected"));
-    if (path_label_) path_label_->setText(Tr("no_content_extracted"));
+    if (title_label_) title_label_->SetFullText(Tr("no_file_selected"), false);
+    if (path_label_) path_label_->SetFullText(Tr("no_content_extracted"), false);
     RenderEmptyStateGuide();
   }
 }
@@ -159,8 +158,8 @@ void PreviewPanel::ClearPreview() {
   current_keywords_.clear();
 
   if (icon_label_) icon_label_->clear();
-  if (title_label_) title_label_->setText(Tr("no_file_selected"));
-  if (path_label_) path_label_->setText(Tr("no_content_extracted"));
+  if (title_label_) title_label_->SetFullText(Tr("no_file_selected"), false);
+  if (path_label_) path_label_->SetFullText(Tr("no_content_extracted"), false);
   if (btn_open_file_) btn_open_file_->setEnabled(false);
   if (btn_open_folder_) btn_open_folder_->setEnabled(false);
 
@@ -178,8 +177,8 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
   QString ext = fi.suffix();
 
   icon_label_->setPixmap(IconProvider::GetFileIcon(ext).pixmap(24, 24));
-  title_label_->setText(file_name);
-  path_label_->setText(file_path);
+  title_label_->SetFullText(file_name);
+  path_label_->SetFullText(file_path);
 
   btn_open_file_->setEnabled(true);
   btn_open_folder_->setEnabled(true);

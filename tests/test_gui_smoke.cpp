@@ -188,13 +188,16 @@ int main(int argc, char *argv[]) {
                 << pix.height() << "\n";
     }
 
-    // Verify Tab 2 (Performance & Logs) Combobox rendering
+    // Verify Tab 2 (Performance & Logs) Combobox and worker restart hint rendering
     {
       soeasy::gui::SettingsDialog dlg_perf(config);
       dlg_perf.resize(860, 600);
       dlg_perf.show();
       dlg_perf.SetCurrentTab(2);
       app.processEvents();
+      auto *hint_en = dlg_perf.findChild<QLabel *>("label_workers_hint");
+      CHECK(hint_en != nullptr && hint_en->text() == soeasy::gui::Tr("hint_workers_restart"));
+      CHECK(!soeasy::gui::Tr("msg_worker_count_restart").isEmpty());
       dlg_perf.grab().save("/tmp/tab5_combo_fixed.png");
     }
 
@@ -209,6 +212,8 @@ int main(int argc, char *argv[]) {
     // Switch back to Chinese
     soeasy::gui::I18n::Instance().SetLanguage("zh");
     config->set_ui_language("zh");
+    CHECK(soeasy::gui::Tr("hint_workers_restart").contains("重启"));
+    CHECK(soeasy::gui::Tr("msg_worker_count_restart").contains("重启"));
     CHECK(soeasy::gui::Tr("app_title") == "SoEasy | 让电脑没有难搜的文件");
     CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office 新版格式 (OOXML)");
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "Word 2007+ 文本文档") == "Word 2007+ 文本文档");
@@ -387,6 +392,36 @@ int main(int argc, char *argv[]) {
     const QString snapshot_path = QDir::tempPath() + "/soeasy_master_detail_ui.png";
     pix.save(snapshot_path);
     std::cout << "  -> Master-Detail 双栏即时预览界面截屏已成功保存: " << snapshot_path.toStdString() << "\n";
+
+    // Regression: Ultra-long unbroken filename/path/keyword in PreviewPanel must NOT crush ResultView
+    auto *rview = main_win.findChild<soeasy::gui::ResultView *>();
+    auto *ppanel = main_win.findChild<soeasy::gui::PreviewPanel *>();
+    CHECK(rview != nullptr);
+    CHECK(ppanel != nullptr);
+    const int initial_rview_w = rview->width();
+    const QString ultra_long_name =
+        "上海市市场监督管理局江苏省市场监督管理局浙江省市场监督管理局安徽省市场监督管理局"
+        "关于公布2022年长三角产业计量技术创新挑战赛表彰名单的通知_42898.docx";
+    const QString ultra_long_path = QString::fromStdString(test_dir) + "/_gen_word/" + ultra_long_name;
+    QDir().mkpath(QFileInfo(ultra_long_path).absolutePath());
+    WriteFile(ultra_long_path.toStdString(), "正文内容：超长无空格检索关键词用来检验预览工具栏标签...");
+    const std::string ultra_long_kw =
+        "超长无空格检索关键词用来检验预览工具栏标签在极端窄栏下不会把左侧文件列表撑爆_0123456789";
+    ppanel->LoadDocument(999999, ultra_long_name, ultra_long_path, {ultra_long_kw});
+    ppanel->WaitForLoadFinished(1000);
+    app.processEvents();
+    app.processEvents();
+    CHECK(rview->width() >= 550);
+    CHECK(std::abs(rview->width() - initial_rview_w) <= 20);
+    CHECK(ppanel->minimumSizeHint().width() <= 350);
+    auto elided_labels = ppanel->findChildren<soeasy::gui::ElidedLabel *>();
+    CHECK(elided_labels.size() >= 3);
+    for (auto *lbl : elided_labels) {
+      CHECK(lbl->text().size() < lbl->full_text().size());
+      CHECK(lbl->toolTip() == lbl->full_text());
+    }
+    std::cout << "  -> 超长无空格文件名/路径/关键词预览布局防挤压回归通过! (ResultView=" << rview->width()
+              << "px, PreviewMinHint=" << ppanel->minimumSizeHint().width() << "px)\n";
   }
 
   // -------------------------------------------------------------

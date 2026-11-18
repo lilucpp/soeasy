@@ -33,6 +33,7 @@ struct IndexConfigSnapshot {
 struct ConfigChangeSummary {
   bool runtime_changed = false;
   bool debounce_changed = false;
+  bool worker_count_changed = false;
   std::vector<std::string> removed_dirs;
   std::vector<std::string> added_dirs;
   bool rules_narrowed = false;

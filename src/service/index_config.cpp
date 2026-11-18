@@ -510,13 +510,14 @@ std::string NormalizeDirKey(const std::string &dir_path) {
 ConfigChangeSummary DiffIndexConfig(const IndexConfigSnapshot &before, const IndexConfigSnapshot &after) {
   ConfigChangeSummary diff;
   diff.debounce_changed = (before.debounce_ms != after.debounce_ms);
-  diff.runtime_changed = diff.debounce_changed || (before.ui_language != after.ui_language) ||
+  diff.worker_count_changed = (before.worker_count != after.worker_count);
+  diff.runtime_changed = diff.debounce_changed || diff.worker_count_changed ||
+                         (before.ui_language != after.ui_language) ||
                          (before.log_level != after.log_level) || (before.log_console != after.log_console) ||
                          (before.log_sync != after.log_sync) ||
                          (before.doctotext_logging != after.doctotext_logging) ||
                          (before.doctotext_log_path != after.doctotext_log_path) ||
-                         (before.resource_profile != after.resource_profile) ||
-                         (before.worker_count != after.worker_count);
+                         (before.resource_profile != after.resource_profile);
 
   std::unordered_set<std::string> before_dir_keys;
   for (const auto &d : before.indexed_dirs) {

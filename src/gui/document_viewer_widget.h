@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "gui/gui_utils.h"
 #include "service/isearch_coordinator.h"
 
 namespace soeasy {
@@ -62,7 +63,7 @@ class DocumentViewerWidget : public QWidget {
   };
 
   QLabel *label_jump_ = nullptr;
-  QLabel *keyword_tag_label_ = nullptr;
+  ElidedLabel *keyword_tag_label_ = nullptr;
   QPushButton *btn_prev_ = nullptr;
   QPushButton *btn_next_ = nullptr;
   QLabel *match_count_label_ = nullptr;

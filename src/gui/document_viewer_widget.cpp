@@ -36,7 +36,7 @@ void DocumentViewerWidget::SetupUi() {
   label_jump_ = new QLabel("关键词:", this);
   label_jump_->setStyleSheet("font-size: 12px; color: #475569; font-weight: 500;");
 
-  keyword_tag_label_ = new QLabel(this);
+  keyword_tag_label_ = new ElidedLabel(Qt::ElideRight, false, this);
   keyword_tag_label_->setStyleSheet(
       "QLabel {"
       "  font-size: 12px;"
@@ -139,7 +139,7 @@ void DocumentViewerWidget::RetranslateUi() {
   if (btn_next_) btn_next_->setText(Tr("btn_next"));
 
   if (current_keywords_.empty()) {
-    if (keyword_tag_label_) keyword_tag_label_->setText(Tr("no_keywords"));
+    if (keyword_tag_label_) keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
   }
   UpdateMatchCountLabel();
 }
@@ -169,7 +169,7 @@ void DocumentViewerWidget::Clear() {
   }
 
   if (keyword_tag_label_) {
-    keyword_tag_label_->setText(Tr("no_keywords"));
+    keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
     keyword_tag_label_->setStyleSheet(
         "QLabel {"
         "  font-size: 12px;"
@@ -205,7 +205,7 @@ void DocumentViewerWidget::LoadContent(const QString &text, const std::vector<st
       if (i > 0) joined_kw += ", ";
       joined_kw += QString::fromStdString(keywords[i]);
     }
-    keyword_tag_label_->setText(joined_kw);
+    keyword_tag_label_->SetFullText(joined_kw);
     keyword_tag_label_->setStyleSheet(
         "QLabel {"
         "  font-size: 12px;"
@@ -217,7 +217,7 @@ void DocumentViewerWidget::LoadContent(const QString &text, const std::vector<st
         "  padding: 3px 8px;"
         "}");
   } else {
-    keyword_tag_label_->setText(Tr("no_keywords"));
+    keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
     keyword_tag_label_->setStyleSheet(
         "QLabel {"
         "  font-size: 12px;"

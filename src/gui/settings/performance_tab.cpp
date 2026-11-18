@@ -42,11 +42,20 @@ void PerformanceTab::SetupUi() {
   label_max_size_ = new QLabel(group_perf_strategy_);
   form_perf->addRow(label_max_size_, max_size_spin_);
 
+  auto *workers_row = new QHBoxLayout();
+  workers_row->setContentsMargins(0, 0, 0, 0);
+  workers_row->setSpacing(8);
   workers_spin_ = new QSpinBox(group_perf_strategy_);
   workers_spin_->setRange(1, 16);
   workers_spin_->setSingleStep(1);
+  label_workers_hint_ = new QLabel(group_perf_strategy_);
+  label_workers_hint_->setObjectName("label_workers_hint");
+  label_workers_hint_->setStyleSheet("color: #64748B; font-size: 11px;");
+  workers_row->addWidget(workers_spin_);
+  workers_row->addWidget(label_workers_hint_);
+  workers_row->addStretch();
   label_workers_ = new QLabel(group_perf_strategy_);
-  form_perf->addRow(label_workers_, workers_spin_);
+  form_perf->addRow(label_workers_, workers_row);
 
   resource_profile_combo_ = new QComboBox(group_perf_strategy_);
   resource_profile_combo_->addItem(
@@ -149,6 +158,8 @@ void PerformanceTab::RetranslateUi() {
   if (label_max_size_) label_max_size_->setText(Tr("label_max_size"));
   if (max_size_spin_) max_size_spin_->setSuffix(Tr("suffix_mb"));
   if (label_workers_) label_workers_->setText(Tr("label_workers"));
+  if (workers_spin_) workers_spin_->setToolTip(Tr("tooltip_workers_restart"));
+  if (label_workers_hint_) label_workers_hint_->setText(Tr("hint_workers_restart"));
   if (label_resource_profile_) label_resource_profile_->setText(Tr("label_resource_profile"));
   if (resource_profile_combo_) {
     resource_profile_combo_->setItemText(0, Tr("profile_low_memory"));

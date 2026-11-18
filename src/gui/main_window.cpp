@@ -244,6 +244,8 @@ void MainWindow::SetupUi() {
 
   result_view_ = new ResultView(splitter_);
   preview_panel_ = new PreviewPanel(splitter_);
+  result_view_->setMinimumWidth(260);
+  preview_panel_->setMinimumWidth(240);
   if (pipeline_) {
     result_view_->SetSearchCoordinator(pipeline_->search_coordinator());
     preview_panel_->SetSearchCoordinator(pipeline_->search_coordinator());
