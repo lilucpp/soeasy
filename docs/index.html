@@ -584,6 +584,28 @@
             文档内嵌图片流式回传 PP-OCRv6 原位提取；独创 Header Probe 零拷贝尺寸嗅探 (&lt;1µs) 拦截微型装饰图；双档位分辨率限边 (736/640) 内存立减 34%、提速超 40% 且精度无损；配合 <code>mallopt(M_ARENA_MAX, 2)</code> 彻底遏制内存碎片。
           </p>
         </div>
+
+        <div class="pillar-card">
+          <div class="pillar-header">
+            <span class="pillar-code">05</span>
+            <span class="pillar-tag" data-i18n="p5-tag">双模交互</span>
+          </div>
+          <h3 class="pillar-title" data-i18n="p5-title">原生无头 CLI 与 Unix 管道拼装</h3>
+          <p class="pillar-desc" data-i18n="p5-desc">
+            除直观的双栏 Qt 桌面端外，同时内置纯 C++17 无头命令行工具 (<code>soeasy-cli</code>)。零 GUI 依赖，I/O 流分离，原生支持格式化 JSON 导出与 <code>jq</code> 管道串接，适配终端与自动化运维脚本。
+          </p>
+        </div>
+
+        <div class="pillar-card">
+          <div class="pillar-header">
+            <span class="pillar-code">06</span>
+            <span class="pillar-tag" data-i18n="p6-tag">流式架构</span>
+          </div>
+          <h3 class="pillar-title" data-i18n="p6-title">Cap'n Proto 256KB 分片流与 O(1) 冷启</h3>
+          <p class="pillar-desc" data-i18n="p6-desc">
+            IPC 全面升级为 256KB 分片流式契约，主进程内存高效拼装，消灭大文档磁盘临时溢出文件；底层采用单步流式游标迭代，冷启动内存从 O(N) 降至 O(1)，首屏加载提速 55.5%。
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -684,6 +706,12 @@
         "p4-tag": "图文提取",
         "p4-title": "深度优化的 DocToText 与轻量 OCR",
         "p4-desc": "文档内嵌图片流式回传 PP-OCRv6 原位提取；独创 Header Probe 零拷贝尺寸嗅探 (&lt;1µs) 拦截微型装饰图；双档位分辨率限边 (736/640) 内存立减 34%、提速超 40% 且精度无损；配合 mallopt(M_ARENA_MAX, 2) 彻底遏制内存碎片。",
+        "p5-tag": "双模交互",
+        "p5-title": "原生无头 CLI 与 Unix 管道拼装",
+        "p5-desc": "除直观的双栏 Qt 桌面端外，同时内置纯 C++17 无头命令行工具 (soeasy-cli)。零 GUI 依赖，I/O 流分离，原生支持格式化 JSON 导出与 jq 管道串接，适配终端与自动化运维脚本。",
+        "p6-tag": "流式架构",
+        "p6-title": "Cap'n Proto 256KB 分片流与 O(1) 冷启",
+        "p6-desc": "IPC 全面升级为 256KB 分片流式契约，主进程内存高效拼装，消灭大文档磁盘临时溢出文件；底层采用单步流式游标迭代，冷启动内存从 O(N) 降至 O(1)，首屏加载提速 55.5%。",
         "title-formats": "支持的文件与文档格式",
         "desc-formats": "全面解析主流办公、源码工程、版式文档与图片扫描件，无缝提取正文内容。",
         "fmt-c1": "纯文本与源码工程",
@@ -721,6 +749,12 @@
         "p4-tag": "Text Extraction",
         "p4-title": "Modernized DocToText & Optimized OCR",
         "p4-desc": "Dispatches embedded graphics directly to PP-OCRv6 for in-place text recovery. Zero-allocation Header Probe (&lt; 1 µs) filters icons and borders before decoding; dual-limit resolution scaling (736/640) cuts RAM by 34% and speeds inference by &gt;40% without accuracy loss; M_ARENA_MAX=2 stops fragmentation.",
+        "p5-tag": "Dual-Mode",
+        "p5-title": "Native Headless CLI & Unix Pipeline Ready",
+        "p5-desc": "In addition to the rich Qt desktop GUI, SoEasy includes an independent pure C++ headless binary (soeasy-cli) with zero GUI linkage, clean I/O separation, JSON streaming, and shell pipeline composability.",
+        "p6-tag": "Streaming Engine",
+        "p6-title": "Cap'n Proto 256KB Chunk Streaming & O(1) Cold Boot",
+        "p6-desc": "Upgrades IPC to a 256KB chunked capability stream to eliminate temporary spill files. Single-step streaming cursor reduces cold-boot heap allocations to O(1) while slashing initial startup latency by 55.5%.",
         "title-formats": "Supported Document & File Formats",
         "desc-formats": "Deep extraction across office suites, source trees, PDFs, and scanned documents.",
         "fmt-c1": "Plain Text & Code Trees",

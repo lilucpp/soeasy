@@ -20,7 +20,9 @@ SoEasy 是一款追求极速、安全与稳定的原生跨平台桌面全文检�
 ## 核心亮点速览
 
 - **毫秒级即搜即览**：底层集成 SQLite FTS5 倒排索引引擎与结巴分词，引入 BM25 算法优化相关度排序，支持海量文档中键入即搜与实时高亮正文预览。
-- **物理沙箱与崩溃自愈**：文件解析全部置于独立子进程 (`soeasy-worker`) 沙箱内运行，由主进程守卫 (`WorkerGuard`) 通过共享内存统一调度；遭遇死循环或损坏文件时毫秒级强杀自愈，界面永不卡死。
+- **物理沙箱与崩溃自愈**：文件解析全部置于独立子进程 (`soeasy-worker`) 沙箱内运行，由主进程守卫 (`WorkerGuard`) 统一调度；遭遇死循环或损坏文件时毫秒级强杀自愈，界面永不卡死。
+- **双模驱动与 Unix 工具拼装**：不仅提供清爽直观的 Qt5 双栏原生桌面客户端 (`soeasy-gui`)，还并列构建纯标准库无头 CLI 命令行工具 (`soeasy-cli`)，零 GUI 依赖，支持标准 Unix 流、JSON 格式化输出与脚本自动化拼装。
+- **Cap'n Proto 流式分片 IPC 与 O(1) 冷启动**：全面收敛为成熟的 256KB 流式分片（`TextStreamReceiver`）传输机制，杜绝大文件磁盘临时 Spill 文件；冷启动采用单步流式游标，堆内存开销从 $O(N)$ 降至 $O(1)$，首屏加载速度提升 **55.5%**。
 - **双数组 Trie (DAT) + mmap 零堆开销分词**：结巴 35 万词词典预编译为 DAT 二进制文件，运行时直接 `mmap` 零拷贝映射入内核内存页，词典常驻内存从 **120 MB 直降至 7.2 MB**（降低 94%）。
 - **极速轻量 OCR 优化引擎**：内置 PP-OCRv6 深度学习引擎，引入独创 Header Probe 纳秒级嗅探提前过滤微型图标与单色块，结合双档位自适应限边检测，显存立降 34%，推理提速超 40%。
 - **纯本地硬件绑定透明密态存储**：零网络依赖，拒绝遥测。索引库采用 SQLite3MultipleCiphers 进行页级 AES-128 强加密与 Zstd 高效压缩落盘，通过“一机一密”硬件信封加密技术防止脱机拷贝窃密。
@@ -34,28 +36,42 @@ SoEasy 是一款追求极速、安全与稳定的原生跨平台桌面全文检�
 
 ```mermaid
 flowchart TD
-    subgraph UI ["表现层 (soeasy-gui / Qt5)"]
-        MainWindow["MainWindow (单行检索与双栏交互)"]
-        ResultView["ResultView (虚拟视口 + 复合委托 + 悬浮预览)"]
-        PreviewPanel["PreviewPanel & DocumentViewerWidget"]
-        MainWindow --> ResultView
-        MainWindow --> PreviewPanel
+    subgraph UI ["表现层 (双模交互)"]
+        subgraph GUI ["原生桌面端 (soeasy-gui / Qt5)"]
+            MainWindow["MainWindow (单行检索与双栏交互)"]
+            ResultView["ResultView (虚拟视口 + 复合委托 + 悬浮预览)"]
+            PreviewPanel["PreviewPanel & DocumentViewerWidget"]
+            MainWindow --> ResultView
+            MainWindow --> PreviewPanel
+        end
+        subgraph CLI ["独立无头工具 (soeasy-cli / 纯 C++)"]
+            CliMain["soeasy-cli (search / stats / index / --json)"]
+        end
     end
 
-    subgraph Core ["核心服务层 (soeasy-service / CQRS 读写分离)"]
+    subgraph Core ["核心服务层 (soeasy-service / CQRS 读写解耦)"]
         IndexPipeline["IndexPipeline (统一服务门面)"]
 
-        subgraph QuerySide ["查询侧 (Read Path)"]
+        subgraph QuerySide ["查询侧 (Read Channel)"]
             SearchCoord["ISearchCoordinator / SearchCoordinator"]
-            NameIndex["NameIndex (内存文件名秒索引)"]
+            NameIndex["NameIndex (内存文件名秒索引, O(1) 流式游标冷启)"]
             SearchCoord --> NameIndex
         end
 
-        subgraph CommandSide ["命令侧 (Write Path)"]
-            Orchestrator["IndexOrchestrator (并发扫描调度)"]
+        subgraph CommandSide ["命令侧 (Write Channel)"]
+            Orchestrator["IndexOrchestrator (并发调度器)"]
+            Crawler["FileCrawler (递归遍历 & 挂载环路防死循环)"]
+            Reconciler["WatchReconciler (两阶段 Watch-First 对账)"]
+            Reclaimer["SpaceReclaimer (低优先级异步碎片整理)"]
+            Policy["PathFilterPolicy (无状态过滤策略)"]
             WatchEngine["WatchEngine & EventDebouncer (efsw 监听)"]
-            WorkerGuard["WorkerGuard (subprocess.h 沙箱看门狗)"]
+            WorkerGuard["WorkerGuard (subprocess.h 沙箱看门狗 + Stdio 环形缓冲)"]
             WriteQueue["AsyncWriteQueue (异步批量入库队列)"]
+
+            Orchestrator --> Crawler
+            Orchestrator --> Reconciler
+            Orchestrator --> Reclaimer
+            Orchestrator --> Policy
             Orchestrator --> WatchEngine
             Orchestrator --> WorkerGuard
             Orchestrator --> WriteQueue
@@ -66,23 +82,35 @@ flowchart TD
     end
 
     subgraph Sandbox ["独立解析沙箱进程 (soeasy-worker)"]
-        ParserRouter["三级解析路由 (L1 文本 / L2 Office & PDF / L3 PP-OCRv6)"]
+        ParserRouter["三级解析路由 (L1 文本流式 / L2 Office & PDF / L3 PP-OCRv6)"]
     end
 
     subgraph Storage ["加密存储与基础设施层 (soeasy-storage / common)"]
-        IStorage["«interface» IStorageEngine (依赖倒置抽象接口)"]
+        subgraph ISP ["瘦接口角色隔离 (ISP / CQRS)"]
+            IReader["«interface» IDocumentSearchReader"]
+            IWriter["«interface» IDocumentIndexWriter"]
+            IMaint["«interface» IStorageMaintenance"]
+        end
+        IStorage["«interface» IStorageEngine"]
         StorageEngine["StorageEngine (SQLite3MC AES-128 + Zstd)"]
         Subsystems["ReaderConnectionPool | Fts5JiebaTokenizer (DAT+mmap) | MachineKeyProvider"]
+
+        IStorage --> IReader
+        IStorage --> IWriter
+        IStorage --> IMaint
         StorageEngine -.->|"实现"| IStorage
         StorageEngine --> Subsystems
     end
 
     MainWindow --> IndexPipeline
+    CliMain --> SearchCoord
+    CliMain --> StorageEngine
     ResultView --> SearchCoord
     PreviewPanel --> SearchCoord
-    SearchCoord --> IStorage
-    WriteQueue --> IStorage
-    WorkerGuard ==>|"Cap'n Proto + 共享内存 IPC (物理进程隔离)"| ParserRouter
+    SearchCoord --> IReader
+    WriteQueue --> IWriter
+    Reclaimer --> IMaint
+    WorkerGuard ==>|"Cap'n Proto 256KB 分片流传输 (零 Spill 磁盘开销)"| ParserRouter
 ```
 
 ---
@@ -133,6 +161,33 @@ flowchart TD
 
 ---
 
+## 命令行工具与自动化集成 (`soeasy-cli`)
+
+为满足无图形界面的服务器、后台守护脚本及终端极客的高效使用需求，SoEasy 提供了完全独立的 Headless 原生命令行工具 `soeasy-cli`。
+
+- **零 GUI 依赖**：纯 C++17 标准库与核心服务构建，不链接任何 Qt 库；
+- **Unix 管道友好**：严格分离业务输出与诊断日志（业务数据与 JSON 走 `stdout`，进度与排障信息走 `stderr`）；
+- **标准退出码**：`0`（成功/命中）、`1`（未命中或执行错误）、`2`（参数解析错误）。
+
+```bash
+# 1. 基础关键词检索 (默认返回前 50 条)
+soeasy-cli search "并发编程" --limit 10
+
+# 2. 携带正文高亮摘要并输出标准 JSON (便于管道拼装给 jq 等工具)
+soeasy-cli search "algorithm" --json --snippet | jq '.results[0]'
+
+# 3. 指定前缀路径过滤检索
+soeasy-cli search "CMakeLists" --path "/home/peanut/project"
+
+# 4. 查看当前索引库状态与磁盘碎片率
+soeasy-cli stats --json
+
+# 5. 快速对单个文件或目录建立索引
+soeasy-cli index /path/to/documents -v
+```
+
+---
+
 ## 编译与快速开始
 
 ### 依赖环境
@@ -153,8 +208,9 @@ cmake --build build -j$(nproc)
 # 运行全量单元测试与组件自测
 ctest --test-dir build --output-on-failure
 
-# 启动 SoEasy
+# 启动 SoEasy 原生桌面界面或命令行工具
 ./build/soeasy-gui
+./build/soeasy-cli --help
 ```
 
 ### Windows 构建 (MSYS2 MinGW-w64)
@@ -184,8 +240,9 @@ cmake --build build -j$(nproc)
 # 3. 运行全量自动化测试
 ctest --test-dir build --output-on-failure
 
-# 4. 运行可执行程序
+# 4. 运行桌面程序或命令行工具
 ./build/soeasy-gui.exe
+./build/soeasy-cli.exe --help
 ```
 
 ---

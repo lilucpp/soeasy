@@ -36,6 +36,8 @@
 ### 关键设计决策
 - **彻底根除僵尸进程 (`<defunct>`)**：底层采用轻量级单头文件库 `subprocess.h` 配合自定义 RAII `SubprocessDeleter`（强制执行强杀、内核 `join` 回收与句柄释放），主进程无论遭遇何种异常退出，子进程均在内核级被彻底回收。
 - **零磁盘残留安全 IPC**：Linux 下抛弃传统 `/tmp/*.sock` 临时文件，采用 Linux Abstract Namespace Domain Sockets（抽象套接字），避免系统崩溃后在磁盘残留孤儿句柄。
+- **Cap'n Proto 256KB 流式分片传输**：引入 `TextStreamReceiver` 流式分片接口，大文本传输直接按 256KB 切片进行序列化并在主进程内存中高效重组，彻底消除传统将大文本溢出（Spill）落盘为临时文件的磁盘 I/O 开销与序列化冗余。
+- **子进程 Stdio 环形缓冲排障**：`WorkerGuard` 保留子进程的 `stderr` 输出，并通过内存环形缓冲区自动缓存最近 30 行诊断日志。遇偶发 SIGSEGV 崩溃时主动提取打印现场日志，彻底打破了将 `stderr` 重定向至 `/dev/null` 带来的黑盒排障困境。
 - **看门狗自愈机制**：当遇格式损坏文件诱发底层三方解析器陷入死循环或内存暴涨时，看门狗超时强杀子进程并自动重启干净的工作实例，主界面全程 0 停顿、0 卡死。
 
 ---
@@ -139,11 +141,30 @@ SoEasy 严守“零云端上传、零数据遥测”的隐私底线。为了防�
 
 ---
 
-## 6. 系统基准测试指标实证
+## 6. 接口隔离 (ISP)、冷启动 O(1) 游标与领域解耦
+
+系统遵循 Unix 极简原则与现代代码设计规范，彻底消灭超级上帝类与胖接口债务：
+
+- **瘦接口角色隔离 (ISP & CQRS 读写分离)**：
+  - `IStorageEngine` 彻底解耦为三个窄接口角色：`IDocumentSearchReader`（读）、`IDocumentIndexWriter`（写）与 `IStorageMaintenance`（维护）；
+  - `SearchCoordinator` 仅依赖只读接口，`SpaceReclaimer` 仅依赖维护接口，消除了不必要的耦合与越权风险。
+- **冷启动 $O(1)$ 流式游标迭代**：
+  - 废弃冷启动阶段全量将数十万文件记录装入临时 `std::vector` 的 `GetAllFilesMetadata()`；
+  - 升级为 `ForEachFileMetadata(callback)` 单步流式游标驱动内存 `NameIndex` 初始化，堆内存占用降至常数级 $O(1)$，实测 30 万条记录冷启动加载速度提升 **55.5%**（从 254ms 骤降至 113ms）。
+- **上帝类 `IndexOrchestrator` 领域拆解**：
+  - 剥离 `FileCrawler`：实现深度递归扫描、设备 inode 指纹检测与 bind-mount / NTFS Reparse Point 死循环防御；
+  - 剥离 `WatchReconciler`：落实两阶段 Watch-First 对账缓冲机制，保障扫描期间到达的文件变更 100% 零丢失且无并发竞态；
+  - 剥离 `SpaceReclaimer`：低优先级异步 SQLite 碎片检测与节奏化分块 `incremental_vacuum(250)`，彻底消除了主干调度流程中的锁争用。
+
+---
+
+## 7. 系统基准测试指标实证
 
 | 测试维度 | 实测数据 | 核心架构归因 |
 | :--- | :--- | :--- |
+| **冷启动首屏加载速度** | **提升 55.5%** (254ms $\to$ 113ms) | `ForEachFileMetadata` 单步游标直接驱动内存 `NameIndex`，消除 $O(N)$ 堆内存分配峰值 |
 | **后台闲置驻留内存** | **~ 82 MB** (全系统) | 主界面 GUI 约 76MB，Worker 沙箱 0 进程 / 0MB（按需延迟启动 + 60s 闲置自动回收），整体常驻内存降低 81% |
+| **跨进程大文件传输** | **零磁盘临时 Spill 文件** | Cap'n Proto 256KB 流式分片传输 (`TextStreamReceiver`)，主进程原位重组入库 |
 | **结巴分词词典内存** | **7.2 MB** (下降 94%) | Darts-clone 预编译二进制 DAT 词典 + Linux `mmap` 零拷贝映射，取代 120MB 动态堆树 |
 | **OCR 推理提速与降耗** | **速度提升 42% \| 内存降 34%** | Header Probe 纳秒级尺寸预过滤 + 双档位分辨率限边 (736/640)，99.37% 高准确率无损 |
 | **全文百万字检索耗时** | **< 0.5 ms** (毫秒瞬间响应) | SQLite FTS5 倒排索引 + CppJieba DAT 极速分词与 BM25 相关度评分优化 |

@@ -15,6 +15,10 @@
 | **FEAT-002** | **设置界面提供“自定义分词词典”可视化管理** | 6 | 4 | 4 | 2 | **2.6** | **P1 (中高)** | 已完成 (已验证) |
 | **FEAT-006** | **数据库密钥硬件绑定与一机一密零感知自动化** | 8 | 5 | 3 | 2 | **3.6** | **P1 (高优)** | 已完成 (已验证) |
 | **FEAT-007** | **引入 SQLiteCpp 现代 C++ 包装库重构底层 SQLite3 裸 C 接口** | 7 | 4 | 5 | 3 | **2.3** | **P1 (中高)** | 已完成 (已验证) |
+| **FEAT-008** | **独立 Headless 命令行工具 (soeasy-cli) 与 Unix 流支持** | 8 | 6 | 4 | 2 | **3.7** | **P1 (高优)** | 已完成 (已验证) |
+| **FEAT-009** | **Cap'n Proto 256KB 流式分片传输与零磁盘 Spill 现代化 IPC** | 8 | 7 | 4 | 3 | **3.3** | **P1 (高优)** | 已完成 (已验证) |
+| **FEAT-010** | **IStorageEngine 角色接口隔离 (ISP) 与 O(1) 冷启动流式游标** | 8 | 6 | 3 | 2 | **4.4** | **P0 (极高)** | 已完成 (已验证) |
+| **FEAT-011** | **IndexOrchestrator 上帝类领域解耦与挂载死循环防护** | 7 | 6 | 4 | 3 | **2.9** | **P1 (中高)** | 已完成 (已验证) |
 | **FEAT-003** | **Linux 监控注册阶段物理剪枝与监控库架构升级** | 7 | 8 | 6 | 5 | **2.0** | **P1 (评估中)**| 调研阶段 |
 | **FEAT-004** | **压缩包格式（zip/7z/tar 等）正文递归检索** | 5 | 3 | 8 | 8 | **0.8** | **P2 (延后)** | 需求待细化 |
 
@@ -191,3 +195,9 @@
   - **物理防脱机拷贝**：脱机拷贝至其他电脑因 Machine-ID 校验失败而无法解封，数据库物理表现为乱码（`file is not a database`）；
   - **存量旧库无感平滑迁移**：启动时智能探测，若检测到存量静态口令数据库，后台自动执行 `sqlite3_rekey` 静默升级至本机高熵密钥；
   - **全量测试验收**：新增 6 项针对性 GoogleTest（包含机器码稳定性、首创权限 0600、幂等读取、外机入侵防御、存储引擎集成、旧库迁移），全工程 65 项自动化测试 100% 通过。（由 `tests/test_machine_key_provider_gtest.cpp` 验证闭环）
+- [x] **[MILE-010] 系统架构演进与 Unix 设计哲学重构 (FEAT-008 ~ FEAT-011)**：
+  - **Headless 原生命令行工具 (soeasy-cli)**：纯标准库构建，零 Qt 依赖，严格分离 stdout 与 stderr，支持 `search`、`stats`、`index` 指令与 `--json`、`--snippet`、`-v` 选项，遵循 Unix 管道拼装原则；
+  - **Cap'n Proto 256KB 分片流传输 (TextStreamReceiver)**：彻底消除大文件磁盘临时 Spill 文件与跨进程内存双重拷贝，支持高并发崩溃自愈与 Worker Stdio 环形缓冲排障；
+  - **接口隔离原则 (ISP) 与 CQRS 读写分离**：`IStorageEngine` 彻底拆解为 `IDocumentSearchReader`（读）、`IDocumentIndexWriter`（写）与 `IStorageMaintenance`（维护），收敛角色权限；
+  - **O(1) 冷启动流式游标**：`ForEachFileMetadata` 单步游标直接驱动内存 `NameIndex`，消除 $O(N)$ 堆内存尖峰，首屏初始化耗时降低 **55.5%**（从 254ms 降至 113ms）；
+  - **上帝类 IndexOrchestrator 领域解耦**：拆解为 `FileCrawler`（文件遍历与设备 inode / bind-mount 死循环防御）、`WatchReconciler`（两阶段 Watch-First 对账队列）、`SpaceReclaimer`（低优先级 SQLite 碎片整理）与 `PathFilterPolicy`（无状态规则策略）；全量 78 项自动化测试 100% 保持通过。（由 `test_parser_registry` 与 `test_sandbox_ipc` 等验证闭环）
