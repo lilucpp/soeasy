@@ -128,7 +128,7 @@ void I18n::InitDictionary() {
       {"guide_title", "SoEasy 桌面搜索引擎"},
       {"guide_subtitle", "让电脑没有难搜的文件 · 快捷操作速查"},
       {"guide_kbd_title", "⌨️ 常用快捷键"},
-      {"guide_tips_title", "💡 高效搜索技巧"},
+      {"guide_tips_title", "<span style=\"color:#D97706;\">★</span> 高效搜索技巧"},
       {"guide_kbd_nav", "在结果列表中切换并实时预览"},
       {"guide_kbd_open", "以默认程序直接打开文件"},
       {"guide_kbd_folder", "打开文件所在目录"},
@@ -137,9 +137,9 @@ void I18n::InitDictionary() {
       {"guide_kbd_settings", "打开系统设置"},
       {"guide_kbd_esc", "清空搜索词 / 最小化至托盘"},
       {"guide_tips_html",
-       "<li><b>全文检索 (FTS5)</b>：多词空格组合（如 <code>报告 2026</code>），毫秒级倒排索引</li>"
-       "<li><b>文件名秒搜</b>：点击搜索栏左侧模式下拉可秒级查找任意文件名</li>"
-       "<li><b>管理搜索目录</b>：点击右上角【⚙ 系统设置】可自由增减受索引监控的文件夹</li>"},
+       "<li><b>基础检索</b>：空格表“与”（<code>报告 2026</code>）、<code>\"精确短语\"</code>、前缀 <code>data*</code></li>"
+       "<li><b>高级语法</b>：大写 <code>AND / OR / NOT</code>、<code>file_name:</code> / <code>body:</code>、<code>NEAR(词1 词2, 5)</code></li>"
+       "<li><b>模式与目录</b>：左上切换全文/文件名秒搜，右上【系统设置】管理目录</li>"},
 
       // Status Bar
       {"status_ready", "<span style=\"color: #16A34A; font-size: 13px;\">●</span> 就绪"},
@@ -464,7 +464,7 @@ void I18n::InitDictionary() {
       {"guide_title", "SoEasy Desktop Search"},
       {"guide_subtitle", "Fast, local & secure desktop search · Quick Reference"},
       {"guide_kbd_title", "⌨️ Keyboard Shortcuts"},
-      {"guide_tips_title", "💡 Search Tips"},
+      {"guide_tips_title", "<span style=\"color:#D97706;\">★</span> Search Tips"},
       {"guide_kbd_nav", "Navigate results with live preview"},
       {"guide_kbd_open", "Open file with default program"},
       {"guide_kbd_folder", "Open containing folder"},
@@ -473,9 +473,9 @@ void I18n::InitDictionary() {
       {"guide_kbd_settings", "Open System Settings"},
       {"guide_kbd_esc", "Clear query / hide to tray"},
       {"guide_tips_html",
-       "<li><b>Full-text Search (FTS5)</b>: Multi-word space combinations (e.g. <code>report 2026</code>)</li>"
-       "<li><b>Instant Filename</b>: Toggle mode to instant filename matching across all files</li>"
-       "<li><b>Manage Directories</b>: Click [⚙ System Settings] to configure monitored folders</li>"},
+       "<li><b>Basics</b>: Space = AND (<code>report 2026</code>), <code>\"exact phrase\"</code>, prefix <code>data*</code></li>"
+       "<li><b>Advanced</b>: Uppercase <code>AND / OR / NOT</code>, <code>file_name:</code> / <code>body:</code>, <code>NEAR(a b, 5)</code></li>"
+       "<li><b>Modes &amp; Scope</b>: Switch Hybrid / Full-text / Filename on top-left; manage folders in Settings</li>"},
 
       // Status Bar
       {"status_ready", "<span style=\"color: #16A34A; font-size: 13px;\">●</span> Ready"},

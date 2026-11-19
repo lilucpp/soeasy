@@ -216,6 +216,11 @@ int main(int argc, char *argv[]) {
     config->set_ui_language("zh");
     CHECK(soeasy::gui::Tr("hint_workers_restart").contains("重启"));
     CHECK(soeasy::gui::Tr("msg_worker_count_restart").contains("重启"));
+    CHECK(!soeasy::gui::Tr("guide_tips_title").contains(QString::fromUtf8("\xF0\x9F\x92\xA1")));
+    CHECK(soeasy::gui::Tr("guide_tips_title").contains("★"));
+    CHECK(soeasy::gui::Tr("guide_tips_html").contains("NEAR("));
+    CHECK(soeasy::gui::Tr("guide_tips_html").contains("file_name:"));
+    CHECK(soeasy::gui::Tr("guide_tips_html").contains("body:"));
     CHECK(soeasy::gui::Tr("app_title") == "SoEasy | 让电脑没有难搜的文件");
     CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office 新版格式 (OOXML)");
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "Word 2007+ 文本文档") == "Word 2007+ 文本文档");

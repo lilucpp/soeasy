@@ -105,6 +105,34 @@ flowchart TD
 
 ---
 
+## Search Syntax (FTS5)
+
+SoEasy provides three search modes in the top-left selector:
+- **Hybrid**: Combines instant filename/pinyin matches (boosted) with FTS5 full-text matches.
+- **Full-Text (FTS5)**: Queries the SQLite FTS5 inverted index (`file_name` and `body` columns) with a case-insensitive Jieba tokenizer and `bm25` relevance ranking.
+- **Filename**: Ultra-fast in-memory trie, substring, and pinyin matching on file names only.
+
+### Supported FTS5 Syntax
+
+| Syntax | Example | Behavior |
+| :--- | :--- | :--- |
+| **Single / Continuous CJK** | `内存`, `高性能分布式搜索引擎` | Jieba word segmentation; index-time CJK character colocation also enables single-character matches |
+| **Implicit AND** | `sqlite indexing` | Space-separated terms must all appear in the document |
+| **Boolean Operators** | `sqlite AND arch`, `mysql OR pytorch`, `全文检索 NOT 结巴` | Standard FTS5 `AND`, `OR`, `NOT` (operators must be **uppercase**) |
+| **Parentheses Grouping** | `(sqlite OR mysql) AND storage` | Explicit operator precedence |
+| **Prefix Wildcard (`*`)** | `data*`, `搜索*` | Matches any token starting with the given prefix |
+| **Exact Phrase (`"..."`)** | `"虚拟地址转换"`, `"lock-free"` | Matches tokens consecutively in exact order |
+| **Column Filter** | `file_name: "cpp_concurrency.cpp"`, `body: 倒排索引` | Restricts matching to `file_name` or `body` |
+| **Proximity (`NEAR`)** | `NEAR(全文检索 分词, 5)` | Matches when terms are separated by at most `N` **tokens** (words, not characters; requires ASCII `,`) |
+| **Special Symbol Fallback** | `C++`, `lock-free` | Queries that trigger an FTS5 syntax error automatically fall back to quoted literal tokens without failing |
+
+> 💡 **Practical Notes**:
+> - Boolean keywords (`AND`, `OR`, `NOT`) must be uppercase; lowercase words are treated as normal search terms.
+> - `NEAR(term1 term2, N)` measures distance in **segmented tokens** rather than raw character count (e.g., an unbroken `xxxxxxxx` counts as 1 token), and requires an ASCII comma `,`.
+> - Path scoping in the search bar filters results by directory prefix (case-insensitive on Windows).
+
+---
+
 ## Building from Source
 
 ### Prerequisites
