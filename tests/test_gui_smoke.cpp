@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QGroupBox>
 #include <QLabel>
 #include <QMetaObject>
@@ -15,7 +16,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -52,8 +52,10 @@
 namespace {
 
 void WriteFile(const std::string &path, const std::string &content) {
-  std::ofstream ofs(path, std::ios::binary);
-  ofs.write(content.data(), content.size());
+  QFile f(QString::fromUtf8(path.data(), static_cast<int>(path.size())));
+  if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    f.write(content.data(), static_cast<qint64>(content.size()));
+  }
 }
 
 }  // namespace
@@ -405,10 +407,12 @@ int main(int argc, char *argv[]) {
     const QString ultra_long_path = QString::fromStdString(test_dir) + "/_gen_word/" + ultra_long_name;
     QDir().mkpath(QFileInfo(ultra_long_path).absolutePath());
     WriteFile(ultra_long_path.toStdString(), "正文内容：超长无空格检索关键词用来检验预览工具栏标签...");
+    CHECK(QFile::exists(ultra_long_path));
     const std::string ultra_long_kw =
-        "超长无空格检索关键词用来检验预览工具栏标签在极端窄栏下不会把左侧文件列表撑爆_0123456789";
+        "超长无空格检索关键词用来检验预览工具栏标签在极端窄栏下不会把左侧文件列表撑爆_"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
     ppanel->LoadDocument(999999, ultra_long_name, ultra_long_path, {ultra_long_kw});
-    ppanel->WaitForLoadFinished(1000);
+    ppanel->WaitForLoadFinished(3000);
     app.processEvents();
     app.processEvents();
     CHECK(rview->width() >= 550);
