@@ -36,48 +36,6 @@ namespace service {
 
 namespace {
 
-struct DirFingerprint {
-  uint64_t dev{0};
-  uint64_t ino{0};
-  bool operator==(const DirFingerprint &other) const { return dev == other.dev && ino == other.ino; }
-};
-
-struct DirFingerprintHash {
-  std::size_t operator()(const DirFingerprint &fp) const {
-    return std::hash<uint64_t>()(fp.dev) ^ (std::hash<uint64_t>()(fp.ino) << 1);
-  }
-};
-
-bool GetDirFingerprint(const std::filesystem::path &p, DirFingerprint *fp) {
-#ifndef _WIN32
-  struct stat st;
-  if (::stat(p.c_str(), &st) == 0) {
-    if (fp) {
-      fp->dev = static_cast<uint64_t>(st.st_dev);
-      fp->ino = static_cast<uint64_t>(st.st_ino);
-    }
-    return true;
-  }
-  return false;
-#else
-  HANDLE h_file = CreateFileW(p.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
-                              FILE_FLAG_BACKUP_SEMANTICS, NULL);
-  if (h_file != INVALID_HANDLE_VALUE) {
-    BY_HANDLE_FILE_INFORMATION info;
-    if (GetFileInformationByHandle(h_file, &info)) {
-      if (fp) {
-        fp->dev = static_cast<uint64_t>(info.dwVolumeSerialNumber);
-        fp->ino = (static_cast<uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
-      }
-      CloseHandle(h_file);
-      return true;
-    }
-    CloseHandle(h_file);
-  }
-  return false;
-#endif
-}
-
 std::string ExtractFileName(const std::string &path) {
   size_t pos = path.find_last_of("/\\");
   if (pos == std::string::npos) {
@@ -141,8 +99,8 @@ std::string NormalizeDirPrefixSlash(const std::string &dir_path) {
 }
 
 bool IsEmbeddedOcrCandidateExt(const std::string &ext) {
-  static const std::unordered_set<std::string> kOcrDocExts = {
-      "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "odg", "wps", "et", "dps", "rtf"};
+  static const std::unordered_set<std::string> kOcrDocExts = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt",
+                                                              "ods", "odp", "odg",  "wps", "et",   "dps", "rtf"};
   return kOcrDocExts.find(ext) != kOcrDocExts.end();
 }
 
@@ -201,11 +159,7 @@ std::mutex &IndexOrchestrator::LockBucketForPath(const std::string &file_path) c
 }
 
 void IndexOrchestrator::StopAndJoinReclaim() {
-  stop_reclaim_.store(true);
-  std::lock_guard<std::mutex> lock(reclaim_mutex_);
-  if (space_reclaim_thread_.joinable()) {
-    space_reclaim_thread_.join();
-  }
+  space_reclaimer_.StopAndJoin();
 }
 
 bool IndexOrchestrator::DoInit() {
@@ -216,9 +170,10 @@ bool IndexOrchestrator::DoInit() {
   debouncer_ = std::make_shared<EventDebouncer>(config_->debounce_ms());
   debouncer_->SetCallback([this](const DebouncedEvent &ev) { HandleFileChange(ev); });
 
-  // Cold-start recovery: load existing files metadata directly from database into NameIndex
-  auto existing_files = storage_engine_->GetAllFilesMetadata();
-  for (const auto &f : existing_files) {
+  // Cold-start recovery: load existing files metadata directly from database into NameIndex via streaming cursor (O(1)
+  // memory)
+  size_t cold_file_count = 0;
+  storage_engine_->ForEachFileMetadata([this, &cold_file_count](const storage::FileMetaRecord &f) {
     NameRecord rec;
     rec.doc_id = f.doc_id;
     rec.file_name = f.file_name;
@@ -227,8 +182,9 @@ bool IndexOrchestrator::DoInit() {
     rec.file_size = f.file_size;
     rec.mtime = f.mtime;
     name_index_->Upsert(rec);
-  }
-  LOG_INFO("[IndexOrchestrator] Cold-started NameIndex with {} files from database.", existing_files.size());
+    ++cold_file_count;
+  });
+  LOG_INFO("[IndexOrchestrator] Cold-started NameIndex with {} files from database.", cold_file_count);
 
   watch_engine_ = std::make_shared<WatchEngine>(config_, debouncer_);
   watch_engine_->SetPathKnownCallback(
@@ -237,7 +193,8 @@ bool IndexOrchestrator::DoInit() {
   if (storage_engine_->GetMetaValue("index_state", &index_state_val) && !index_state_val.empty()) {
     if (index_state_val == "rebuilding_incomplete") {
       persisted_index_state_.store(PersistedIndexState::kRebuildingIncomplete, std::memory_order_release);
-      LOG_WARN("[IndexOrchestrator] Detected incomplete rebuild state ('rebuilding_incomplete') from previous session.");
+      LOG_WARN(
+          "[IndexOrchestrator] Detected incomplete rebuild state ('rebuilding_incomplete') from previous session.");
     } else if (index_state_val == "scanning") {
       persisted_index_state_.store(PersistedIndexState::kScanning, std::memory_order_release);
       LOG_WARN("[IndexOrchestrator] Detected interrupted scan state ('scanning') from previous session.");
@@ -365,63 +322,7 @@ void IndexOrchestrator::PurgeFailedFilesUnder(const std::string &dir_path) {
 }
 
 void IndexOrchestrator::DoTriggerAsyncSpaceReclaim() {
-  std::lock_guard<std::mutex> lock(reclaim_mutex_);
-  if (is_reclaiming_space_.exchange(true)) {
-    LOG_DEBUG("[IndexOrchestrator] Space reclaim is already running in background, skipping.");
-    return;
-  }
-
-  if (space_reclaim_thread_.joinable()) {
-    space_reclaim_thread_.join();
-  }
-  stop_reclaim_.store(false);
-
-  space_reclaim_thread_ = std::thread([this]() {
-    struct ReclaimFlagGuard {
-      explicit ReclaimFlagGuard(std::atomic<bool> *flag) : flag_(flag) {}
-      ~ReclaimFlagGuard() {
-        if (flag_) flag_->store(false);
-      }
-      ReclaimFlagGuard(const ReclaimFlagGuard &) = delete;
-      ReclaimFlagGuard &operator=(const ReclaimFlagGuard &) = delete;
-      ReclaimFlagGuard(ReclaimFlagGuard &&) = delete;
-      ReclaimFlagGuard &operator=(ReclaimFlagGuard &&) = delete;
-      std::atomic<bool> *flag_;
-    } flag_guard(&is_reclaiming_space_);
-
-    LOG_INFO("[IndexOrchestrator] Starting asynchronous space reclamation check...");
-    if (!storage_engine_ || stop_reclaim_.load()) {
-      return;
-    }
-
-    storage::StorageFragmentation frag;
-    if (!storage_engine_->GetFragmentation(&frag)) {
-      LOG_WARN("[IndexOrchestrator] Failed to query database fragmentation status.");
-      return;
-    }
-
-    LOG_INFO("[IndexOrchestrator] Storage status: total={:.2f} MB, free={:.2f} MB ({:.1f}%), free_pages={}",
-             frag.total_bytes / (1024.0 * 1024.0), frag.free_bytes / (1024.0 * 1024.0), frag.frag_ratio * 100.0,
-             frag.free_pages);
-
-    if (frag.free_pages >= kMinFreePagesForVacuum || frag.frag_ratio >= kMinFragRatioForVacuum) {
-      LOG_INFO("[IndexOrchestrator] Fragmentation exceeds threshold. Initiating paced incremental vacuum...");
-
-      int64_t pages_left = frag.free_pages;
-      while (pages_left > 0 && !stop_reclaim_.load()) {
-        int pages_to_clean = static_cast<int>(std::min<int64_t>(pages_left, kVacuumChunkPages));
-        if (!storage_engine_->IncrementalVacuum(pages_to_clean)) {
-          LOG_WARN("[IndexOrchestrator] Incremental vacuum failed during paced cleanup.");
-          break;
-        }
-        pages_left -= pages_to_clean;
-        std::this_thread::sleep_for(kVacuumPacingInterval);
-      }
-      LOG_INFO("[IndexOrchestrator] Paced incremental vacuum completed successfully.");
-    } else {
-      LOG_DEBUG("[IndexOrchestrator] Fragmentation level is healthy, no vacuum required.");
-    }
-  });
+  space_reclaimer_.TriggerAsyncReclaim(storage_engine_);
 }
 
 void IndexOrchestrator::SetPersistedIndexState(PersistedIndexState state) {
@@ -441,69 +342,29 @@ void IndexOrchestrator::SetPersistedIndexState(PersistedIndexState state) {
 
 void IndexOrchestrator::EnableWatchBuffering(bool clear_existing) {
   std::lock_guard<std::mutex> dispatch_lock(live_dispatch_mutex_);
-  std::lock_guard<std::mutex> buf_lock(buffered_events_mutex_);
-  if (clear_existing) {
-    buffered_watch_events_.clear();
-  }
-  buffer_watch_events_.store(true, std::memory_order_release);
+  watch_reconciler_.EnableBuffering(clear_existing);
 }
 
 void IndexOrchestrator::RecordBufferedEventUnlocked(const DebouncedEvent &event) {
-  auto merge_single = [&](const std::string &path, FileChangeAction action, const std::string &old_path) {
-    auto it = buffered_watch_events_.find(path);
-    if (it == buffered_watch_events_.end()) {
-      buffered_watch_events_[path] = DebouncedEvent{path, old_path, action, event.last_event_time};
-      return;
-    }
-    it->second.last_event_time = event.last_event_time;
-    const FileChangeAction prev = it->second.action;
-    if (action == FileChangeAction::kDelete) {
-      // Keep explicit delete so reconciliation removes records the scan may have visited before deletion.
-      it->second.action = FileChangeAction::kDelete;
-    } else if (prev == FileChangeAction::kDelete || action == FileChangeAction::kModified ||
-               prev == FileChangeAction::kModified) {
-      it->second.action = FileChangeAction::kModified;
-    } else {
-      it->second.action = action;
-    }
-  };
-
-  if (event.action == FileChangeAction::kMoved && !event.old_path.empty()) {
-    merge_single(event.old_path, FileChangeAction::kDelete, "");
-    merge_single(event.file_path, FileChangeAction::kAdd, event.old_path);
-    return;
-  }
-  merge_single(event.file_path, event.action, event.old_path);
+  watch_reconciler_.RecordEvent(event);
 }
 
 void IndexOrchestrator::ReconcileAndDisableWatchBuffering() {
   phase_.store(OrchestratorPhase::kReconciling, std::memory_order_release);
   while (true) {
-    std::vector<DebouncedEvent> batch;
-    {
-      std::lock_guard<std::mutex> buf_lock(buffered_events_mutex_);
-      if (!buffered_watch_events_.empty() && !bg_stopping_.load(std::memory_order_acquire)) {
-        batch.reserve(buffered_watch_events_.size());
-        for (auto &kv : buffered_watch_events_) {
-          batch.push_back(std::move(kv.second));
-        }
-        buffered_watch_events_.clear();
-      }
-    }
+    std::vector<DebouncedEvent> batch = watch_reconciler_.DrainBatch();
 
     if (batch.empty()) {
       std::lock_guard<std::mutex> dispatch_lock(live_dispatch_mutex_);
-      std::lock_guard<std::mutex> buf_lock(buffered_events_mutex_);
-      if (buffered_watch_events_.empty() || bg_stopping_.load(std::memory_order_acquire)) {
-        buffered_watch_events_.clear();
-        buffer_watch_events_.store(false, std::memory_order_release);
+      if (watch_reconciler_.TryDisableBufferingIfEmpty(&batch)) {
         return;
       }
-      batch.reserve(buffered_watch_events_.size());
-      for (auto &kv : buffered_watch_events_) {
-        batch.push_back(std::move(kv.second));
-      }
-      buffered_watch_events_.clear();
+    }
+
+    if (bg_stopping_.load(std::memory_order_acquire)) {
+      std::lock_guard<std::mutex> dispatch_lock(live_dispatch_mutex_);
+      watch_reconciler_.ForceDisableBuffering();
+      return;
     }
 
     LOG_INFO("[IndexOrchestrator] Reconciling {} buffered filesystem events captured during scan/rebuild.",
@@ -601,77 +462,11 @@ void IndexOrchestrator::CollectScanCandidates(const std::vector<std::string> &wa
                                               std::vector<std::string> *files_to_index,
                                               std::unordered_set<int64_t> *visited_doc_ids,
                                               std::vector<std::string> *traversed_root_prefixes) {
-  std::unordered_set<DirFingerprint, DirFingerprintHash> visited_dirs;
-  for (const auto &dir : watched_dirs) {
-    if (cancel_scan_.load()) {
-      break;
-    }
-    try {
-      auto target_p = common::EncodingUtils::PathFromUtf8(dir);
-      std::error_code root_ec;
-      if (!std::filesystem::is_directory(target_p, root_ec)) {
-        continue;
-      }
-      DirFingerprint root_fp;
-      if (GetDirFingerprint(target_p, &root_fp)) {
-        if (!visited_dirs.insert(root_fp).second) {
-          LOG_INFO("[IndexOrchestrator] Watched directory '{}' is already scanned or a bind mount mirror, skipping.",
-                   dir);
-          continue;
-        }
-      }
-
-      bool dir_completed = true;
-      for (auto it = std::filesystem::recursive_directory_iterator(
-               target_p, std::filesystem::directory_options::skip_permission_denied);
-           it != std::filesystem::recursive_directory_iterator(); ++it) {
-        if (cancel_scan_.load()) {
-          LOG_INFO("[IndexOrchestrator] Initial scan cancelled by user during candidate file discovery.");
-          dir_completed = false;
-          break;
-        }
-        if (it->is_directory()) {
-          std::string sub_dir = common::EncodingUtils::PathToUtf8(it->path());
-          if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
-            it.disable_recursion_pending();
-            continue;
-          }
-          DirFingerprint fp;
-          if (GetDirFingerprint(it->path(), &fp)) {
-            if (!visited_dirs.insert(fp).second) {
-              LOG_DEBUG("[IndexOrchestrator] Skipping duplicate/bind-mounted directory: '{}'", sub_dir);
-              it.disable_recursion_pending();
-              continue;
-            }
-          }
-        }
-        if (it->is_regular_file()) {
-          std::string fpath = common::EncodingUtils::PathToUtf8(it->path());
-          visited_doc_ids->insert(GenerateDocId(fpath));
-          std::string fname = common::EncodingUtils::PathToUtf8(it->path().filename());
-          std::string ext = ExtractExtension(fname);
-          uint64_t fsize = 0;
-          int64_t fmtime = 0;
-          if (!common::EncodingUtils::GetFileStat(fpath, &fsize, &fmtime)) {
-            try {
-              fsize = it->file_size();
-            } catch (const std::exception &e) {
-              LOG_DEBUG("[IndexOrchestrator] Fallback file_size() failed for '{}': {}", fpath, e.what());
-            }
-          }
-
-          if (config_ && config_->ShouldIndex(fpath, ext, fsize)) {
-            files_to_index->push_back(fpath);
-          }
-        }
-      }
-      if (dir_completed) {
-        traversed_root_prefixes->push_back(NormalizeDirPrefixSlash(dir));
-      }
-    } catch (const std::exception &e) {
-      LOG_WARN("[IndexOrchestrator] Failed to scan watched directory '{}': {}", dir, e.what());
-    }
-  }
+  if (!config_) return;
+  auto res = FileCrawler::CollectCandidates(watched_dirs, *config_, cancel_scan_);
+  if (files_to_index) *files_to_index = std::move(res.files_to_index);
+  if (visited_doc_ids) *visited_doc_ids = std::move(res.visited_doc_ids);
+  if (traversed_root_prefixes) *traversed_root_prefixes = std::move(res.traversed_root_prefixes);
 }
 
 size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, bool manage_buffering,
@@ -887,7 +682,8 @@ bool IndexOrchestrator::RebuildIndexInternal(ScanProgressCallback progress_cb, b
   size_t indexed = PerformScanInternal(std::move(progress_cb), /*manage_buffering=*/false, /*manage_phase=*/false);
 
   if (cancel_scan_.load()) {
-    LOG_INFO("[IndexOrchestrator] Rebuild cancelled after indexing {} files (rebuild_incomplete remains set).", indexed);
+    LOG_INFO("[IndexOrchestrator] Rebuild cancelled after indexing {} files (rebuild_incomplete remains set).",
+             indexed);
     return false;
   }
   SetPersistedIndexState(PersistedIndexState::kReady);
@@ -896,34 +692,15 @@ bool IndexOrchestrator::RebuildIndexInternal(ScanProgressCallback progress_cb, b
 }
 
 void IndexOrchestrator::ScanDirectoryRecursive(const std::string &dir_path, bool force_reindex) {
-  if (cancel_scan_.load() || bg_stopping_.load()) {
+  if (cancel_scan_.load() || bg_stopping_.load() || !config_) {
     return;
   }
-  if (config_ && config_->IsDirectoryExcluded(dir_path)) {
-    return;
-  }
-  try {
-    auto target_p = common::EncodingUtils::PathFromUtf8(dir_path);
-    for (auto it = std::filesystem::recursive_directory_iterator(
-             target_p, std::filesystem::directory_options::skip_permission_denied);
-         it != std::filesystem::recursive_directory_iterator(); ++it) {
-      if (cancel_scan_.load() || bg_stopping_.load()) break;
-
-      if (it->is_directory()) {
-        std::string sub_dir = common::EncodingUtils::PathToUtf8(it->path());
-        if (config_ && config_->IsDirectoryExcluded(sub_dir)) {
-          it.disable_recursion_pending();
-          continue;
-        }
-      }
-      if (it->is_regular_file()) {
-        std::string fpath = common::EncodingUtils::PathToUtf8(it->path());
-        IndexSingleFile(fpath, force_reindex);
-      }
-    }
-  } catch (const std::exception &e) {
-    LOG_WARN("[IndexOrchestrator] Error walking directory '{}': {}", dir_path, e.what());
-  }
+  FileCrawler::WalkDirectory(dir_path, *config_, cancel_scan_,
+                             [this, force_reindex](const std::string &fpath, uint64_t, int64_t) {
+                               if (!bg_stopping_.load()) {
+                                 IndexSingleFile(fpath, force_reindex);
+                               }
+                             });
 }
 
 bool IndexOrchestrator::IndexSingleFile(const std::string &file_path, bool force_reindex) {
@@ -1036,7 +813,10 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     std::string path;
   } spill_guard{res.spill_file_path};
 
-  if (!res.spill_file_path.empty()) {
+  if (!res.extracted_text.empty()) {
+    parsed_text = std::move(res.extracted_text);
+    extracted_bytes = parsed_text.size();
+  } else if (!res.spill_file_path.empty()) {
     std::error_code ec;
     auto ifs = common::EncodingUtils::OpenIfstream(res.spill_file_path);
     if (ifs.is_open()) {
@@ -1102,10 +882,13 @@ void IndexOrchestrator::PersistIndexedFile(int64_t doc_id, const std::string &fi
 }
 
 bool IndexOrchestrator::DoHandleFileChange(const DebouncedEvent &event) {
+  if (watch_reconciler_.IsBufferingEnabled()) {
+    watch_reconciler_.RecordEvent(event);
+    return true;
+  }
   std::unique_lock<std::mutex> dispatch_lock(live_dispatch_mutex_);
-  if (buffer_watch_events_.load(std::memory_order_acquire)) {
-    std::lock_guard<std::mutex> buf_lock(buffered_events_mutex_);
-    RecordBufferedEventUnlocked(event);
+  if (watch_reconciler_.IsBufferingEnabled()) {
+    watch_reconciler_.RecordEvent(event);
     return true;
   }
   return ApplyLiveFileChange(event, /*from_reconcile=*/false);
@@ -1119,9 +902,8 @@ bool IndexOrchestrator::ApplyLiveFileChange(const DebouncedEvent &event, bool fr
       const int64_t doc_id = GenerateDocId(target_path);
       uint64_t dummy_size = 0;
       int64_t dummy_mtime = 0;
-      const bool exact_known =
-          (name_index_ && name_index_->GetMetadata(doc_id, &dummy_size, &dummy_mtime)) ||
-          (storage_engine_ && storage_engine_->GetFileMetadata(doc_id, &dummy_size, &dummy_mtime));
+      const bool exact_known = (name_index_ && name_index_->GetMetadata(doc_id, &dummy_size, &dummy_mtime)) ||
+                               (storage_engine_ && storage_engine_->GetFileMetadata(doc_id, &dummy_size, &dummy_mtime));
       const bool is_subtree = !exact_known && name_index_ && name_index_->ContainsPathOrPrefix(target_path);
       if (!is_subtree) {
         handled_as_single_file = true;

@@ -341,6 +341,10 @@ target_link_libraries(soeasy-worker PRIVATE
 # 8. Service Subsystem (Watcher, Debouncer, NameIndex, Pipeline, Guard)
 # -------------------------------------------------------------
 add_library(soeasy_service STATIC
+    src/service/path_filter_policy.cpp
+    src/service/file_crawler.cpp
+    src/service/watch_reconciler.cpp
+    src/service/space_reclaimer.cpp
     src/service/index_config.cpp
     src/service/event_debouncer.cpp
     src/service/watch_engine.cpp
@@ -514,6 +518,21 @@ add_executable(soeasy-gui WIN32
 target_link_libraries(soeasy-gui PRIVATE
     soeasy_gui
     soeasy_storage
+)
+
+# -------------------------------------------------------------
+# 10.1 CLI Subsystem (Headless Unix CLI Binary)
+# -------------------------------------------------------------
+add_executable(soeasy-cli
+    src/cli/main_cli.cpp
+)
+target_include_directories(soeasy-cli PRIVATE
+    src
+)
+target_link_libraries(soeasy-cli PRIVATE
+    soeasy_service
+    soeasy_storage
+    soeasy_common
 )
 
 if(BUILD_TESTS)
@@ -849,7 +868,7 @@ endif()
 # -------------------------------------------------------------
 add_custom_target(package_zip
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/package.sh
-    DEPENDS soeasy-gui soeasy-worker
+    DEPENDS soeasy-gui soeasy-worker soeasy-cli
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Building and packaging SoEasy standalone release zip..."
 )

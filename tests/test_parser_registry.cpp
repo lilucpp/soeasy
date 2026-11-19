@@ -1,8 +1,6 @@
 // Copyright 2026 SoEasy Team. All rights reserved.
 // Use of this source code is governed by an Apache-2.0 license.
 
-#include "worker/parser_registry.h"
-
 #include <cassert>
 #include <chrono>
 #include <fstream>
@@ -14,6 +12,7 @@
 #include "worker/l1_text_parser.h"
 #include "worker/l2_office_parser.h"
 #include "worker/l3_image_parser.h"
+#include "worker/parser_registry.h"
 
 namespace {
 
@@ -109,16 +108,58 @@ void TestDefaultRegistryFactory() {
   std::cout << "[+] DefaultRegistry 工厂与支持格式嗅探验证通过!" << std::endl;
 }
 
+void TestParseStream() {
+  std::cout << "[Step 3] 测试 IDocumentParser & L1TextParser 统一流式解析 (ParseStream)..." << std::endl;
+
+  soeasy::worker::L1TextParser parser;
+  soeasy::worker::ParseContext ctx;
+  ctx.doc_id = 999;
+  ctx.ext = "txt";
+
+  // 1. English text stream
+  std::istringstream iss1("Hello SoEasy Unix Stream Parser!\nLine 2 for pipeline testing.");
+  soeasy::worker::ExtractedDocument doc1;
+  bool ok1 = parser.ParseStream(iss1, ctx, &doc1);
+  assert(ok1);
+  assert(doc1.utf8_text.find("Unix Stream Parser") != std::string::npos);
+  assert(doc1.utf8_text.find("Line 2 for pipeline testing.") != std::string::npos);
+
+  // 2. Chinese UTF-8 stream
+  std::istringstream iss2("基于 Unix 管道的流式文本解析器，无需中间临时落盘文件。");
+  soeasy::worker::ExtractedDocument doc2;
+  bool ok2 = parser.ParseStream(iss2, ctx, &doc2);
+  assert(ok2);
+  assert(doc2.utf8_text.find("基于 Unix 管道的流式文本解析器") != std::string::npos);
+
+  // 3. Empty stream
+  std::istringstream iss3("");
+  soeasy::worker::ExtractedDocument doc3;
+  bool ok3 = parser.ParseStream(iss3, ctx, &doc3);
+  assert(ok3);
+  assert(doc3.utf8_text.empty());
+
+  // 4. Default base class implementation
+  MockArchiveParser mock_parser;
+  std::istringstream iss4("dummy archive data");
+  soeasy::worker::ExtractedDocument doc4;
+  bool ok4 = mock_parser.ParseStream(iss4, ctx, &doc4);
+  assert(!ok4);  // Base default returns false
+
+  std::cout << "[+] ParseStream 流式解析验证通过!" << std::endl;
+}
+
 }  // namespace
 
 int main() {
-  soeasy::common::Logger::Init(soeasy::test::GetTestTempPath("test_parser_registry.log").string(), 10 * 1024 * 1024, 1, false);
+  soeasy::common::Logger::Init(soeasy::test::GetTestTempPath("test_parser_registry.log").string(), 10 * 1024 * 1024, 1,
+                               false);
   std::cout << "========================================================" << std::endl;
   std::cout << "   SoEasy Worker 解析器策略责任链单元测试 (Stage 1)     " << std::endl;
   std::cout << "========================================================" << std::endl;
 
   TestPrioritySortingAndChainDispatch();
   TestDefaultRegistryFactory();
+  TestParseStream();
 
   std::cout << "\n🎉 所有验证项全部通过! ParserRegistry 架构重构验证成功!" << std::endl;
   return 0;

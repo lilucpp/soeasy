@@ -177,8 +177,8 @@ int main(int argc, char *argv[]) {
   soeasy::service::ParseTaskResult res_stall;
   guard.ExecuteTask(task_stall, &res_stall);
   if (res_stall.status != soeasy::service::TaskStatus::kTimeout) {
-    std::cerr << "[-] Watchdog 心跳失活状态误判! 期望 kTimeout(3), 实际状态: "
-              << static_cast<int>(res_stall.status) << " (" << res_stall.error_message << ")\n";
+    std::cerr << "[-] Watchdog 心跳失活状态误判! 期望 kTimeout(3), 实际状态: " << static_cast<int>(res_stall.status)
+              << " (" << res_stall.error_message << ")\n";
     return 1;
   }
   std::cout << "[+] Watchdog 5s 心跳失活正确归类为 TaskStatus::kTimeout (" << res_stall.error_message << ")\n\n";
@@ -312,7 +312,7 @@ int main(int argc, char *argv[]) {
   std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
   std::cout << "    • 200ms 闲置淘汰生效后活跃 Worker 数: " << guard.active_worker_count() << "\n";
-  assert(guard.active_worker_count() == 0);  // All workers evicted to 0 RAM!
+  assert(guard.active_worker_count() == 0);      // All workers evicted to 0 RAM!
   assert(!guard.shm_pool()->has_dirty_pages());  // Idle SHM payload pages reclaimed cleanly
 
   // Send new task to test seamless respawn & SHM demand page re-fault
@@ -329,7 +329,8 @@ int main(int argc, char *argv[]) {
   // Once slot is released and no worker is active, explicit reclaim succeeds cleanly
   assert(guard.shm_pool()->ReclaimIdlePages());
   assert(!guard.shm_pool()->has_dirty_pages());
-  std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count() << " (成功瞬时拉起并验证 SHM 回收/重用)!\n";
+  std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count()
+            << " (成功瞬时拉起并验证 SHM 回收/重用)!\n";
   assert(guard.active_worker_count() > 0);
   std::cout << "[+] Worker 懒加载、闲置归零与无缝拉起验证 100% 通过!\n\n";
 
@@ -373,8 +374,7 @@ int main(int argc, char *argv[]) {
   // -------------------------------------------------------------
   std::cout << "[Step 11] 验证高并发崩溃风暴下多 Worker 状态与 SHM 槽位零竞态 (8 线程 x 4 Worker)...\n";
   {
-    const std::filesystem::path storm_dir =
-        std::filesystem::temp_directory_path() / "soeasy_crash_storm_test";
+    const std::filesystem::path storm_dir = std::filesystem::temp_directory_path() / "soeasy_crash_storm_test";
     std::error_code ec_storm;
     std::filesystem::remove_all(storm_dir, ec_storm);
     std::filesystem::create_directories(storm_dir / "logs", ec_storm);
@@ -409,7 +409,8 @@ int main(int argc, char *argv[]) {
             }
           } else {
             const std::string token = "StormToken_T" + std::to_string(t) + "_K" + std::to_string(k);
-            const std::string p = (storm_dir / ("doc_" + std::to_string(t) + "_" + std::to_string(k) + ".txt")).string();
+            const std::string p =
+                (storm_dir / ("doc_" + std::to_string(t) + "_" + std::to_string(k) + ".txt")).string();
             WriteFile(p, token);
             soeasy::service::ParseTask ntask{20000 + t * 100 + k, p, "txt", 1};
             soeasy::service::ParseTaskResult nres;
@@ -424,8 +425,8 @@ int main(int argc, char *argv[]) {
               std::string extracted = read_ok ? std::string(reinterpret_cast<const char *>(ptr), len) : "";
               storm_guard.shm_pool()->ReleaseSlot(nres.slot_id);
               if (!read_ok || extracted.find(token) == std::string::npos) {
-                std::cerr << "[-] SHM payload mismatch/corruption! expected token=" << token
-                          << " got len=" << len << "\n";
+                std::cerr << "[-] SHM payload mismatch/corruption! expected token=" << token << " got len=" << len
+                          << "\n";
                 anomalies.fetch_add(1, std::memory_order_relaxed);
               } else {
                 normal_ok.fetch_add(1, std::memory_order_relaxed);
@@ -470,6 +471,39 @@ int main(int argc, char *argv[]) {
     std::cout << "[+] 8 线程 x 4 Worker 高并发崩溃风暴通过: crash_ok=" << crash_ok.load()
               << ", normal_ok=" << normal_ok.load() << ", 槽位 0 泄漏/0 误杀/0 串包!\n\n";
   }
+
+  // -------------------------------------------------------------
+  // Test 11: Cap'n Proto Chunked Streaming Verification
+  // -------------------------------------------------------------
+  std::cout << "[Step 11] 验证 Cap'n Proto 跨进程流式分片传输 (256KB Chunk Streaming)...\n";
+  std::string stream_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_stream_chunk.txt").string();
+  std::string stream_content;
+  stream_content.reserve(700 * 1024);
+  for (int i = 0; i < 15000; ++i) {
+    stream_content += "Cap'n Proto chunk stream verification line " + std::to_string(i) + "\n";
+  }
+  WriteFile(stream_doc_path, stream_content);
+
+  soeasy::service::WorkerGuard stream_guard;
+  stream_guard.Init(worker_bin, 1, 3000, 0, 0);
+
+  soeasy::service::ParseTask stream_task{9901, stream_doc_path, "txt", 1};
+  soeasy::service::ParseTaskResult stream_res;
+  stream_guard.ExecuteTask(stream_task, &stream_res);
+  assert(stream_res.status == soeasy::service::TaskStatus::kSuccess);
+  assert(stream_res.extracted_text == stream_content);
+  assert(!stream_res.stream_chunks.empty());
+  std::string reassembled;
+  for (const auto &chunk : stream_res.stream_chunks) {
+    reassembled += chunk;
+  }
+  assert(reassembled == stream_content);
+  stream_guard.shm_pool()->ReleaseSlot(stream_res.slot_id);
+  stream_guard.Shutdown();
+  std::remove(stream_doc_path.c_str());
+  std::cout << "    • 文档大小: " << stream_content.size() << " 字节, 接收分片数: " << stream_res.stream_chunks.size()
+            << ", 拼装后 100% 一致!\n";
+  std::cout << "[+] Cap'n Proto 流式分片传输验证成功!\n\n";
 
   // Cleanup temporary files
   std::remove(large_doc_path.c_str());

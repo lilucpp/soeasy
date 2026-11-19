@@ -926,16 +926,15 @@ bool StorageEngine::DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids
   SqliteStmtScope stmt_del_files;
   SqliteStmtScope stmt_del_content;
   SqliteStmtScope stmt_del_fts;
-  if (delete_files_rows &&
-      sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1, stmt_del_files.address(), nullptr) !=
-          SQLITE_OK) {
+  if (delete_files_rows && sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1,
+                                              stmt_del_files.address(), nullptr) != SQLITE_OK) {
     SetLastError(sqlite3_errmsg(writer_db_));
     return false;
   }
   if (sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(),
                          nullptr) != SQLITE_OK ||
-      sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(),
-                         nullptr) != SQLITE_OK) {
+      sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(), nullptr) !=
+          SQLITE_OK) {
     SetLastError(sqlite3_errmsg(writer_db_));
     return false;
   }
@@ -1470,8 +1469,8 @@ bool StorageEngine::DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, i
   return found;
 }
 
-std::vector<FileMetaRecord> StorageEngine::DoGetAllFilesMetadata() {
-  std::vector<FileMetaRecord> results;
+bool StorageEngine::DoForEachFileMetadata(FileMetaCallback callback) {
+  if (!callback) return false;
   ScopedReadConnection read_conn = AcquireReadConnection();
   sqlite3 *target_db = read_conn.get();
   std::unique_lock<std::mutex> fallback_lock;
@@ -1481,18 +1480,18 @@ std::vector<FileMetaRecord> StorageEngine::DoGetAllFilesMetadata() {
   }
   if (!target_db) {
     SetLastError("Database not open");
-    return results;
+    return false;
   }
 
   const char *sql = "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat FROM files;";
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
     SetLastError(sqlite3_errmsg(target_db));
-    return results;
+    return false;
   }
 
+  FileMetaRecord r;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    FileMetaRecord r;
     r.doc_id = sqlite3_column_int64(stmt, 0);
     r.file_name = SafeColumnText(stmt, 1);
     r.file_path = SafeColumnText(stmt, 2);
@@ -1501,8 +1500,14 @@ std::vector<FileMetaRecord> StorageEngine::DoGetAllFilesMetadata() {
     r.mtime = sqlite3_column_int64(stmt, 5);
     r.parse_level = sqlite3_column_int(stmt, 6);
     r.parse_stat = sqlite3_column_int(stmt, 7);
-    results.push_back(std::move(r));
+    callback(r);
   }
+  return true;
+}
+
+std::vector<FileMetaRecord> StorageEngine::DoGetAllFilesMetadata() {
+  std::vector<FileMetaRecord> results;
+  DoForEachFileMetadata([&results](const FileMetaRecord &r) { results.push_back(r); });
   return results;
 }
 

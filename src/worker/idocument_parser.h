@@ -5,6 +5,7 @@
 #define SOEASY_SRC_WORKER_IDOCUMENT_PARSER_H_
 
 #include <cstdint>
+#include <istream>
 #include <string>
 
 namespace soeasy {
@@ -13,17 +14,17 @@ namespace worker {
 struct ParseContext {
   int64_t doc_id = 0;
   std::string file_path;
-  std::string ext;                      // Lowercase without dot, e.g. "docx", "cpp", "png"
+  std::string ext;  // Lowercase without dot, e.g. "docx", "cpp", "png"
   uint64_t file_size = 0;
   uint32_t timeout_ms = 15000;
-  bool enable_embedded_ocr = false;     // Trigger embedded image OCR in Office / PDF
+  bool enable_embedded_ocr = false;  // Trigger embedded image OCR in Office / PDF
 };
 
 struct ExtractedDocument {
-  std::string utf8_text;                // Normalized UTF-8 text string
-  bool is_scanned_pdf = false;          // True if scanned / image-only PDF
-  size_t page_count = 0;                // Document page count (if applicable)
-  std::string metadata_json;            // Optional extra metadata (JSON formatted)
+  std::string utf8_text;        // Normalized UTF-8 text string
+  bool is_scanned_pdf = false;  // True if scanned / image-only PDF
+  size_t page_count = 0;        // Document page count (if applicable)
+  std::string metadata_json;    // Optional extra metadata (JSON formatted)
 };
 
 /**
@@ -53,6 +54,20 @@ class IDocumentParser {
    * @return true on success (or clean skip on filtered images), false on fatal parse failure
    */
   [[nodiscard]] virtual bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) = 0;
+
+  /**
+   * @brief Parse document directly from a stream.
+   * Enables stream processing, standard input pipe (cat file | parser), and memory-backed streams.
+   *
+   * @param stream Input byte stream
+   * @param ctx Parsing execution parameters
+   * @param out_doc Destination document receiving extracted plain text and flags
+   * @return true on success, false on fatal parse failure
+   */
+  [[nodiscard]] virtual bool ParseStream(std::istream & /*stream*/, const ParseContext & /*ctx*/,
+                                         ExtractedDocument * /*out_doc*/) {
+    return false;
+  }
 
   /**
    * @brief Parser priority in the responsibility chain.

@@ -31,8 +31,7 @@ namespace soeasy {
 namespace worker {
 
 static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common::ShmSlotPool &shm_pool,
-                        size_t slot_capacity, ParserRegistry &registry,
-                        capnp::MallocMessageBuilder &response_builder) {
+                        size_t slot_capacity, ParserRegistry &registry, capnp::MallocMessageBuilder &response_builder) {
   int64_t doc_id = request.getDocId();
   std::string file_path = request.getFilePath();
   std::string ext = request.getExt();
@@ -86,6 +85,21 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
     LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path, ext,
              doc.utf8_text.size(), cost_ms);
     size_t text_bytes = doc.utf8_text.size();
+    constexpr size_t kChunkSize = 256 * 1024;
+    if (text_bytes <= kChunkSize) {
+      result.setExtractedText(doc.utf8_text);
+    } else {
+      // Chunked streaming for large files to eliminate single huge message allocations
+      size_t num_chunks = (text_bytes + kChunkSize - 1) / kChunkSize;
+      auto chunks_builder = result.initChunks(num_chunks);
+      for (size_t i = 0; i < num_chunks; ++i) {
+        size_t offset = i * kChunkSize;
+        size_t len = std::min(kChunkSize, text_bytes - offset);
+        chunks_builder.set(
+            i, kj::ArrayPtr<const kj::byte>(reinterpret_cast<const kj::byte *>(doc.utf8_text.data() + offset), len));
+      }
+    }
+
     if (text_bytes > slot_capacity) {
       // Spill to temporary file to eliminate truncation barrier
       std::error_code ec;

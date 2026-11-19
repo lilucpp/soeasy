@@ -23,15 +23,9 @@
 
 namespace {
 
-void RedirectStdioToNull(const char *null_device) {
+void RedirectStdinToNull(const char *null_device) {
   if (!std::freopen(null_device, "r", stdin)) {
     LOG_WARN("Failed to redirect stdin to '{}'", null_device);
-  }
-  if (!std::freopen(null_device, "w", stdout)) {
-    LOG_WARN("Failed to redirect stdout to '{}'", null_device);
-  }
-  if (!std::freopen(null_device, "w", stderr)) {
-    LOG_WARN("Failed to redirect stderr to '{}'", null_device);
   }
 }
 
@@ -129,9 +123,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!enable_console) {
-    RedirectStdioToNull("NUL");
-  }
+  RedirectStdinToNull("NUL");
 
   int ret = soeasy::worker::RunWorkerLoop(h_pipe, shm_name, slot_count, slot_capacity);
   CloseHandle(h_pipe);
@@ -162,9 +154,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!enable_console) {
-    RedirectStdioToNull("/dev/null");
-  }
+  RedirectStdinToNull("/dev/null");
 
   int ret = soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count, slot_capacity);
   close(socket_fd);

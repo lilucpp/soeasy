@@ -39,6 +39,8 @@ struct ParseResult {
   pageCount       @3 :UInt32;
   isScannedPdf    @4 :Bool;
   message         @5 :Text;
+  chunks          @6 :List(Data);
+  extractedText   @7 :Text;
 }
 
 struct WorkerPingResponse {
@@ -46,8 +48,15 @@ struct WorkerPingResponse {
   isBusy    @1 :Bool;
 }
 
+interface TextStreamReceiver {
+  sendChunk @0 (chunk :Data) -> ();
+  finish    @1 (totalBytes :UInt64, isScannedPdf :Bool, statusCode :Int32, errorMsg :Text) -> ();
+}
+
 interface WorkerAgent {
-  parseFile @0 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, targetSlot :ShmSlotRef)
-            -> (result :ParseResult);
-  ping      @1 () -> (rssBytes :UInt64, isBusy :Bool);
+  parseFile       @0 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, targetSlot :ShmSlotRef)
+                  -> (result :ParseResult);
+  parseFileStream @1 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, receiver :TextStreamReceiver)
+                  -> ();
+  ping            @2 () -> (rssBytes :UInt64, isBusy :Bool);
 }

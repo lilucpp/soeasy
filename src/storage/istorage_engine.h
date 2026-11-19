@@ -11,113 +11,27 @@
 #include <vector>
 
 #include "common/resource_profile.h"
+#include "storage/istorage_maintenance.h"
+#include "storage/istorage_reader.h"
+#include "storage/istorage_writer.h"
 
 struct sqlite3;
 
 namespace soeasy {
 namespace storage {
 
-struct SearchResultItem {
-  int64_t doc_id = 0;
-  std::string file_name;
-  std::string file_path;
-  std::string ext;
-  uint64_t file_size = 0;
-  int64_t mtime = 0;
-  double rank = 0.0;
-};
-
-struct FileMetaRecord {
-  int64_t doc_id = 0;
-  std::string file_name;
-  std::string file_path;
-  std::string ext;
-  uint64_t file_size = 0;
-  int64_t mtime = 0;
-  int parse_level = 0;
-  int parse_stat = 0;
-};
-
-struct StorageFragmentation {
-  int page_size = 4096;
-  int64_t total_pages = 0;
-  int64_t free_pages = 0;
-  uint64_t total_bytes = 0;
-  uint64_t free_bytes = 0;
-  double frag_ratio = 0.0;
-};
-
-/**
- * @brief Structured parameters for document indexing to eliminate data clumps.
- */
-struct DocumentIndexEntry {
-  int64_t doc_id = 0;
-  std::string file_path;
-  std::string file_name;
-  std::string ext;
-  uint64_t file_size = 0;
-  int64_t mtime = 0;
-  int parse_level = 0;
-  std::string utf8_content;
-};
-
-/**
- * @brief RAII scoped lease guard for checked-out read connections.
- *
- * Automatically returns the borrowed sqlite3* handle to ReaderConnectionPool upon destruction.
- */
-class ScopedReadConnection {
- public:
-  using Releaser = std::function<void(sqlite3 *)>;
-
-  ScopedReadConnection() = default;
-  ScopedReadConnection(sqlite3 *db, Releaser releaser) : db_(db), releaser_(std::move(releaser)) {}
-
-  ~ScopedReadConnection() {
-    if (db_ && releaser_) {
-      releaser_(db_);
-    }
-  }
-
-  // Non-copyable, movable
-  ScopedReadConnection(const ScopedReadConnection &) = delete;
-  ScopedReadConnection &operator=(const ScopedReadConnection &) = delete;
-
-  ScopedReadConnection(ScopedReadConnection &&other) noexcept : db_(other.db_), releaser_(std::move(other.releaser_)) {
-    other.db_ = nullptr;
-  }
-
-  ScopedReadConnection &operator=(ScopedReadConnection &&other) noexcept {
-    if (this != &other) {
-      if (db_ && releaser_) {
-        releaser_(db_);
-      }
-      db_ = other.db_;
-      releaser_ = std::move(other.releaser_);
-      other.db_ = nullptr;
-    }
-    return *this;
-  }
-
-  [[nodiscard]] sqlite3 *get() const { return db_; }
-  [[nodiscard]] sqlite3 *operator->() const { return db_; }
-  [[nodiscard]] explicit operator bool() const { return db_ != nullptr; }
-
- private:
-  sqlite3 *db_ = nullptr;
-  Releaser releaser_;
-};
-
 /**
  * @brief Abstract contract for the storage and retrieval engine.
  *
  * Decouples write transactions (IndexDocument, Delete, Vacuum) from concurrent
  * reader operations (Search, GetContent, GetMetadata) leveraging SQLite WAL mode.
+ * Inherits from IDocumentSearchReader, IDocumentIndexWriter, and IStorageMaintenance
+ * to fully honor the Interface Segregation Principle (ISP).
  */
-class IStorageEngine {
+class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter, public IStorageMaintenance {
  public:
   IStorageEngine() = default;
-  virtual ~IStorageEngine() = default;
+  ~IStorageEngine() override = default;
 
   IStorageEngine(const IStorageEngine &) = delete;
   IStorageEngine &operator=(const IStorageEngine &) = delete;
@@ -144,67 +58,67 @@ class IStorageEngine {
   /**
    * @brief Begin an explicit write transaction (uses BEGIN IMMEDIATE to claim write lock instantly).
    */
-  bool BeginTransaction() { return DoBeginTransaction(); }
+  bool BeginTransaction() override { return DoBeginTransaction(); }
 
   /**
    * @brief Commit the current write transaction.
    */
-  bool CommitTransaction() { return DoCommitTransaction(); }
+  bool CommitTransaction() override { return DoCommitTransaction(); }
 
   /**
    * @brief Rollback the current write transaction.
    */
-  bool RollbackTransaction() { return DoRollbackTransaction(); }
+  bool RollbackTransaction() override { return DoRollbackTransaction(); }
 
   /**
    * @brief Check whether an explicit transaction is currently active.
    */
-  [[nodiscard]] bool IsInTransaction() const { return DoIsInTransaction(); }
+  [[nodiscard]] bool IsInTransaction() const override { return DoIsInTransaction(); }
 
   /**
    * @brief Get count of uncommitted indexed documents in current transaction.
    */
-  [[nodiscard]] size_t GetUncommittedCount() const { return DoGetUncommittedCount(); }
+  [[nodiscard]] size_t GetUncommittedCount() const override { return DoGetUncommittedCount(); }
 
   /**
    * @brief Compact and merge FTS5 index segments.
    */
-  bool OptimizeFtsIndex() { return DoOptimizeFtsIndex(); }
+  bool OptimizeFtsIndex() override { return DoOptimizeFtsIndex(); }
 
   /**
    * @brief Toggle bulk mode for high-throughput batch operations.
    */
-  bool SetBulkMode(bool enable) { return DoSetBulkMode(enable); }
+  bool SetBulkMode(bool enable) override { return DoSetBulkMode(enable); }
 
   /**
    * @brief Apply a resource tuning profile at startup or runtime.
    */
-  void SetResourceProfile(common::ResourceProfile profile) { DoSetResourceProfile(profile); }
+  void SetResourceProfile(common::ResourceProfile profile) override { DoSetResourceProfile(profile); }
 
   /**
    * @brief Checkpoint and truncate the WAL file back into the main database.
    */
-  bool CheckpointWal() { return DoCheckpointWal(); }
+  bool CheckpointWal() override { return DoCheckpointWal(); }
 
   /**
    * @brief Query current database page metrics, freelist count, and fragmentation ratio.
    */
-  bool GetFragmentation(StorageFragmentation *out_frag) { return DoGetFragmentation(out_frag); }
+  bool GetFragmentation(StorageFragmentation *out_frag) override { return DoGetFragmentation(out_frag); }
 
   /**
    * @brief Incrementally reclaim up to N free pages directly to the OS without full rewrite.
    */
-  bool IncrementalVacuum(int pages = 500) { return DoIncrementalVacuum(pages); }
+  bool IncrementalVacuum(int pages = 500) override { return DoIncrementalVacuum(pages); }
 
   /**
    * @brief Rebuild and shrink entire database file to reclaim 100% free space.
    */
-  bool Vacuum() { return DoVacuum(); }
+  bool Vacuum() override { return DoVacuum(); }
 
   /**
    * @brief Index or re-index a single document (Write channel) using structured entry.
    */
-  bool IndexDocument(const DocumentIndexEntry &entry) { return DoIndexDocument(entry); }
+  bool IndexDocument(const DocumentIndexEntry &entry) override { return DoIndexDocument(entry); }
 
   /**
    * @brief Backward-compatible overload for legacy multi-argument invocation.
@@ -226,66 +140,72 @@ class IStorageEngine {
   /**
    * @brief Delete document from metadata, content, and FTS5 index (Write channel).
    */
-  bool DeleteDocument(int64_t doc_id) { return DoDeleteDocument(doc_id); }
+  bool DeleteDocument(int64_t doc_id) override { return DoDeleteDocument(doc_id); }
 
   /**
    * @brief Delete multiple documents from metadata, content, and FTS5 index in one batch transaction.
    */
-  bool DeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) { return DoDeleteDocumentsBatch(doc_ids); }
+  bool DeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) override { return DoDeleteDocumentsBatch(doc_ids); }
 
   /**
    * @brief Persist a runtime metadata flag/value in the database (Write channel).
    */
-  bool SetMetaValue(const std::string &key, const std::string &value) { return DoSetMetaValue(key, value); }
+  bool SetMetaValue(const std::string &key, const std::string &value) override { return DoSetMetaValue(key, value); }
 
   /**
    * @brief Query a persisted metadata value by key (Read channel).
    */
-  bool GetMetaValue(const std::string &key, std::string *out_value) { return DoGetMetaValue(key, out_value); }
+  bool GetMetaValue(const std::string &key, std::string *out_value) override { return DoGetMetaValue(key, out_value); }
 
   /**
    * @brief Cascade delete all files under a directory prefix (Write channel).
    */
-  int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) {
+  int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) override {
     return DoDeleteDirectory(dir_path, out_deleted_doc_ids);
   }
 
   /**
    * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild (Write channel).
    */
-  bool ClearAll() { return DoClearAll(); }
+  bool ClearAll() override { return DoClearAll(); }
 
   /**
    * @brief Perform full-text search against fts_docs (Read channel via ReaderConnectionPool).
    */
   std::vector<SearchResultItem> Search(const std::string &query, int limit = 50, int offset = 0,
-                                       const std::string &path_prefix = "", int *out_total_count = nullptr) {
+                                       const std::string &path_prefix = "", int *out_total_count = nullptr) override {
     return DoSearch(query, limit, offset, path_prefix, out_total_count);
   }
 
   /**
    * @brief Decompress and fetch original UTF-8 content from doc_contents (Read channel).
    */
-  bool GetDocumentContent(int64_t doc_id, std::string *out_content) {
+  bool GetDocumentContent(int64_t doc_id, std::string *out_content) override {
     return DoGetDocumentContent(doc_id, out_content);
   }
 
   /**
    * @brief Retrieve metadata for incremental check (Read channel).
    */
-  bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat = nullptr) {
+  bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime,
+                       int *out_parse_stat = nullptr) override {
     return DoGetFileMetadata(doc_id, out_file_size, out_mtime, out_parse_stat);
   }
 
   /**
    * @brief Retrieve all indexed files metadata for rapid cold-restart (Read channel).
    */
-  std::vector<FileMetaRecord> GetAllFilesMetadata() { return DoGetAllFilesMetadata(); }
+  std::vector<FileMetaRecord> GetAllFilesMetadata() override { return DoGetAllFilesMetadata(); }
+
+  /**
+   * @brief Stream all indexed files metadata for O(1) memory cold-restart (Read channel).
+   */
+  bool ForEachFileMetadata(FileMetaCallback callback) override { return DoForEachFileMetadata(std::move(callback)); }
 
   /**
    * @brief Acquire a dedicated read-only connection handle from the pool (Zero-lock read lease).
    */
-  ScopedReadConnection AcquireReadConnection() { return DoAcquireReadConnection(); }
+  ScopedReadConnection AcquireReadConnection() override { return DoAcquireReadConnection(); }
 
   /**
    * @brief Atomically rekey the database to a new encryption key using SQLite3MC.
@@ -338,6 +258,14 @@ class IStorageEngine {
   virtual bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) = 0;
   virtual bool DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) = 0;
   virtual std::vector<FileMetaRecord> DoGetAllFilesMetadata() = 0;
+  virtual bool DoForEachFileMetadata(FileMetaCallback callback) {
+    if (!callback) return false;
+    auto files = DoGetAllFilesMetadata();
+    for (const auto &f : files) {
+      callback(f);
+    }
+    return true;
+  }
   virtual ScopedReadConnection DoAcquireReadConnection() = 0;
   virtual bool DoRekey(const std::string &new_key) = 0;
   [[nodiscard]] virtual std::string DoGetLastError() const = 0;

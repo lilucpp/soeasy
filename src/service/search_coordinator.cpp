@@ -19,7 +19,7 @@ constexpr size_t kMaxBodySnippetsPerPage = 10;
 constexpr size_t kBodySnippetMaxChars = 140;
 constexpr size_t kNameSnippetMaxChars = 100;
 
-std::string ExtractBodySnippet(storage::IStorageEngine *storage, int64_t doc_id,
+std::string ExtractBodySnippet(storage::IDocumentSearchReader *storage, int64_t doc_id,
                                const std::vector<std::string> &keywords, size_t max_len) {
   if (!storage || keywords.empty()) {
     return {};
@@ -31,7 +31,7 @@ std::string ExtractBodySnippet(storage::IStorageEngine *storage, int64_t doc_id,
   return common::SnippetHighlighter::GenerateSnippet(full_text, keywords, max_len);
 }
 
-void PopulateSnippetFromStorage(storage::IStorageEngine *storage, const std::vector<std::string> &keywords,
+void PopulateSnippetFromStorage(storage::IDocumentSearchReader *storage, const std::vector<std::string> &keywords,
                                 int64_t doc_id, const std::string &file_name, bool allow_body_fetch,
                                 std::string *out_snippet, bool *out_has_body) {
   if (!out_snippet) {
@@ -84,7 +84,7 @@ PagingWindow NormalizePaging(PagingWindow req) {
 }  // namespace
 
 SearchCoordinator::SearchCoordinator(std::shared_ptr<NameIndex> name_index,
-                                     std::shared_ptr<storage::IStorageEngine> storage_engine)
+                                     std::shared_ptr<storage::IDocumentSearchReader> storage_engine)
     : name_index_(std::move(name_index)), storage_engine_(std::move(storage_engine)) {}
 
 std::vector<NameMatchResult> SearchCoordinator::DoSearchFilename(const std::string &query, int limit, int offset,

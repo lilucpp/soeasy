@@ -17,10 +17,13 @@
 
 #include "service/async_write_queue.h"
 #include "service/event_debouncer.h"
+#include "service/file_crawler.h"
 #include "service/iindex_orchestrator.h"
 #include "service/index_config.h"
 #include "service/name_index.h"
+#include "service/space_reclaimer.h"
 #include "service/watch_engine.h"
+#include "service/watch_reconciler.h"
 #include "service/worker_guard.h"
 #include "storage/istorage_engine.h"
 
@@ -106,9 +109,8 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   void SyncLiveWatchesWithoutStop();
   void StopAndJoinReclaim();
   void StopAndJoinBackgroundTask();
-  void EnqueueOrLaunchBackgroundTask(IndexTaskKind initial_kind, PendingTask req_pending,
-                                     ConfigChangeSummary req_diff, bool cancel_active_non_rebuild,
-                                     BackgroundIndexCallbacks callbacks);
+  void EnqueueOrLaunchBackgroundTask(IndexTaskKind initial_kind, PendingTask req_pending, ConfigChangeSummary req_diff,
+                                     bool cancel_active_non_rebuild, BackgroundIndexCallbacks callbacks);
   void BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t initial_generation, PendingTask initial_task_mode,
                           ConfigChangeSummary initial_diff, bool initial_force_rescan);
   void ScanDirectoryRecursive(const std::string &dir_path, bool force_reindex = false);
@@ -147,10 +149,7 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   mutable std::array<std::mutex, kPathLockBuckets> path_locks_;
   std::mutex scan_mutex_;
 
-  std::mutex reclaim_mutex_;
-  std::atomic<bool> stop_reclaim_{false};
-  std::atomic<bool> is_reclaiming_space_{false};
-  std::thread space_reclaim_thread_;
+  SpaceReclaimer space_reclaimer_;
 
   std::mutex bg_join_mutex_;
   mutable std::mutex bg_task_mutex_;
@@ -169,9 +168,7 @@ class IndexOrchestrator final : public IIndexOrchestrator {
 
   // Watch-first buffering during scan/rebuild -> reconciled upon completion.
   std::mutex live_dispatch_mutex_;
-  std::mutex buffered_events_mutex_;
-  std::atomic<bool> buffer_watch_events_{false};
-  std::unordered_map<std::string, DebouncedEvent> buffered_watch_events_;
+  WatchReconciler watch_reconciler_;
 };
 
 }  // namespace service

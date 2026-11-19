@@ -286,5 +286,34 @@ bool L1TextParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
   return ParseFile(ctx.file_path, ctx.ext, &out_doc->utf8_text);
 }
 
+bool L1TextParser::ParseStream(std::istream &stream, const ParseContext &ctx, ExtractedDocument *out_doc) {
+  if (!out_doc) {
+    return false;
+  }
+  out_doc->utf8_text.clear();
+  out_doc->is_scanned_pdf = false;
+  out_doc->page_count = 1;
+  out_doc->metadata_json.clear();
+
+  std::string buffer;
+  if (ctx.file_size > 0 && ctx.file_size <= 64 * 1024 * 1024) {
+    buffer.reserve(ctx.file_size);
+  }
+  constexpr size_t kChunkSize = 65536;
+  char chunk[kChunkSize];
+  size_t total_read = 0;
+  constexpr size_t kMaxStreamSize = 64 * 1024 * 1024;  // 64MB safeguard
+  while (stream.read(chunk, kChunkSize) || stream.gcount() > 0) {
+    size_t count = static_cast<size_t>(stream.gcount());
+    if (total_read + count > kMaxStreamSize) {
+      break;
+    }
+    buffer.append(chunk, count);
+    total_read += count;
+  }
+
+  return Parse(buffer.data(), buffer.size(), ctx.ext, &out_doc->utf8_text);
+}
+
 }  // namespace worker
 }  // namespace soeasy

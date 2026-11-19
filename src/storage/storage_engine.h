@@ -64,6 +64,7 @@ class StorageEngine : public IStorageEngine {
   bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) override;
   bool DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) override;
   std::vector<FileMetaRecord> DoGetAllFilesMetadata() override;
+  bool DoForEachFileMetadata(FileMetaCallback callback) override;
   ScopedReadConnection DoAcquireReadConnection() override;
   [[nodiscard]] std::string DoGetLastError() const override;
 
@@ -92,8 +93,7 @@ class StorageEngine : public IStorageEngine {
   void ShrinkIdleMemoryUnlocked();
   bool GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content);
   bool DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids,
-                                const std::unordered_map<std::string, int> &ext_counts,
-                                bool delete_files_rows);
+                                const std::unordered_map<std::string, int> &ext_counts, bool delete_files_rows);
 
   std::unique_ptr<SQLite::Database> writer_cpp_db_;
   sqlite3 *writer_db_ = nullptr;

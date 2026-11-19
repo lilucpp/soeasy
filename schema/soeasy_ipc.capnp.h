@@ -42,11 +42,18 @@ CAPNP_DECLARE_SCHEMA(c363ad0262e4fb32);
 CAPNP_DECLARE_SCHEMA(effa0075f0ef75d3);
 CAPNP_DECLARE_SCHEMA(92a5148d5bfad478);
 CAPNP_DECLARE_SCHEMA(bf7a87bf410a799f);
+CAPNP_DECLARE_SCHEMA(bf94156e52ac50be);
+CAPNP_DECLARE_SCHEMA(d92712523e6f4053);
+CAPNP_DECLARE_SCHEMA(e64f4dd90635e6df);
+CAPNP_DECLARE_SCHEMA(eca5205f8be186eb);
+CAPNP_DECLARE_SCHEMA(c8be2035e0f7e8ed);
 CAPNP_DECLARE_SCHEMA(d3344be1a9c76cff);
 CAPNP_DECLARE_SCHEMA(851cc74915feed4c);
 CAPNP_DECLARE_SCHEMA(c633e6b96361384c);
 CAPNP_DECLARE_SCHEMA(84985e9cb07f417c);
 CAPNP_DECLARE_SCHEMA(bb694713a1f696ba);
+CAPNP_DECLARE_SCHEMA(c2c6b5e346334b0d);
+CAPNP_DECLARE_SCHEMA(9e2b08679bac7ada);
 
 }  // namespace schemas
 }  // namespace capnp
@@ -96,7 +103,7 @@ struct ParseResult {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(92a5148d5bfad478, 3, 1)
+    CAPNP_DECLARE_STRUCT_HEADER(92a5148d5bfad478, 3, 3)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -118,6 +125,87 @@ struct WorkerPingResponse {
   };
 };
 
+struct TextStreamReceiver {
+  TextStreamReceiver() = delete;
+
+#if !CAPNP_LITE
+  class Client;
+  class Server;
+#endif  // !CAPNP_LITE
+
+  struct SendChunkParams;
+  struct SendChunkResults;
+  struct FinishParams;
+  struct FinishResults;
+
+  #if !CAPNP_LITE
+  struct _capnpPrivate {
+    CAPNP_DECLARE_INTERFACE_HEADER(bf94156e52ac50be)
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+  };
+  #endif  // !CAPNP_LITE
+};
+
+struct TextStreamReceiver::SendChunkParams {
+  SendChunkParams() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(d92712523e6f4053, 0, 1)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct TextStreamReceiver::SendChunkResults {
+  SendChunkResults() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(e64f4dd90635e6df, 0, 0)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct TextStreamReceiver::FinishParams {
+  FinishParams() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(eca5205f8be186eb, 2, 1)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct TextStreamReceiver::FinishResults {
+  FinishResults() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(c8be2035e0f7e8ed, 0, 0)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
 struct WorkerAgent {
   WorkerAgent() = delete;
 
@@ -128,6 +216,8 @@ struct WorkerAgent {
 
   struct ParseFileParams;
   struct ParseFileResults;
+  struct ParseFileStreamParams;
+  struct ParseFileStreamResults;
   struct PingParams;
   struct PingResults;
 
@@ -169,6 +259,36 @@ struct WorkerAgent::ParseFileResults {
   };
 };
 
+struct WorkerAgent::ParseFileStreamParams {
+  ParseFileStreamParams() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(84985e9cb07f417c, 2, 3)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct WorkerAgent::ParseFileStreamResults {
+  ParseFileStreamResults() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(bb694713a1f696ba, 0, 0)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
 struct WorkerAgent::PingParams {
   PingParams() = delete;
 
@@ -177,7 +297,7 @@ struct WorkerAgent::PingParams {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(84985e9cb07f417c, 0, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(c2c6b5e346334b0d, 0, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -192,7 +312,7 @@ struct WorkerAgent::PingResults {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(bb694713a1f696ba, 2, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(9e2b08679bac7ada, 2, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -434,6 +554,12 @@ public:
   inline bool hasMessage() const;
   inline  ::capnp::Text::Reader getMessage() const;
 
+  inline bool hasChunks() const;
+  inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader getChunks() const;
+
+  inline bool hasExtractedText() const;
+  inline  ::capnp::Text::Reader getExtractedText() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -483,6 +609,21 @@ public:
   inline  ::capnp::Text::Builder initMessage(unsigned int size);
   inline void adoptMessage(::capnp::Orphan< ::capnp::Text>&& value);
   inline ::capnp::Orphan< ::capnp::Text> disownMessage();
+
+  inline bool hasChunks();
+  inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder getChunks();
+  inline void setChunks( ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader value);
+  inline void setChunks(::kj::ArrayPtr<const  ::capnp::Data::Reader> value);
+  inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder initChunks(unsigned int size);
+  inline void adoptChunks(::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>&& value);
+  inline ::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>> disownChunks();
+
+  inline bool hasExtractedText();
+  inline  ::capnp::Text::Builder getExtractedText();
+  inline void setExtractedText( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initExtractedText(unsigned int size);
+  inline void adoptExtractedText(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownExtractedText();
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -592,6 +733,384 @@ private:
 #endif  // !CAPNP_LITE
 
 #if !CAPNP_LITE
+class TextStreamReceiver::Client
+    : public virtual ::capnp::Capability::Client {
+public:
+  typedef TextStreamReceiver Calls;
+  typedef TextStreamReceiver Reads;
+
+  Client(decltype(nullptr));
+  explicit Client(::kj::Own< ::capnp::ClientHook>&& hook);
+  template <typename _t, typename = ::kj::EnableIf< ::kj::canConvert<_t*, Server*>()>>
+  Client(::kj::Own<_t>&& server);
+  template <typename _t, typename = ::kj::EnableIf< ::kj::canConvert<_t*, Client*>()>>
+  Client(::kj::Promise<_t>&& promise);
+  Client(::kj::Exception&& exception);
+  Client(Client&) = default;
+  Client(Client&&) = default;
+  Client& operator=(Client& other);
+  Client& operator=(Client&& other);
+
+  ::capnp::Request< ::soeasy::ipc::TextStreamReceiver::SendChunkParams,  ::soeasy::ipc::TextStreamReceiver::SendChunkResults> sendChunkRequest(
+      ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
+  ::capnp::Request< ::soeasy::ipc::TextStreamReceiver::FinishParams,  ::soeasy::ipc::TextStreamReceiver::FinishResults> finishRequest(
+      ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
+
+protected:
+  Client() = default;
+};
+
+class TextStreamReceiver::Server
+    : public virtual ::capnp::Capability::Server {
+public:
+  typedef TextStreamReceiver Serves;
+
+  ::capnp::Capability::Server::DispatchCallResult dispatchCall(
+      uint64_t interfaceId, uint16_t methodId,
+      ::capnp::CallContext< ::capnp::AnyPointer, ::capnp::AnyPointer> context)
+      override;
+
+protected:
+  typedef  ::soeasy::ipc::TextStreamReceiver::SendChunkParams SendChunkParams;
+  typedef  ::soeasy::ipc::TextStreamReceiver::SendChunkResults SendChunkResults;
+  typedef ::capnp::CallContext<SendChunkParams, SendChunkResults> SendChunkContext;
+  virtual ::kj::Promise<void> sendChunk(SendChunkContext context);
+  typedef  ::soeasy::ipc::TextStreamReceiver::FinishParams FinishParams;
+  typedef  ::soeasy::ipc::TextStreamReceiver::FinishResults FinishResults;
+  typedef ::capnp::CallContext<FinishParams, FinishResults> FinishContext;
+  virtual ::kj::Promise<void> finish(FinishContext context);
+
+  inline  ::soeasy::ipc::TextStreamReceiver::Client thisCap() {
+    return ::capnp::Capability::Server::thisCap()
+        .template castAs< ::soeasy::ipc::TextStreamReceiver>();
+  }
+
+  ::capnp::Capability::Server::DispatchCallResult dispatchCallInternal(
+      uint16_t methodId,
+      ::capnp::CallContext< ::capnp::AnyPointer, ::capnp::AnyPointer> context);
+};
+#endif  // !CAPNP_LITE
+
+class TextStreamReceiver::SendChunkParams::Reader {
+public:
+  typedef SendChunkParams Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline bool hasChunk() const;
+  inline  ::capnp::Data::Reader getChunk() const;
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class TextStreamReceiver::SendChunkParams::Builder {
+public:
+  typedef SendChunkParams Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline bool hasChunk();
+  inline  ::capnp::Data::Builder getChunk();
+  inline void setChunk( ::capnp::Data::Reader value);
+  inline  ::capnp::Data::Builder initChunk(unsigned int size);
+  inline void adoptChunk(::capnp::Orphan< ::capnp::Data>&& value);
+  inline ::capnp::Orphan< ::capnp::Data> disownChunk();
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class TextStreamReceiver::SendChunkParams::Pipeline {
+public:
+  typedef SendChunkParams Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class TextStreamReceiver::SendChunkResults::Reader {
+public:
+  typedef SendChunkResults Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class TextStreamReceiver::SendChunkResults::Builder {
+public:
+  typedef SendChunkResults Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class TextStreamReceiver::SendChunkResults::Pipeline {
+public:
+  typedef SendChunkResults Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class TextStreamReceiver::FinishParams::Reader {
+public:
+  typedef FinishParams Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline  ::uint64_t getTotalBytes() const;
+
+  inline bool getIsScannedPdf() const;
+
+  inline  ::int32_t getStatusCode() const;
+
+  inline bool hasErrorMsg() const;
+  inline  ::capnp::Text::Reader getErrorMsg() const;
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class TextStreamReceiver::FinishParams::Builder {
+public:
+  typedef FinishParams Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline  ::uint64_t getTotalBytes();
+  inline void setTotalBytes( ::uint64_t value);
+
+  inline bool getIsScannedPdf();
+  inline void setIsScannedPdf(bool value);
+
+  inline  ::int32_t getStatusCode();
+  inline void setStatusCode( ::int32_t value);
+
+  inline bool hasErrorMsg();
+  inline  ::capnp::Text::Builder getErrorMsg();
+  inline void setErrorMsg( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initErrorMsg(unsigned int size);
+  inline void adoptErrorMsg(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownErrorMsg();
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class TextStreamReceiver::FinishParams::Pipeline {
+public:
+  typedef FinishParams Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class TextStreamReceiver::FinishResults::Reader {
+public:
+  typedef FinishResults Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class TextStreamReceiver::FinishResults::Builder {
+public:
+  typedef FinishResults Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class TextStreamReceiver::FinishResults::Pipeline {
+public:
+  typedef FinishResults Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+#if !CAPNP_LITE
 class WorkerAgent::Client
     : public virtual ::capnp::Capability::Client {
 public:
@@ -611,6 +1130,8 @@ public:
   Client& operator=(Client&& other);
 
   ::capnp::Request< ::soeasy::ipc::WorkerAgent::ParseFileParams,  ::soeasy::ipc::WorkerAgent::ParseFileResults> parseFileRequest(
+      ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
+  ::capnp::Request< ::soeasy::ipc::WorkerAgent::ParseFileStreamParams,  ::soeasy::ipc::WorkerAgent::ParseFileStreamResults> parseFileStreamRequest(
       ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
   ::capnp::Request< ::soeasy::ipc::WorkerAgent::PingParams,  ::soeasy::ipc::WorkerAgent::PingResults> pingRequest(
       ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);
@@ -634,6 +1155,10 @@ protected:
   typedef  ::soeasy::ipc::WorkerAgent::ParseFileResults ParseFileResults;
   typedef ::capnp::CallContext<ParseFileParams, ParseFileResults> ParseFileContext;
   virtual ::kj::Promise<void> parseFile(ParseFileContext context);
+  typedef  ::soeasy::ipc::WorkerAgent::ParseFileStreamParams ParseFileStreamParams;
+  typedef  ::soeasy::ipc::WorkerAgent::ParseFileStreamResults ParseFileStreamResults;
+  typedef ::capnp::CallContext<ParseFileStreamParams, ParseFileStreamResults> ParseFileStreamContext;
+  virtual ::kj::Promise<void> parseFileStream(ParseFileStreamContext context);
   typedef  ::soeasy::ipc::WorkerAgent::PingParams PingParams;
   typedef  ::soeasy::ipc::WorkerAgent::PingResults PingResults;
   typedef ::capnp::CallContext<PingParams, PingResults> PingContext;
@@ -836,6 +1361,193 @@ public:
       : _typeless(kj::mv(typeless)) {}
 
   inline  ::soeasy::ipc::ParseResult::Pipeline getResult();
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class WorkerAgent::ParseFileStreamParams::Reader {
+public:
+  typedef ParseFileStreamParams Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline  ::int64_t getDocId() const;
+
+  inline bool hasFilePath() const;
+  inline  ::capnp::Text::Reader getFilePath() const;
+
+  inline bool hasExt() const;
+  inline  ::capnp::Text::Reader getExt() const;
+
+  inline  ::soeasy::ipc::ParseLevel getLevel() const;
+
+  inline bool hasReceiver() const;
+#if !CAPNP_LITE
+  inline  ::soeasy::ipc::TextStreamReceiver::Client getReceiver() const;
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class WorkerAgent::ParseFileStreamParams::Builder {
+public:
+  typedef ParseFileStreamParams Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline  ::int64_t getDocId();
+  inline void setDocId( ::int64_t value);
+
+  inline bool hasFilePath();
+  inline  ::capnp::Text::Builder getFilePath();
+  inline void setFilePath( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initFilePath(unsigned int size);
+  inline void adoptFilePath(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownFilePath();
+
+  inline bool hasExt();
+  inline  ::capnp::Text::Builder getExt();
+  inline void setExt( ::capnp::Text::Reader value);
+  inline  ::capnp::Text::Builder initExt(unsigned int size);
+  inline void adoptExt(::capnp::Orphan< ::capnp::Text>&& value);
+  inline ::capnp::Orphan< ::capnp::Text> disownExt();
+
+  inline  ::soeasy::ipc::ParseLevel getLevel();
+  inline void setLevel( ::soeasy::ipc::ParseLevel value);
+
+  inline bool hasReceiver();
+#if !CAPNP_LITE
+  inline  ::soeasy::ipc::TextStreamReceiver::Client getReceiver();
+  inline void setReceiver( ::soeasy::ipc::TextStreamReceiver::Client&& value);
+  inline void setReceiver( ::soeasy::ipc::TextStreamReceiver::Client& value);
+  inline void adoptReceiver(::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver>&& value);
+  inline ::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver> disownReceiver();
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class WorkerAgent::ParseFileStreamParams::Pipeline {
+public:
+  typedef ParseFileStreamParams Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+  inline  ::soeasy::ipc::TextStreamReceiver::Client getReceiver();
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class WorkerAgent::ParseFileStreamResults::Reader {
+public:
+  typedef ParseFileStreamResults Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class WorkerAgent::ParseFileStreamResults::Builder {
+public:
+  typedef ParseFileStreamResults Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class WorkerAgent::ParseFileStreamResults::Pipeline {
+public:
+  typedef ParseFileStreamResults Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -1299,6 +2011,78 @@ inline ::capnp::Orphan< ::capnp::Text> ParseResult::Builder::disownMessage() {
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
+inline bool ParseResult::Reader::hasChunks() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
+}
+inline bool ParseResult::Builder::hasChunks() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader ParseResult::Reader::getChunks() const {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder ParseResult::Builder::getChunks() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline void ParseResult::Builder::setChunks( ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
+}
+inline void ParseResult::Builder::setChunks(::kj::ArrayPtr<const  ::capnp::Data::Reader> value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder ParseResult::Builder::initChunks(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
+}
+inline void ParseResult::Builder::adoptChunks(
+    ::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>> ParseResult::Builder::disownChunks() {
+  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+
+inline bool ParseResult::Reader::hasExtractedText() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline bool ParseResult::Builder::hasExtractedText() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader ParseResult::Reader::getExtractedText() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder ParseResult::Builder::getExtractedText() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline void ParseResult::Builder::setExtractedText( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder ParseResult::Builder::initExtractedText(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), size);
+}
+inline void ParseResult::Builder::adoptExtractedText(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> ParseResult::Builder::disownExtractedText() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+
 inline  ::uint64_t WorkerPingResponse::Reader::getRssBytes() const {
   return _reader.getDataField< ::uint64_t>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS);
@@ -1325,6 +2109,140 @@ inline bool WorkerPingResponse::Builder::getIsBusy() {
 inline void WorkerPingResponse::Builder::setIsBusy(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<64>() * ::capnp::ELEMENTS, value);
+}
+
+#if !CAPNP_LITE
+inline TextStreamReceiver::Client::Client(decltype(nullptr))
+    : ::capnp::Capability::Client(nullptr) {}
+inline TextStreamReceiver::Client::Client(
+    ::kj::Own< ::capnp::ClientHook>&& hook)
+    : ::capnp::Capability::Client(::kj::mv(hook)) {}
+template <typename _t, typename>
+inline TextStreamReceiver::Client::Client(::kj::Own<_t>&& server)
+    : ::capnp::Capability::Client(::kj::mv(server)) {}
+template <typename _t, typename>
+inline TextStreamReceiver::Client::Client(::kj::Promise<_t>&& promise)
+    : ::capnp::Capability::Client(::kj::mv(promise)) {}
+inline TextStreamReceiver::Client::Client(::kj::Exception&& exception)
+    : ::capnp::Capability::Client(::kj::mv(exception)) {}
+inline  ::soeasy::ipc::TextStreamReceiver::Client& TextStreamReceiver::Client::operator=(Client& other) {
+  ::capnp::Capability::Client::operator=(other);
+  return *this;
+}
+inline  ::soeasy::ipc::TextStreamReceiver::Client& TextStreamReceiver::Client::operator=(Client&& other) {
+  ::capnp::Capability::Client::operator=(kj::mv(other));
+  return *this;
+}
+
+#endif  // !CAPNP_LITE
+inline bool TextStreamReceiver::SendChunkParams::Reader::hasChunk() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool TextStreamReceiver::SendChunkParams::Builder::hasChunk() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Data::Reader TextStreamReceiver::SendChunkParams::Reader::getChunk() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Data>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Data::Builder TextStreamReceiver::SendChunkParams::Builder::getChunk() {
+  return ::capnp::_::PointerHelpers< ::capnp::Data>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline void TextStreamReceiver::SendChunkParams::Builder::setChunk( ::capnp::Data::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Data>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Data::Builder TextStreamReceiver::SendChunkParams::Builder::initChunk(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Data>::init(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
+}
+inline void TextStreamReceiver::SendChunkParams::Builder::adoptChunk(
+    ::capnp::Orphan< ::capnp::Data>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Data>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Data> TextStreamReceiver::SendChunkParams::Builder::disownChunk() {
+  return ::capnp::_::PointerHelpers< ::capnp::Data>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+
+inline  ::uint64_t TextStreamReceiver::FinishParams::Reader::getTotalBytes() const {
+  return _reader.getDataField< ::uint64_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint64_t TextStreamReceiver::FinishParams::Builder::getTotalBytes() {
+  return _builder.getDataField< ::uint64_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void TextStreamReceiver::FinishParams::Builder::setTotalBytes( ::uint64_t value) {
+  _builder.setDataField< ::uint64_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool TextStreamReceiver::FinishParams::Reader::getIsScannedPdf() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<64>() * ::capnp::ELEMENTS);
+}
+
+inline bool TextStreamReceiver::FinishParams::Builder::getIsScannedPdf() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<64>() * ::capnp::ELEMENTS);
+}
+inline void TextStreamReceiver::FinishParams::Builder::setIsScannedPdf(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<64>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::int32_t TextStreamReceiver::FinishParams::Reader::getStatusCode() const {
+  return _reader.getDataField< ::int32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline  ::int32_t TextStreamReceiver::FinishParams::Builder::getStatusCode() {
+  return _builder.getDataField< ::int32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void TextStreamReceiver::FinishParams::Builder::setStatusCode( ::int32_t value) {
+  _builder.setDataField< ::int32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool TextStreamReceiver::FinishParams::Reader::hasErrorMsg() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool TextStreamReceiver::FinishParams::Builder::hasErrorMsg() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader TextStreamReceiver::FinishParams::Reader::getErrorMsg() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder TextStreamReceiver::FinishParams::Builder::getErrorMsg() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline void TextStreamReceiver::FinishParams::Builder::setErrorMsg( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder TextStreamReceiver::FinishParams::Builder::initErrorMsg(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
+}
+inline void TextStreamReceiver::FinishParams::Builder::adoptErrorMsg(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> TextStreamReceiver::FinishParams::Builder::disownErrorMsg() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
 #if !CAPNP_LITE
@@ -1524,6 +2442,141 @@ inline ::capnp::Orphan< ::soeasy::ipc::ParseResult> WorkerAgent::ParseFileResult
   return ::capnp::_::PointerHelpers< ::soeasy::ipc::ParseResult>::disown(_builder.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
+
+inline  ::int64_t WorkerAgent::ParseFileStreamParams::Reader::getDocId() const {
+  return _reader.getDataField< ::int64_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline  ::int64_t WorkerAgent::ParseFileStreamParams::Builder::getDocId() {
+  return _builder.getDataField< ::int64_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setDocId( ::int64_t value) {
+  _builder.setDataField< ::int64_t>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool WorkerAgent::ParseFileStreamParams::Reader::hasFilePath() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline bool WorkerAgent::ParseFileStreamParams::Builder::hasFilePath() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader WorkerAgent::ParseFileStreamParams::Reader::getFilePath() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder WorkerAgent::ParseFileStreamParams::Builder::getFilePath() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setFilePath( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder WorkerAgent::ParseFileStreamParams::Builder::initFilePath(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::adoptFilePath(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> WorkerAgent::ParseFileStreamParams::Builder::disownFilePath() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<0>() * ::capnp::POINTERS));
+}
+
+inline bool WorkerAgent::ParseFileStreamParams::Reader::hasExt() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
+}
+inline bool WorkerAgent::ParseFileStreamParams::Builder::hasExt() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
+}
+inline  ::capnp::Text::Reader WorkerAgent::ParseFileStreamParams::Reader::getExt() const {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline  ::capnp::Text::Builder WorkerAgent::ParseFileStreamParams::Builder::getExt() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setExt( ::capnp::Text::Reader value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
+}
+inline  ::capnp::Text::Builder WorkerAgent::ParseFileStreamParams::Builder::initExt(unsigned int size) {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::adoptExt(
+    ::capnp::Orphan< ::capnp::Text>&& value) {
+  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::capnp::Text> WorkerAgent::ParseFileStreamParams::Builder::disownExt() {
+  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
+}
+
+inline  ::soeasy::ipc::ParseLevel WorkerAgent::ParseFileStreamParams::Reader::getLevel() const {
+  return _reader.getDataField< ::soeasy::ipc::ParseLevel>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+
+inline  ::soeasy::ipc::ParseLevel WorkerAgent::ParseFileStreamParams::Builder::getLevel() {
+  return _builder.getDataField< ::soeasy::ipc::ParseLevel>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setLevel( ::soeasy::ipc::ParseLevel value) {
+  _builder.setDataField< ::soeasy::ipc::ParseLevel>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool WorkerAgent::ParseFileStreamParams::Reader::hasReceiver() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline bool WorkerAgent::ParseFileStreamParams::Builder::hasReceiver() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+#if !CAPNP_LITE
+inline  ::soeasy::ipc::TextStreamReceiver::Client WorkerAgent::ParseFileStreamParams::Reader::getReceiver() const {
+  return ::capnp::_::PointerHelpers< ::soeasy::ipc::TextStreamReceiver>::get(_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline  ::soeasy::ipc::TextStreamReceiver::Client WorkerAgent::ParseFileStreamParams::Builder::getReceiver() {
+  return ::capnp::_::PointerHelpers< ::soeasy::ipc::TextStreamReceiver>::get(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline  ::soeasy::ipc::TextStreamReceiver::Client WorkerAgent::ParseFileStreamParams::Pipeline::getReceiver() {
+  return  ::soeasy::ipc::TextStreamReceiver::Client(_typeless.getPointerField(2).asCap());
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setReceiver( ::soeasy::ipc::TextStreamReceiver::Client&& cap) {
+  ::capnp::_::PointerHelpers< ::soeasy::ipc::TextStreamReceiver>::set(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(cap));
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setReceiver( ::soeasy::ipc::TextStreamReceiver::Client& cap) {
+  ::capnp::_::PointerHelpers< ::soeasy::ipc::TextStreamReceiver>::set(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), cap);
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::adoptReceiver(
+    ::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver>&& value) {
+  ::capnp::_::PointerHelpers< ::soeasy::ipc::TextStreamReceiver>::adopt(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver> WorkerAgent::ParseFileStreamParams::Builder::disownReceiver() {
+  return ::capnp::_::PointerHelpers< ::soeasy::ipc::TextStreamReceiver>::disown(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+#endif  // !CAPNP_LITE
 
 inline  ::uint64_t WorkerAgent::PingResults::Reader::getRssBytes() const {
   return _reader.getDataField< ::uint64_t>(

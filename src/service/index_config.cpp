@@ -19,47 +19,54 @@
 #include "common/format_categories.h"
 #include "common/logger.h"
 #include "nlohmann/json.hpp"
+#include "service/path_filter_policy.h"
 
 namespace soeasy {
 namespace service {
 
 IndexConfig::IndexConfig() {
   // 1. Cross-platform common excluded directory patterns (VCS, dependencies, IDE, build)
-  excluded_patterns_ = {
-      // Version control
-      "/.git/",      "\\git\\",      "/.svn/",      "\\.svn\\",      "/.hg/",        "\\.hg\\",
-      // Package managers & dependencies
-      "/node_modules/", "\\node_modules\\", "/bower_components/", "\\bower_components\\",
-      "/.cargo/",    "\\.cargo\\",   "/.gradle/",   "\\.gradle\\",   "/.m2/",        "\\.m2\\",
-      // IDE configs
-      "/.idea/",     "\\.idea\\",    "/.vscode/",   "\\.vscode\\",   "/.vs/",        "\\.vs\\",
-      // Build and compiler outputs
-      "/build/",     "\\build\\",    "/dist/",      "\\dist\\",      "/target/",     "\\target\\",
-      "/__pycache__/", "\\__pycache__\\", "/.pytest_cache/", "\\.pytest_cache\\",
-      "/.venv/",     "\\.venv\\",    "/venv/",      "\\venv\\",
-      // User-level cache
-      "/.cache/",    "\\.cache\\"
-  };
+  excluded_patterns_ = {// Version control
+                        "/.git/", "\\git\\", "/.svn/", "\\.svn\\", "/.hg/", "\\.hg\\",
+                        // Package managers & dependencies
+                        "/node_modules/", "\\node_modules\\", "/bower_components/", "\\bower_components\\", "/.cargo/",
+                        "\\.cargo\\", "/.gradle/", "\\.gradle\\", "/.m2/", "\\.m2\\",
+                        // IDE configs
+                        "/.idea/", "\\.idea\\", "/.vscode/", "\\.vscode\\", "/.vs/", "\\.vs\\",
+                        // Build and compiler outputs
+                        "/build/", "\\build\\", "/dist/", "\\dist\\", "/target/", "\\target\\", "/__pycache__/",
+                        "\\__pycache__\\", "/.pytest_cache/", "\\.pytest_cache\\", "/.venv/", "\\.venv\\", "/venv/",
+                        "\\venv\\",
+                        // User-level cache
+                        "/.cache/", "\\.cache\\"};
 
 #ifdef _WIN32
   // 2. Windows-specific system, recycle bin, system volume, and temp directories
-  static const std::vector<std::string> kWindowsPatterns = {
-      "/$Recycle.Bin/", "\\$Recycle.Bin\\", "/$RECYCLE.BIN/", "\\$RECYCLE.BIN\\",
-      "/RECYCLER/",  "\\RECYCLER\\", "/System Volume Information/", "\\System Volume Information\\",
-      "/Windows/",   "\\Windows\\",  "/ProgramData/Microsoft/Search/", "\\ProgramData\\Microsoft\\Search\\",
-      "/AppData/Local/Temp/", "\\AppData\\Local\\Temp\\",
-      "/AppData/Local/CrashDumps/", "\\AppData\\Local\\CrashDumps\\",
-      "/AppData/Local/Microsoft/Windows/INetCache/", "\\AppData\\Local\\Microsoft\\Windows\\INetCache\\",
-      "/AppData/Local/Microsoft/Windows/Explorer/", "\\AppData\\Local\\Microsoft\\Windows\\Explorer\\"
-  };
+  static const std::vector<std::string> kWindowsPatterns = {"/$Recycle.Bin/",
+                                                            "\\$Recycle.Bin\\",
+                                                            "/$RECYCLE.BIN/",
+                                                            "\\$RECYCLE.BIN\\",
+                                                            "/RECYCLER/",
+                                                            "\\RECYCLER\\",
+                                                            "/System Volume Information/",
+                                                            "\\System Volume Information\\",
+                                                            "/Windows/",
+                                                            "\\Windows\\",
+                                                            "/ProgramData/Microsoft/Search/",
+                                                            "\\ProgramData\\Microsoft\\Search\\",
+                                                            "/AppData/Local/Temp/",
+                                                            "\\AppData\\Local\\Temp\\",
+                                                            "/AppData/Local/CrashDumps/",
+                                                            "\\AppData\\Local\\CrashDumps\\",
+                                                            "/AppData/Local/Microsoft/Windows/INetCache/",
+                                                            "\\AppData\\Local\\Microsoft\\Windows\\INetCache\\",
+                                                            "/AppData/Local/Microsoft/Windows/Explorer/",
+                                                            "\\AppData\\Local\\Microsoft\\Windows\\Explorer\\"};
   excluded_patterns_.insert(excluded_patterns_.end(), kWindowsPatterns.begin(), kWindowsPatterns.end());
 #else
   // 3. Linux/POSIX-specific daemon, system, log, and container directories
   static const std::vector<std::string> kPosixPatterns = {
-      "/var/tmp/",   "/var/log/",    "/var/cache/",
-      "/var/lib/docker/", "/var/lib/containerd/",
-      "/.local/share/Trash/"
-  };
+      "/var/tmp/", "/var/log/", "/var/cache/", "/var/lib/docker/", "/var/lib/containerd/", "/.local/share/Trash/"};
   excluded_patterns_.insert(excluded_patterns_.end(), kPosixPatterns.begin(), kPosixPatterns.end());
 #endif
 
@@ -201,110 +208,27 @@ bool IndexConfig::IsFileSupported(const std::string &filename) const {
 }
 
 bool IndexConfig::IsDirectoryExcluded(const std::string &dir_path) const {
-  if (dir_path.empty()) {
-    return false;
+  std::vector<std::string> patterns;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    patterns = excluded_patterns_;
   }
-
-#ifndef _WIN32
-  // 1. Linux statfs.f_type: probe virtual / pseudo / RAM filesystems (< 50ns)
-  struct statfs fs_info;
-  if (statfs(dir_path.c_str(), &fs_info) == 0) {
-    switch (fs_info.f_type) {
-      case 0x9fa0:      // PROC_SUPER_MAGIC (/proc)
-      case 0x62656572:  // SYSFS_MAGIC_NUMBER (/sys)
-      case 0x01021994:  // TMPFS_MAGIC (/run, /dev/shm, etc.)
-      case 0x858458f6:  // RAMFS_MAGIC
-      case 0x1cd1:      // DEVPTS_SUPER_MAGIC (/dev/pts)
-      case 0x27e0eb:    // CGROUP_SUPER_MAGIC
-      case 0x63677270:  // CGROUP2_SUPER_MAGIC
-      case 0x42494e4d:  // BINFMTFS_MAGIC
-      case 0x534f434b:  // SOCKFS_MAGIC
-        return true;
-    }
-  }
-#else
-  // 2. Windows NTFS Reparse Points (Junction loop prevention) & System Volume
-  std::wstring wpath = common::EncodingUtils::Utf8ToWide(dir_path);
-  DWORD attrs = GetFileAttributesW(wpath.c_str());
-  if (attrs != INVALID_FILE_ATTRIBUTES) {
-    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
-      return true;  // Stop Junction loops (e.g. Application Data infinite recursion)
-    }
-    if ((attrs & FILE_ATTRIBUTE_SYSTEM) && (attrs & FILE_ATTRIBUTE_HIDDEN)) {
-      return true;  // Stop System Volume Information & hidden system caches
-    }
-  }
-#endif
-
-  // 3. Normalized pattern matching
-  std::string normalized = dir_path;
-  std::replace(normalized.begin(), normalized.end(), '\\', '/');
-  if (normalized.front() != '/') {
-    normalized = "/" + normalized;
-  }
-  if (normalized.back() != '/') {
-    normalized += "/";
-  }
-
-#ifndef _WIN32
-  // Skip root-level ephemeral / recovery folders when traversing from root
-  if (normalized == "/tmp/" || normalized == "/lost+found/") {
-    return true;
-  }
-#endif
-
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (const auto &pattern : excluded_patterns_) {
-    std::string norm_pattern = pattern;
-    std::replace(norm_pattern.begin(), norm_pattern.end(), '\\', '/');
-    if (normalized.find(norm_pattern) != std::string::npos) {
-      return true;
-    }
-  }
-  return false;
+  return PathFilterPolicy::IsDirectoryExcluded(dir_path, patterns);
 }
 
 bool IndexConfig::ShouldIndex(const std::string &file_path, const std::string &ext, uint64_t file_size) const {
-  if (file_size > max_file_size_) {
-    return false;
+  uint64_t max_size = 0;
+  std::vector<std::string> patterns;
+  std::unordered_set<std::string> exts;
+  bool filter_thumbs = true;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    max_size = max_file_size_;
+    patterns = excluded_patterns_;
+    exts = supported_exts_;
+    filter_thumbs = filter_cache_thumbnails_;
   }
-
-  std::string lower_ext = ext;
-  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
-
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  // Check exclusion patterns
-  for (const auto &pattern : excluded_patterns_) {
-    if (file_path.find(pattern) != std::string::npos) {
-      return false;
-    }
-  }
-
-  // Check file extension
-  if (supported_exts_.find(lower_ext) == supported_exts_.end()) {
-    return false;
-  }
-
-  // Pre-filter cache and thumbnail paths for images to save indexing overhead
-  if (filter_cache_thumbnails_ &&
-      (lower_ext == "png" || lower_ext == "jpg" || lower_ext == "jpeg" || lower_ext == "bmp" || lower_ext == "webp" ||
-       lower_ext == "gif" || lower_ext == "tif" || lower_ext == "tiff" || lower_ext == "svg")) {
-    static const char *kPathKeywords[] = {"/weappicon/", "/thumb/",     "/thumbs/", "/emoji/",  "/emojis/",
-                                          "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"};
-    std::string lower_path = file_path;
-    std::transform(lower_path.begin(), lower_path.end(), lower_path.begin(), ::tolower);
-    for (const char *kw : kPathKeywords) {
-      if (lower_path.find(kw) != std::string::npos) {
-        return false;
-      }
-    }
-    if (lower_path.find("_thumb.") != std::string::npos || lower_path.find("_thumbnail.") != std::string::npos) {
-      return false;
-    }
-  }
-
-  return true;
+  return PathFilterPolicy::ShouldIndex(file_path, ext, file_size, max_size, patterns, exts, filter_thumbs);
 }
 
 bool IndexConfig::LoadFromFile(const std::string &file_path) {
@@ -511,13 +435,11 @@ ConfigChangeSummary DiffIndexConfig(const IndexConfigSnapshot &before, const Ind
   ConfigChangeSummary diff;
   diff.debounce_changed = (before.debounce_ms != after.debounce_ms);
   diff.worker_count_changed = (before.worker_count != after.worker_count);
-  diff.runtime_changed = diff.debounce_changed || diff.worker_count_changed ||
-                         (before.ui_language != after.ui_language) ||
-                         (before.log_level != after.log_level) || (before.log_console != after.log_console) ||
-                         (before.log_sync != after.log_sync) ||
-                         (before.doctotext_logging != after.doctotext_logging) ||
-                         (before.doctotext_log_path != after.doctotext_log_path) ||
-                         (before.resource_profile != after.resource_profile);
+  diff.runtime_changed =
+      diff.debounce_changed || diff.worker_count_changed || (before.ui_language != after.ui_language) ||
+      (before.log_level != after.log_level) || (before.log_console != after.log_console) ||
+      (before.log_sync != after.log_sync) || (before.doctotext_logging != after.doctotext_logging) ||
+      (before.doctotext_log_path != after.doctotext_log_path) || (before.resource_profile != after.resource_profile);
 
   std::unordered_set<std::string> before_dir_keys;
   for (const auto &d : before.indexed_dirs) {

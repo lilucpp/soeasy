@@ -11,7 +11,7 @@
 
 #include "service/isearch_coordinator.h"
 #include "service/name_index.h"
-#include "storage/istorage_engine.h"
+#include "storage/istorage_reader.h"
 
 namespace soeasy {
 namespace service {
@@ -19,12 +19,13 @@ namespace service {
 /**
  * @brief CQRS Query-side implementation of SearchCoordinator.
  *
- * Coordinates read-only queries across in-memory trie (NameIndex) and SQLite WAL FTS5 (IStorageEngine).
+ * Coordinates read-only queries across in-memory trie (NameIndex) and SQLite WAL FTS5 (IDocumentSearchReader).
  * Decoupled from write operations, indexing pipelines, and filesystem watcher events.
  */
 class SearchCoordinator final : public ISearchCoordinator {
  public:
-  SearchCoordinator(std::shared_ptr<NameIndex> name_index, std::shared_ptr<storage::IStorageEngine> storage_engine);
+  SearchCoordinator(std::shared_ptr<NameIndex> name_index,
+                    std::shared_ptr<storage::IDocumentSearchReader> storage_engine);
   ~SearchCoordinator() override = default;
 
  protected:
@@ -51,7 +52,7 @@ class SearchCoordinator final : public ISearchCoordinator {
 
  private:
   std::shared_ptr<NameIndex> name_index_;
-  std::shared_ptr<storage::IStorageEngine> storage_engine_;
+  std::shared_ptr<storage::IDocumentSearchReader> storage_engine_;
   std::atomic<uint64_t> current_query_token_{0};
 };
 

@@ -90,8 +90,7 @@ std::string ResolveWorkerBinary(const std::string &hint_path) {
   return "";
 }
 
-std::string DeriveWorkerDocToTextLogPath(const std::string &configured_path, const std::string &log_dir,
-                                         size_t index) {
+std::string DeriveWorkerDocToTextLogPath(const std::string &configured_path, const std::string &log_dir, size_t index) {
   const std::string suffix = "_worker_" + std::to_string(index);
   if (configured_path.empty()) {
     return (std::filesystem::path(log_dir) / ("doctotext" + suffix + ".log")).generic_string();
@@ -228,7 +227,8 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
   worker_bin_path_ = ResolveWorkerBinary(worker_bin_path);
   if (worker_bin_path_.empty()) {
     LOG_ERROR(
-        "[WorkerGuard] Failed to locate soeasy-worker binary (hint: '{}'). Multithreaded in-process fork is prohibited.",
+        "[WorkerGuard] Failed to locate soeasy-worker binary (hint: '{}'). Multithreaded in-process fork is "
+        "prohibited.",
         worker_bin_path);
     return false;
   }
@@ -261,6 +261,10 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
 
   is_running_.store(true, std::memory_order_release);
   workers_.resize(worker_count);
+  {
+    std::lock_guard<std::mutex> lock(stdio_mutex_);
+    recent_stdio_.resize(worker_count);
+  }
 
   auto now = std::chrono::steady_clock::now();
   for (size_t i = 0; i < worker_count; ++i) {
@@ -278,22 +282,43 @@ std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_par
   const std::string worker_log_file =
       (std::filesystem::path(log_dir) / ("soeasy_worker_" + std::to_string(index) + ".log")).generic_string();
   const std::string worker_dt_log_file = DeriveWorkerDocToTextLogPath(doctotext_log_path_, log_dir, index);
-  return {
-      worker_bin_path_,
-      ipc_param,
-      "--shm-name=" + shm_pool_.shm_name(),
-      "--slot-count=" + std::to_string(shm_pool_.slot_count()),
-      "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
-      "--log-file=" + worker_log_file,
-      "--log-level=" + log_level_,
-      log_console_ ? "--log-console" : "--no-log-console",
-      log_sync_ ? "--log-sync" : "--no-log-sync",
-      doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
-      "--doctotext-log-path=" + worker_dt_log_file,
-      embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
+  return {worker_bin_path_,
+          ipc_param,
+          "--shm-name=" + shm_pool_.shm_name(),
+          "--slot-count=" + std::to_string(shm_pool_.slot_count()),
+          "--slot-capacity=" + std::to_string(shm_pool_.slot_capacity()),
+          "--log-file=" + worker_log_file,
+          "--log-level=" + log_level_,
+          log_console_ ? "--log-console" : "--no-log-console",
+          log_sync_ ? "--log-sync" : "--no-log-sync",
+          doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
+          "--doctotext-log-path=" + worker_dt_log_file,
+          embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
 }
 
-void WorkerGuard::DrainWorkerStdio(FILE *stream, size_t index, bool log_as_info) {
+void WorkerGuard::RecordWorkerStdio(size_t index, const std::string &line) {
+  std::lock_guard<std::mutex> lock(stdio_mutex_);
+  if (index >= recent_stdio_.size()) {
+    recent_stdio_.resize(index + 1);
+  }
+  if (recent_stdio_[index].size() >= 30) {
+    recent_stdio_[index].pop_front();
+  }
+  recent_stdio_[index].push_back(line);
+}
+
+std::string WorkerGuard::GetRecentWorkerStdio(size_t index) const {
+  std::lock_guard<std::mutex> lock(stdio_mutex_);
+  if (index >= recent_stdio_.size()) return {};
+  std::string out;
+  for (const auto &l : recent_stdio_[index]) {
+    if (!out.empty()) out += "\n  ";
+    out += l;
+  }
+  return out;
+}
+
+void WorkerGuard::DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t index, bool log_as_info) {
   if (!stream) return;
   char buf[4096];
   while (std::fgets(buf, sizeof(buf), stream) != nullptr) {
@@ -302,10 +327,13 @@ void WorkerGuard::DrainWorkerStdio(FILE *stream, size_t index, bool log_as_info)
       buf[--len] = '\0';
     }
     if (len == 0) continue;
+    if (guard) {
+      guard->RecordWorkerStdio(index, buf);
+    }
     if (log_as_info) {
       LOG_INFO("[Worker {} stdio] {}", index, buf);
     } else {
-      LOG_WARN("[Worker {} stdio] {}", index, buf);
+      LOG_DEBUG("[Worker {} stdio] {}", index, buf);
     }
   }
 }
@@ -319,8 +347,12 @@ void WorkerGuard::FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid
   inst.current_doc_id = 0;
   inst.current_slot_id = 0;
   inst.total_tasks_processed = 0;
+  if (inst.stdio_drain_thread.joinable()) {
+    inst.stdio_drain_thread.join();
+  }
   if (inst.process && inst.process->stdout_file) {
-    inst.stdio_drain_thread = std::thread(&WorkerGuard::DrainWorkerStdio, inst.process->stdout_file, index, log_console_);
+    inst.stdio_drain_thread =
+        std::thread(&WorkerGuard::DrainWorkerStdio, this, inst.process->stdout_file, index, log_console_);
   }
 }
 
@@ -339,8 +371,8 @@ bool WorkerGuard::SpawnWorkerWindows(size_t index) {
   std::vector<std::string> args = BuildWorkerArgs("--pipe-name=" + pipe_name, index);
   auto cmd = ToArgv(args);
 
-  int options = subprocess_option_inherit_environment | subprocess_option_no_window |
-                subprocess_option_combined_stdout_stderr;
+  int options =
+      subprocess_option_inherit_environment | subprocess_option_no_window | subprocess_option_combined_stdout_stderr;
   auto proc = MakeSubprocess();
   int r = subprocess_create(cmd.data(), options, proc.get());
   if (r != 0) {
@@ -475,9 +507,8 @@ void WorkerGuard::WatchdogLoop() {
   while (is_running_.load(std::memory_order_acquire)) {
     {
       std::unique_lock<std::mutex> cv_lock(watchdog_mutex_);
-      watchdog_cv_.wait_for(cv_lock, std::chrono::milliseconds(50), [this]() {
-        return !is_running_.load(std::memory_order_acquire);
-      });
+      watchdog_cv_.wait_for(cv_lock, std::chrono::milliseconds(50),
+                            [this]() { return !is_running_.load(std::memory_order_acquire); });
     }
     if (!is_running_.load(std::memory_order_acquire)) {
       break;
@@ -503,7 +534,8 @@ void WorkerGuard::WatchdogLoop() {
         if (was_busy) {
           shm_pool_.ReleaseSlot(inst.current_slot_id);
         }
-        // Defer returning to kIdle until the owning ExecuteTask finishes cleanup so no other task reuses slot i/slot_id.
+        // Defer returning to kIdle until the owning ExecuteTask finishes cleanup so no other task reuses slot
+        // i/slot_id.
         inst.Reset(was_busy ? WorkerState::kCrashed : WorkerState::kIdle);
         if (!was_busy) {
           worker_available_cv_.notify_all();
@@ -699,6 +731,24 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       out_result->extracted_bytes = resp.getExtractedBytes();
       out_result->is_scanned_pdf = resp.getIsScannedPdf();
       out_result->error_message = resp.getMessage();
+      if (resp.hasExtractedText()) {
+        out_result->extracted_text = resp.getExtractedText().cStr();
+      }
+      if (resp.hasChunks()) {
+        auto chunks_reader = resp.getChunks();
+        out_result->stream_chunks.reserve(chunks_reader.size());
+        size_t total_chunk_bytes = 0;
+        for (auto chunk : chunks_reader) {
+          out_result->stream_chunks.emplace_back(reinterpret_cast<const char *>(chunk.begin()), chunk.size());
+          total_chunk_bytes += chunk.size();
+        }
+        if (out_result->extracted_text.empty() && total_chunk_bytes > 0) {
+          out_result->extracted_text.reserve(total_chunk_bytes);
+          for (const auto &c : out_result->stream_chunks) {
+            out_result->extracted_text.append(c);
+          }
+        }
+      }
       std::string msg = resp.getMessage();
       if (msg.rfind("SPILL:", 0) == 0) {
         out_result->spill_file_path = msg.substr(6);
@@ -719,6 +769,24 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     out_result->extracted_bytes = resp.getExtractedBytes();
     out_result->is_scanned_pdf = resp.getIsScannedPdf();
     out_result->error_message = resp.getMessage();
+    if (resp.hasExtractedText()) {
+      out_result->extracted_text = resp.getExtractedText().cStr();
+    }
+    if (resp.hasChunks()) {
+      auto chunks_reader = resp.getChunks();
+      out_result->stream_chunks.reserve(chunks_reader.size());
+      size_t total_chunk_bytes = 0;
+      for (auto chunk : chunks_reader) {
+        out_result->stream_chunks.emplace_back(reinterpret_cast<const char *>(chunk.begin()), chunk.size());
+        total_chunk_bytes += chunk.size();
+      }
+      if (out_result->extracted_text.empty() && total_chunk_bytes > 0) {
+        out_result->extracted_text.reserve(total_chunk_bytes);
+        for (const auto &c : out_result->stream_chunks) {
+          out_result->extracted_text.append(c);
+        }
+      }
+    }
     std::string msg = resp.getMessage();
     if (msg.rfind("SPILL:", 0) == 0) {
       out_result->spill_file_path = msg.substr(6);
@@ -745,8 +813,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
     std::unique_lock<std::mutex> lock(pool_mutex_);
     WorkerInstance &worker = workers_[assigned_worker_idx];
 
-    if (worker.state == WorkerState::kKilledByWatchdog ||
-        (worker.state != WorkerState::kCrashed && is_timeout)) {
+    if (worker.state == WorkerState::kKilledByWatchdog || (worker.state != WorkerState::kCrashed && is_timeout)) {
       out_result->status = TaskStatus::kTimeout;
       out_result->error_message = "Task timed out or stalled (killed by watchdog)";
       out_result->slot_id = 0;
@@ -762,7 +829,13 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       }
     } else {
       out_result->status = TaskStatus::kCrashed;
-      out_result->error_message = "Worker crashed (SIGSEGV/abort) during file parsing";
+      std::string diag = GetRecentWorkerStdio(assigned_worker_idx);
+      if (!diag.empty()) {
+        LOG_WARN("[WorkerGuard] Worker {} crash diagnosis (last stdio):\n  {}", assigned_worker_idx, diag);
+        out_result->error_message = "Worker crashed (SIGSEGV/abort) during file parsing: " + diag;
+      } else {
+        out_result->error_message = "Worker crashed (SIGSEGV/abort) during file parsing";
+      }
       out_result->slot_id = 0;
       FinalizeBusyWorkerOnFailure(assigned_worker_idx, slot_id, out_result->status, out_result->error_message);
     }
@@ -800,10 +873,10 @@ void WorkerGuard::Shutdown() {
 void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
   std::lock_guard<std::mutex> lock(pool_mutex_);
   const std::string &next_log_dir = options.worker_log_dir.empty() ? worker_log_dir_ : options.worker_log_dir;
-  bool changed = (log_level_ != options.level || log_console_ != options.enable_console ||
-                  log_sync_ != options.enable_sync || doctotext_logging_ != options.doctotext_logging ||
-                  doctotext_log_path_ != options.doctotext_log_path ||
-                  embedded_image_ocr_ != options.embedded_image_ocr || worker_log_dir_ != next_log_dir);
+  bool changed =
+      (log_level_ != options.level || log_console_ != options.enable_console || log_sync_ != options.enable_sync ||
+       doctotext_logging_ != options.doctotext_logging || doctotext_log_path_ != options.doctotext_log_path ||
+       embedded_image_ocr_ != options.embedded_image_ocr || worker_log_dir_ != next_log_dir);
   log_level_ = options.level;
   log_console_ = options.enable_console;
   log_sync_ = options.enable_sync;

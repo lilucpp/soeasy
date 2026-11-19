@@ -9,8 +9,9 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -18,9 +19,8 @@
 #include <thread>
 #include <vector>
 
-#include "subprocess.h"
-
 #include "common/shm_pool.h"
+#include "subprocess.h"
 
 namespace soeasy {
 namespace service {
@@ -50,6 +50,8 @@ struct ParseTaskResult {
   bool is_scanned_pdf = false;
   std::string error_message;
   std::string spill_file_path;  // Set when text exceeds slot capacity and spilled to temp file
+  std::string extracted_text;   // Streamed directly over Cap'n Proto IPC
+  std::vector<std::string> stream_chunks;
   double elapsed_ms = 0.0;
 };
 
@@ -211,9 +213,10 @@ class WorkerGuard {
   bool SpawnWorkerPosix(size_t index);
 #endif
   void FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid);
-  void FinalizeBusyWorkerOnFailure(size_t worker_idx, uint32_t slot_id, TaskStatus status,
-                                   const std::string &reason);
-  static void DrainWorkerStdio(FILE *stream, size_t index, bool log_as_info);
+  void FinalizeBusyWorkerOnFailure(size_t worker_idx, uint32_t slot_id, TaskStatus status, const std::string &reason);
+  static void DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t index, bool log_as_info);
+  void RecordWorkerStdio(size_t index, const std::string &line);
+  std::string GetRecentWorkerStdio(size_t index) const;
   std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param, size_t index) const;
   void KillWorker(size_t index, TaskStatus status, const std::string &reason);
   void WatchdogLoop();
@@ -232,6 +235,8 @@ class WorkerGuard {
   common::ShmSlotPool shm_pool_;
 
   std::vector<WorkerInstance> workers_;
+  mutable std::mutex stdio_mutex_;
+  std::vector<std::deque<std::string>> recent_stdio_;
   mutable std::mutex pool_mutex_;
   std::condition_variable worker_available_cv_;
 

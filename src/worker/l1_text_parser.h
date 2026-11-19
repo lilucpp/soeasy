@@ -22,6 +22,7 @@ class L1TextParser : public IDocumentParser {
   // IDocumentParser implementation
   bool CanHandle(const ParseContext &ctx) const override;
   bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  bool ParseStream(std::istream &stream, const ParseContext &ctx, ExtractedDocument *out_doc) override;
   int Priority() const override { return 10; }
   std::string Name() const override { return "L1TextParser"; }
 
