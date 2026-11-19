@@ -62,7 +62,7 @@ class SqliteStmtScope {
     Reset();
     return &stmt_;
   }
-  sqlite3_stmt *release() {
+  [[maybe_unused]] sqlite3_stmt *release() {
     sqlite3_stmt *tmp = stmt_;
     stmt_ = nullptr;
     return tmp;

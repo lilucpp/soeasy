@@ -51,9 +51,11 @@ static void ProcessTask(const soeasy::ipc::ParseRequest::Reader &request, common
 
   // Check for test hooks: intentional crash to verify crash recovery
   if (file_path.find("TEST_TRIGGER_CRASH") != std::string::npos) {
-    volatile int *null_ptr = nullptr;
-    // cppcheck-suppress nullPointer
-    *null_ptr = 42;  // Trigger SIGSEGV
+#ifdef _WIN32
+    RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, NULL);
+#else
+    std::raise(SIGSEGV);
+#endif
   }
 
   // Parse document via ParserRegistry (Strategy + Responsibility Chain)

@@ -1206,7 +1206,8 @@ bool IndexOrchestrator::ApplyLiveFileChange(const DebouncedEvent &event, bool fr
     }
     if (!event.file_path.empty()) {
       std::error_code ec;
-      if (std::filesystem::exists(common::EncodingUtils::PathFromUtf8(event.file_path), ec)) {
+      bool exists = std::filesystem::exists(common::EncodingUtils::PathFromUtf8(event.file_path), ec);
+      if (!ec && exists) {
         return add_or_modify_path(event.file_path, "moved");
       }
     }

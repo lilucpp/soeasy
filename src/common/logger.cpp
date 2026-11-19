@@ -186,7 +186,10 @@ std::shared_ptr<spdlog::logger> Logger::Get() {
 
     try {
       sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(g_log_file_path, 10 * 1024 * 1024, 3));
+    } catch (const std::exception &ex) {
+      std::cerr << "[Logger] Failed to create rotating file sink: " << ex.what() << '\n';
     } catch (...) {
+      std::cerr << "[Logger] Failed to create rotating file sink: unknown exception\n";
     }
 
     g_logger = std::make_shared<spdlog::logger>("soeasy", sinks.begin(), sinks.end());

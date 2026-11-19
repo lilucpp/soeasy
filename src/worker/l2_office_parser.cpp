@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "common/encoding_utils.h"
+#include "common/logger.h"
 #include "doctotext_c_api.h"
 #include "miniz.h"
 #include "utf8.h"
@@ -143,10 +144,14 @@ std::string DocToTextImageParserCallback(const std::string &image_name, const ch
     if (!s_ocr_engine) return "";
 
     auto ocr_res = s_ocr_engine->Recognize(img);
-    if (ocr_res.success && ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text) >= filter.options().min_effective_chars) {
+    if (ocr_res.success &&
+        ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text) >= filter.options().min_effective_chars) {
       return ocr_res.full_text;
     }
+  } catch (const std::exception &e) {
+    LOG_WARN("[OfficeParser] Embedded image OCR failed for {}: {}", image_name, e.what());
   } catch (...) {
+    LOG_WARN("[OfficeParser] Embedded image OCR failed for {} with unknown exception", image_name);
   }
   return "";
 }
@@ -268,7 +273,8 @@ void ExtractWithDocToText(const std::string &file_path, const std::string &lower
 
     if (!temp_cleaner.path.empty()) {
       std::error_code ec;
-      if (std::filesystem::exists(temp_cleaner.path, ec)) {
+      bool exists = std::filesystem::exists(temp_cleaner.path, ec);
+      if (!ec && exists) {
         std::ifstream tmp_ifs(temp_cleaner.path);
         if (tmp_ifs.is_open()) {
           std::string dt_logs((std::istreambuf_iterator<char>(tmp_ifs)), std::istreambuf_iterator<char>());
@@ -287,7 +293,11 @@ void ExtractWithDocToText(const std::string &file_path, const std::string &lower
         g_dt_file_stream->flush();
       }
     }
+  } catch (const std::exception &e) {
+    LOG_WARN("[OfficeParser] ExtractDocToText failed for {}: {}", file_path, e.what());
+    // Graceful fallback to secondary extractors
   } catch (...) {
+    LOG_WARN("[OfficeParser] ExtractDocToText failed for {} with unknown exception", file_path);
     // Graceful fallback to secondary extractors
   }
 }

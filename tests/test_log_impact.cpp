@@ -48,12 +48,11 @@ std::vector<std::pair<std::string, std::string>> CollectFiles(const std::string 
 
     for (const auto &target : target_exts) {
       if (ext == target) {
-        try {
-          if (fs::file_size(entry.path()) > 0) {
-            results.push_back({entry.path().string(), ext});
-            if (results.size() >= max_count) return results;
-          }
-        } catch (...) {
+        std::error_code ec;
+        auto sz = fs::file_size(entry.path(), ec);
+        if (!ec && sz > 0) {
+          results.push_back({entry.path().string(), ext});
+          if (results.size() >= max_count) return results;
         }
         break;
       }

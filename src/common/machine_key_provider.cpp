@@ -18,10 +18,12 @@
 #include <unistd.h>
 #endif
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <random>
 #include <sstream>
 #include <vector>
 
@@ -222,9 +224,14 @@ bool MachineKeyProvider::GenerateCryptographicRandom(unsigned char *buf, size_t 
     if (total == len) return true;
   }
 #endif
-  // Pseudo-random fallback with timestamp mixing if system RNG fails
+  // Modern C++ PRNG fallback with high-resolution clock entropy mixing if system RNG fails
+  std::random_device rd;
+  auto seed = static_cast<uint64_t>(rd()) ^
+              static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+  std::mt19937_64 engine(seed);
+  std::uniform_int_distribution<unsigned int> dist(0, 255);
   for (size_t i = 0; i < len; ++i) {
-    buf[i] = static_cast<unsigned char>((rand() ^ (i * 109)) & 0xFF);
+    buf[i] = static_cast<unsigned char>(dist(engine));
   }
   return true;
 }

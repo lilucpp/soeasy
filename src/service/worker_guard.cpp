@@ -21,6 +21,7 @@
 #include <capnp/serialize.h>
 #include <kj/io.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -38,6 +39,14 @@ namespace soeasy {
 namespace service {
 
 namespace {
+
+uint64_t NextUniqueIpcTag() {
+  static std::atomic<uint64_t> seq{1};
+  auto now_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count();
+  return (static_cast<uint64_t>(now_us) ^ (seq.fetch_add(1, std::memory_order_relaxed) * 1000003ULL)) % 1000000000ULL;
+}
 
 std::vector<const char *> ToArgv(const std::vector<std::string> &args) {
   std::vector<const char *> cmd;
@@ -242,9 +251,9 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
     SetInformationJobObject(job_handle_, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
   }
   std::string shm_name =
-      "Local\\soeasy_shm_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(rand() % 1000000);
+      "Local\\soeasy_shm_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(NextUniqueIpcTag());
 #else
-  std::string shm_name = "/soeasy_shm_" + std::to_string(getpid()) + "_" + std::to_string(rand() % 1000000);
+  std::string shm_name = "/soeasy_shm_" + std::to_string(getpid()) + "_" + std::to_string(NextUniqueIpcTag());
 #endif
   if (!shm_pool_.Create(shm_name, shm_slot_count, shm_slot_capacity)) {
     return false;
@@ -318,7 +327,7 @@ void WorkerGuard::FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid
 #ifdef _WIN32
 bool WorkerGuard::SpawnWorkerWindows(size_t index) {
   std::string pipe_name = "\\\\.\\pipe\\soeasy_ipc_" + std::to_string(GetCurrentProcessId()) + "_" +
-                          std::to_string(index) + "_" + std::to_string(rand() % 1000000);
+                          std::to_string(index) + "_" + std::to_string(NextUniqueIpcTag());
   HANDLE hPipe =
       CreateNamedPipeA(pipe_name.c_str(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1,
                        1024 * 1024, 1024 * 1024, 5000, NULL);
@@ -365,8 +374,8 @@ bool WorkerGuard::SpawnWorkerPosix(size_t index) {
     return false;
   }
 
-  std::string sock_name = "soeasy_ipc_" + std::to_string(getpid()) + "_" +
-                          std::to_string(index) + "_" + std::to_string(rand() % 1000000);
+  std::string sock_name =
+      "soeasy_ipc_" + std::to_string(getpid()) + "_" + std::to_string(index) + "_" + std::to_string(NextUniqueIpcTag());
   struct sockaddr_un addr;
   std::memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
