@@ -115,7 +115,7 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
   }
 
   auto *instance = reinterpret_cast<JiebaTokenizerInstance *>(tokenizer);
-  if (!instance || !instance->ctx) {
+  if (!instance->ctx) {
     return SQLITE_ERROR;
   }
 

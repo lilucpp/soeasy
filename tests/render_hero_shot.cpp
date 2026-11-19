@@ -137,7 +137,8 @@ int main(int argc, char *argv[]) {
 
     // Set genuine Excel file icon
     for (auto *lbl : labels) {
-      if (lbl->pixmap() == nullptr && lbl->styleSheet().contains("border: none;") && lbl->text().isEmpty()) {
+      if (lbl->pixmap(Qt::ReturnByValue).isNull() && lbl->styleSheet().contains("border: none;") &&
+          lbl->text().isEmpty()) {
         lbl->setPixmap(soeasy::gui::IconProvider::GetFileIcon("xlsx").pixmap(24, 24));
       }
     }

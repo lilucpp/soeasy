@@ -50,6 +50,7 @@ class Sha256 {
     state_[7] = 0x5be0cd19;
     count_ = 0;
     buffer_len_ = 0;
+    std::memset(buffer_, 0, sizeof(buffer_));
   }
 
   void update(const void *data, size_t len) {
@@ -163,10 +164,10 @@ class Sha256 {
     state_[7] += h;
   }
 
-  uint32_t state_[8];
-  uint64_t count_;
-  uint8_t buffer_[64];
-  size_t buffer_len_;
+  uint32_t state_[8]{};
+  uint64_t count_{0};
+  uint8_t buffer_[64]{};
+  size_t buffer_len_{0};
 };
 
 }  // namespace

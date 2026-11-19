@@ -413,8 +413,7 @@ void DatJieba::CutRange(const std::string &sentence, cppjieba::RuneStrArray::con
   // MixSegment HMM combination
   std::vector<cppjieba::WordRange> hmm_res;
   for (size_t i = 0; i < mp_words.size(); ++i) {
-    if (mp_words[i].left != mp_words[i].right ||
-        (mp_words[i].left == mp_words[i].right && user_single_cjk_.count(mp_words[i].left->rune))) {
+    if (mp_words[i].left != mp_words[i].right || user_single_cjk_.count(mp_words[i].left->rune)) {
       res.push_back(mp_words[i]);
       continue;
     }

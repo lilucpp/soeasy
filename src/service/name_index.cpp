@@ -1167,12 +1167,9 @@ std::vector<NameMatchResult> NameIndex::Search(const std::string &query, int lim
       }
 
       const std::string_view fname = impl_->GetSearchFileName(s);
-      size_t pos = std::string_view::npos;
-      if (!entry.has_upper_ascii && entry.name_len != kMaxShortName && !has_custom_names) {
-        pos = fname.find(lower_query);
-      } else {
-        pos = FindAsciiCaseInsensitive(fname, lower_query);
-      }
+      const size_t pos = (!entry.has_upper_ascii && entry.name_len != kMaxShortName && !has_custom_names)
+                             ? fname.find(lower_query)
+                             : FindAsciiCaseInsensitive(fname, lower_query);
 
       if (pos == std::string_view::npos) {
         continue;
