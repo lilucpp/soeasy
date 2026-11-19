@@ -41,12 +41,8 @@ bool ParserRegistry::IsSupported(const std::string &ext) const {
   std::lock_guard<std::mutex> lock(mutex_);
   ParseContext dummy;
   dummy.ext = ext;
-  for (const auto &parser : parsers_) {
-    if (parser->CanHandle(dummy)) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(parsers_.begin(), parsers_.end(),
+                     [&dummy](const auto &parser) { return parser->CanHandle(dummy); });
 }
 
 void ParserRegistry::CheckIdleUnload(double idle_seconds) {

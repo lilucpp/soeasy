@@ -106,6 +106,7 @@ void EventDebouncer::Flush() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     cb = callback_;
+    ready_to_flush.reserve(pending_events_.size());
     for (auto &pair : pending_events_) {
       ready_to_flush.push_back(std::move(pair.second));
     }

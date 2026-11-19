@@ -1,5 +1,7 @@
 #include "common/logger.h"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
@@ -139,9 +141,9 @@ bool Logger::IsSyncMode() {
 }
 
 spdlog::level::level_enum Logger::ParseLevel(const std::string &level_str) {
-  std::string lower;
-  lower.reserve(level_str.size());
-  for (char c : level_str) lower.push_back(static_cast<char>(std::tolower(c)));
+  std::string lower = level_str;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
   if (lower == "trace") return spdlog::level::trace;
   if (lower == "debug") return spdlog::level::debug;

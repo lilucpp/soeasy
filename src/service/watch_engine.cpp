@@ -19,9 +19,9 @@ namespace soeasy {
 namespace service {
 
 WatchEngine::WatchEngine(std::shared_ptr<IndexConfig> config, std::shared_ptr<EventDebouncer> debouncer)
-    : config_(std::move(config)), debouncer_(std::move(debouncer)) {
-  file_watcher_ = std::make_unique<efsw::FileWatcher>();
-}
+    : config_(std::move(config)),
+      debouncer_(std::move(debouncer)),
+      file_watcher_(std::make_unique<efsw::FileWatcher>()) {}
 
 WatchEngine::~WatchEngine() {
   Stop();

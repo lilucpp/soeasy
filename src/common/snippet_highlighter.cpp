@@ -14,6 +14,17 @@
 namespace soeasy {
 namespace common {
 
+namespace {
+
+std::string ToLowerAscii(const std::string &s) {
+  std::string lower = s;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower;
+}
+
+}  // namespace
+
 std::vector<std::string> SnippetHighlighter::ExtractKeywordsFromQuery(const std::string &query) {
   std::vector<std::string> kws;
   std::istringstream iss(query);
@@ -32,11 +43,7 @@ std::vector<std::string> SnippetHighlighter::ExtractKeywordsFromQuery(const std:
   };
 
   auto IsNumeric = [](const std::string &s) {
-    if (s.empty()) return false;
-    for (char c : s) {
-      if (!std::isdigit(static_cast<unsigned char>(c))) return false;
-    }
-    return true;
+    return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
   };
 
   while (iss >> token) {
@@ -102,22 +109,14 @@ std::string SnippetHighlighter::GenerateSnippet(const std::string &full_text,
   }
 
   // Lowercase bounded scan window for case-insensitive search without full-text duplication
-  std::string lower_scan = full_text.substr(0, scan_size);
-  for (char &c : lower_scan) {
-    if (c >= 'A' && c <= 'Z') {
-      c = static_cast<char>(c + 32);
-    }
-  }
+  std::string lower_scan = ToLowerAscii(full_text.substr(0, scan_size));
 
   // Find the earliest matching keyword position (prefer longer keyword when positions tie)
   size_t best_pos = std::string::npos;
   size_t best_kw_len = 0;
   for (const auto &kw : keywords) {
     if (kw.empty()) continue;
-    std::string lower_kw = kw;
-    for (char &c : lower_kw) {
-      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-    }
+    std::string lower_kw = ToLowerAscii(kw);
     size_t pos = lower_scan.find(lower_kw);
     if (pos != std::string::npos) {
       if (best_pos == std::string::npos || pos < best_pos || (pos == best_pos && kw.size() > best_kw_len)) {
@@ -166,10 +165,7 @@ std::string SnippetHighlighter::GenerateSnippet(const std::string &full_text,
     raw_snippet = std::move(cleaned);
   }
 
-  std::string lower_snippet = raw_snippet;
-  for (char &c : lower_snippet) {
-    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-  }
+  std::string lower_snippet = ToLowerAscii(raw_snippet);
 
   struct Span {
     size_t start;
@@ -184,10 +180,7 @@ std::string SnippetHighlighter::GenerateSnippet(const std::string &full_text,
 
   for (const auto &kw : sorted_keywords) {
     if (kw.empty()) continue;
-    std::string lower_kw = kw;
-    for (char &c : lower_kw) {
-      if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
-    }
+    std::string lower_kw = ToLowerAscii(kw);
 
     size_t search_start = 0;
     while ((search_start = lower_snippet.find(lower_kw, search_start)) != std::string::npos) {

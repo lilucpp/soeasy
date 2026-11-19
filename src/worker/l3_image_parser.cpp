@@ -21,9 +21,11 @@
 namespace soeasy {
 namespace worker {
 
-L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string &models_dir) : mode_(mode), models_dir_(models_dir) {
-  supported_exts_ = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg", "pnm", "ppm", "pgm", "tga"};
-  last_ocr_active_time_ = std::chrono::steady_clock::now();
+L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string &models_dir)
+    : supported_exts_{"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg", "pnm", "ppm", "pgm", "tga"},
+      mode_(mode),
+      models_dir_(models_dir),
+      last_ocr_active_time_(std::chrono::steady_clock::now()) {
   // Lazy init: ocr_engine_ remains nullptr until actual image OCR is required.
 }
 

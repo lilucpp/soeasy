@@ -96,9 +96,7 @@ bool ShmSlotPool::Create(const std::string &shm_name, size_t slot_count, size_t 
 
 #ifdef _WIN32
   std::string win_name = shm_name_;
-  for (char &c : win_name) {
-    if (c == '/') c = '_';
-  }
+  std::replace(win_name.begin(), win_name.end(), '/', '_');
   if (win_name.rfind("Local\\", 0) != 0 && win_name.rfind("Global\\", 0) != 0) {
     win_name = "Local\\" + win_name;
   }
@@ -173,9 +171,7 @@ bool ShmSlotPool::Attach(const std::string &shm_name, size_t slot_count, size_t 
 
 #ifdef _WIN32
   std::string win_name = shm_name_;
-  for (char &c : win_name) {
-    if (c == '/') c = '_';
-  }
+  std::replace(win_name.begin(), win_name.end(), '/', '_');
   if (win_name.rfind("Local\\", 0) != 0 && win_name.rfind("Global\\", 0) != 0) {
     win_name = "Local\\" + win_name;
   }

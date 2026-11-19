@@ -757,9 +757,7 @@ bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_bind_text(stmt_files_insert_, 2, entry.file_name.data(), static_cast<int>(entry.file_name.size()),
                     bind_destructor);
   std::string norm_file_path = entry.file_path;
-  for (char &c : norm_file_path) {
-    if (c == '\\') c = '/';
-  }
+  std::replace(norm_file_path.begin(), norm_file_path.end(), '\\', '/');
   sqlite3_bind_text(stmt_files_insert_, 3, norm_file_path.data(), static_cast<int>(norm_file_path.size()),
                     bind_destructor);
   sqlite3_bind_text(stmt_files_insert_, 4, entry.ext.data(), static_cast<int>(entry.ext.size()), bind_destructor);
@@ -1080,9 +1078,7 @@ int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vecto
   }
 
   std::string normalized = dir_path;
-  for (char &c : normalized) {
-    if (c == '\\') c = '/';
-  }
+  std::replace(normalized.begin(), normalized.end(), '\\', '/');
   while (normalized.size() > 1 && (normalized.back() == '/' || normalized.back() == '\\')) {
     normalized.pop_back();
   }
@@ -1263,9 +1259,7 @@ std::vector<SearchResultItem> StorageEngine::DoSearch(const std::string &query, 
   std::string prefix_pattern;
   if (has_prefix) {
     std::string norm_prefix = path_prefix;
-    for (char &c : norm_prefix) {
-      if (c == '\\') c = '/';
-    }
+    std::replace(norm_prefix.begin(), norm_prefix.end(), '\\', '/');
     prefix_pattern = EscapeLikePattern(norm_prefix) + "%";
   }
 

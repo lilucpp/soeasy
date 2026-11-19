@@ -25,10 +25,9 @@ namespace soeasy {
 namespace worker {
 namespace ocr {
 
-PPOCRv6Engine::PPOCRv6Engine() {
-  env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "PPOCRv6Engine");
-  mem_info_ = std::make_unique<Ort::MemoryInfo>(Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault));
-}
+PPOCRv6Engine::PPOCRv6Engine()
+    : env_(std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "PPOCRv6Engine")),
+      mem_info_(std::make_unique<Ort::MemoryInfo>(Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault))) {}
 
 void PPOCRv6Engine::ApplySessionThreads(Ort::SessionOptions &opts, OcrMode mode) {
   opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -148,8 +147,8 @@ std::vector<float> PPOCRv6Engine::DetPreprocess(const cv::Mat &img_bgr) {
   cv::cvtColor(img_bgr, rgb, cv::COLOR_BGR2RGB);
   rgb.convertTo(rgb, CV_32F, 1.0 / 255.0);
 
-  float mean[3] = {0.485f, 0.456f, 0.406f};
-  float std[3] = {0.229f, 0.224f, 0.225f};
+  constexpr float mean[3] = {0.485f, 0.456f, 0.406f};
+  constexpr float std[3] = {0.229f, 0.224f, 0.225f};
   std::vector<cv::Mat> channels(3);
   cv::split(rgb, channels);
   for (int c = 0; c < 3; ++c) channels[c] = (channels[c] - mean[c]) / std[c];

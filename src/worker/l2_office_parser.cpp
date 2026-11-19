@@ -327,10 +327,10 @@ bool ApplyFallbackExtractor(const std::string &file_path, const std::string &low
 
 }  // namespace
 
-L2OfficeParser::L2OfficeParser() {
-  supported_exts_ = {"docx", "xlsx", "pptx", "pdf",  "doc", "xls",   "ppt",     "rtf", "odt",     "ods", "odp", "odg",
-                     "fodt", "fods", "fodp", "xlsb", "eml", "pages", "numbers", "key", "keynote", "wps", "et",  "dps"};
-}
+L2OfficeParser::L2OfficeParser()
+    : supported_exts_{"docx", "xlsx",  "pptx",    "pdf", "doc",     "xls",  "ppt",  "rtf",
+                      "odt",  "ods",   "odp",     "odg", "fodt",    "fods", "fodp", "xlsb",
+                      "eml",  "pages", "numbers", "key", "keynote", "wps",  "et",   "dps"} {}
 
 bool L2OfficeParser::IsSupported(const std::string &ext) const {
   return supported_exts_.find(ToLowerAscii(ext)) != supported_exts_.end();

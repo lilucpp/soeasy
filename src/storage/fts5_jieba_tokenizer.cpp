@@ -1,5 +1,6 @@
 #include "fts5_jieba_tokenizer.h"
 
+#include <algorithm>
 #include <cctype>
 #include <memory>
 #include <mutex>
@@ -18,9 +19,7 @@ namespace {
 
 std::string NormalizeDictDir(const std::string &dict_dir) {
   std::string norm = dict_dir;
-  for (char &c : norm) {
-    if (c == '\\') c = '/';
-  }
+  std::replace(norm.begin(), norm.end(), '\\', '/');
   while (norm.size() > 1 && norm.back() == '/') {
     norm.pop_back();
   }
@@ -170,11 +169,8 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
 
     // Fold ASCII uppercase to lowercase for case-insensitive matching
     lower_token.assign(w.word);
-    for (char &c : lower_token) {
-      if (c >= 'A' && c <= 'Z') {
-        c = static_cast<char>(c + 32);
-      }
-    }
+    std::transform(lower_token.begin(), lower_token.end(), lower_token.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     int start_pos = static_cast<int>(w.offset);
     int end_pos = static_cast<int>(w.offset + w.word.size());

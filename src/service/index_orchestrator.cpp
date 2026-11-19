@@ -195,9 +195,7 @@ IndexOrchestrator::~IndexOrchestrator() {
 
 std::mutex &IndexOrchestrator::LockBucketForPath(const std::string &file_path) const {
   std::string norm = file_path;
-  for (char &c : norm) {
-    if (c == '\\') c = '/';
-  }
+  std::replace(norm.begin(), norm.end(), '\\', '/');
   const size_t bucket = std::hash<std::string>{}(norm) % path_locks_.size();
   return path_locks_[bucket];
 }

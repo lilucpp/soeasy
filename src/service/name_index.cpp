@@ -73,12 +73,7 @@ inline char AsciiToLowerChar(char c) {
 }
 
 inline uint8_t DetectUpperAscii(std::string_view s) {
-  for (char c : s) {
-    if (c >= 'A' && c <= 'Z') {
-      return 1;
-    }
-  }
-  return 0;
+  return std::any_of(s.begin(), s.end(), [](char c) { return c >= 'A' && c <= 'Z'; }) ? 1 : 0;
 }
 
 std::string NormalizeSlashes(const std::string &path) {
@@ -89,11 +84,7 @@ std::string NormalizeSlashes(const std::string &path) {
 
 std::string AsciiToLowerString(std::string_view s) {
   std::string out(s);
-  for (char &c : out) {
-    if (c >= 'A' && c <= 'Z') {
-      c = static_cast<char>(c + ('a' - 'A'));
-    }
-  }
+  std::transform(out.begin(), out.end(), out.begin(), AsciiToLowerChar);
   return out;
 }
 
