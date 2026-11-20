@@ -4,14 +4,6 @@
 #include <psapi.h>
 #include <windows.h>
 #else
-#include <fcntl.h>
-#include <poll.h>
-#include <sys/prctl.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/un.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <csignal>
@@ -39,14 +31,6 @@ namespace soeasy {
 namespace service {
 
 namespace {
-
-uint64_t NextUniqueIpcTag() {
-  static std::atomic<uint64_t> seq{1};
-  auto now_us =
-      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
-          .count();
-  return (static_cast<uint64_t>(now_us) ^ (seq.fetch_add(1, std::memory_order_relaxed) * 1000003ULL)) % 1000000000ULL;
-}
 
 std::vector<const char *> ToArgv(const std::vector<std::string> &args) {
   std::vector<const char *> cmd;
@@ -110,17 +94,42 @@ struct TaskRequest {
 
 }  // namespace
 
+class TextStreamReceiverImpl final : public soeasy::ipc::TextStreamReceiver::Server {
+ public:
+  explicit TextStreamReceiverImpl(std::shared_ptr<ParseTaskResult> out) : out_(std::move(out)) {}
+
+  kj::Promise<void> sendChunk(SendChunkContext context) override {
+    auto chunk = context.getParams().getChunk();
+    if (out_ && chunk.size() > 0) {
+      out_->extracted_text.append(reinterpret_cast<const char *>(chunk.begin()), chunk.size());
+      out_->stream_chunk_count++;
+    }
+    return kj::READY_NOW;
+  }
+
+  kj::Promise<void> finish(FinishContext context) override {
+    auto p = context.getParams();
+    if (out_) {
+      out_->extracted_bytes = p.getTotalBytes();
+      out_->is_scanned_pdf = p.getIsScannedPdf();
+      out_->status =
+          (p.getStatusCode() == soeasy::ipc::ParseStatusCode::OK) ? TaskStatus::kSuccess : TaskStatus::kFailed;
+      out_->error_message = p.getErrorMsg().cStr();
+    }
+    return kj::READY_NOW;
+  }
+
+ private:
+  std::shared_ptr<ParseTaskResult> out_;
+};
+
 class WorkerRpcChannel {
  public:
-#ifdef _WIN32
-  explicit WorkerRpcChannel(HANDLE pipe_handle) : pipe_handle_(pipe_handle) {
+  WorkerRpcChannel() {
+    auto port_fut = port_promise_.get_future();
     thread_ = std::thread([this]() { Loop(); });
+    listening_port_ = port_fut.get();
   }
-#else
-  explicit WorkerRpcChannel(int socket_fd) : socket_fd_(socket_fd) {
-    thread_ = std::thread([this]() { Loop(); });
-  }
-#endif
 
   ~WorkerRpcChannel() {
     Stop();
@@ -128,6 +137,15 @@ class WorkerRpcChannel {
 
   WorkerRpcChannel(const WorkerRpcChannel &) = delete;
   WorkerRpcChannel &operator=(const WorkerRpcChannel &) = delete;
+
+  uint16_t listening_port() const { return listening_port_; }
+
+  bool WaitConnected(uint32_t timeout_ms) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                        [this]() { return connected_ || stopped_; }) &&
+           connected_ && !stopped_;
+  }
 
   ParseTaskResult Call(const ParseTask &task, uint32_t timeout_ms) {
     auto req = std::make_shared<TaskRequest>();
@@ -153,6 +171,12 @@ class WorkerRpcChannel {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       stopped_ = true;
+      if (active_fulfiller_ != nullptr) {
+        KJ_IF_MAYBE(f, active_fulfiller_) {
+          (*f)->fulfill();
+        }
+        active_fulfiller_ = nullptr;
+      }
     }
     cv_.notify_all();
     if (thread_.joinable() && thread_.get_id() != std::this_thread::get_id()) {
@@ -162,89 +186,134 @@ class WorkerRpcChannel {
 
  private:
   void Loop() {
-    kj::AsyncIoContext ioContext = kj::setupAsyncIo();
-#ifdef _WIN32
-    auto clientStream = ioContext.lowLevelProvider->wrapSocketFd(reinterpret_cast<uintptr_t>(pipe_handle_));
-#else
-    auto clientStream = ioContext.lowLevelProvider->wrapSocketFd(socket_fd_);
-#endif
-    capnp::TwoPartyClient client(*clientStream);
-    auto agent = client.bootstrap().castAs<soeasy::ipc::WorkerAgent>();
+    std::unique_ptr<kj::AsyncIoContext> ioContextPtr;
+    kj::Own<kj::AsyncIoStream> clientStream;
+    bool port_published = false;
 
-    while (true) {
-      std::shared_ptr<TaskRequest> req;
+    auto clear_fulfiller = [this]() {
+      std::lock_guard<std::mutex> lock(mutex_);
+      active_fulfiller_ = nullptr;
+    };
+
+    try {
+      ioContextPtr = std::make_unique<kj::AsyncIoContext>(kj::setupAsyncIo());
+      auto &ioContext = *ioContextPtr;
+      auto addr = ioContext.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(ioContext.waitScope);
+      auto listener = addr->listen();
+      port_promise_.set_value(static_cast<uint16_t>(listener->getPort()));
+      port_published = true;
+
+      auto cancelPaf = kj::newPromiseAndCrossThreadFulfiller<void>();
       {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this]() { return stopped_ || !queue_.empty(); });
-        if (stopped_ && queue_.empty()) {
-          break;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (stopped_) {
+          cv_.notify_all();
+          return;
         }
-        req = queue_.front();
-        queue_.pop_front();
+        active_fulfiller_ = kj::mv(cancelPaf.fulfiller);
       }
 
-      ParseTaskResult result;
-      result.doc_id = req->task.doc_id;
+      auto cancelAccept = cancelPaf.promise.then([]() -> kj::Own<kj::AsyncIoStream> {
+        KJ_FAIL_REQUIRE("Worker RPC accept cancelled");
+      });
+      auto acceptTimed =
+          ioContext.provider->getTimer().timeoutAfter(5000 * kj::MILLISECONDS, listener->accept());
+      clientStream = acceptTimed.exclusiveJoin(kj::mv(cancelAccept)).wait(ioContext.waitScope);
+      listener = nullptr;
 
-      try {
-        auto rpcReq = agent.parseFileRequest();
-        rpcReq.setDocId(req->task.doc_id);
-        rpcReq.setFilePath(req->task.file_path);
-        rpcReq.setExt(req->task.ext);
-        rpcReq.setLevel(static_cast<soeasy::ipc::ParseLevel>(req->task.parse_level));
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        active_fulfiller_ = nullptr;
+        connected_ = true;
+      }
+      cv_.notify_all();
 
-        auto sendPromise = rpcReq.send();
-        auto timedPromise =
-            ioContext.provider->getTimer().timeoutAfter(req->timeout_ms * kj::MILLISECONDS, kj::mv(sendPromise));
-        auto resp = timedPromise.wait(ioContext.waitScope);
+      capnp::TwoPartyClient client(*clientStream);
+      auto agent = client.bootstrap().castAs<soeasy::ipc::WorkerAgent>();
 
-        auto parseRes = resp.getResult();
-        result.status = (parseRes.getStatusCode() == soeasy::ipc::ParseStatusCode::OK) ? TaskStatus::kSuccess
-                                                                                       : TaskStatus::kFailed;
-        result.extracted_bytes = parseRes.getExtractedBytes();
-        result.is_scanned_pdf = parseRes.getIsScannedPdf();
-        result.error_message = parseRes.getMessage().cStr();
-        if (parseRes.hasExtractedText()) {
-          result.extracted_text = parseRes.getExtractedText().cStr();
-        }
-        // Split extracted_text into 256KB chunks if text exceeds 256KB for callers that inspect chunks
-        constexpr size_t kChunkSize = 256 * 1024;
-        if (result.extracted_text.size() > kChunkSize) {
-          result.stream_chunks.reserve((result.extracted_text.size() + kChunkSize - 1) / kChunkSize);
-          for (size_t off = 0; off < result.extracted_text.size(); off += kChunkSize) {
-            size_t len = std::min(kChunkSize, result.extracted_text.size() - off);
-            result.stream_chunks.emplace_back(result.extracted_text.substr(off, len));
+      while (true) {
+        std::shared_ptr<TaskRequest> req;
+        {
+          std::unique_lock<std::mutex> lock(mutex_);
+          cv_.wait(lock, [this]() { return stopped_ || !queue_.empty(); });
+          if (stopped_ && queue_.empty()) {
+            break;
           }
+          req = queue_.front();
+          queue_.pop_front();
         }
-        req->done_promise.set_value(std::move(result));
-      } catch (const kj::Exception &e) {
-        std::string desc = e.getDescription().cStr();
-        if (desc.find("timed out") != std::string::npos || desc.find("timeout") != std::string::npos) {
-          result.status = TaskStatus::kTimeout;
-          result.error_message = "Task timed out: " + desc;
-        } else {
-          result.status = TaskStatus::kCrashed;
-          result.error_message = "Worker peer disconnected: " + desc;
-        }
-        req->done_promise.set_value(std::move(result));
-        if (result.status == TaskStatus::kCrashed) {
+
+        auto result = std::make_shared<ParseTaskResult>();
+        result->doc_id = req->task.doc_id;
+
+        try {
+          auto taskCancelPaf = kj::newPromiseAndCrossThreadFulfiller<void>();
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stopped_) {
+              result->status = TaskStatus::kCrashed;
+              result->error_message = "Worker RPC channel stopped";
+              req->done_promise.set_value(std::move(*result));
+              break;
+            }
+            active_fulfiller_ = kj::mv(taskCancelPaf.fulfiller);
+          }
+
+          auto rpcReq = agent.parseFileStreamRequest();
+          rpcReq.setDocId(req->task.doc_id);
+          rpcReq.setFilePath(req->task.file_path);
+          rpcReq.setExt(req->task.ext);
+          rpcReq.setLevel(static_cast<soeasy::ipc::ParseLevel>(req->task.parse_level));
+          rpcReq.setReceiver(kj::heap<TextStreamReceiverImpl>(result));
+
+          auto sendPromise = rpcReq.send().ignoreResult();
+          auto cancelTask = taskCancelPaf.promise.then([]() { KJ_FAIL_REQUIRE("Worker RPC call cancelled"); });
+          auto timedPromise =
+              ioContext.provider->getTimer().timeoutAfter(req->timeout_ms * kj::MILLISECONDS, kj::mv(sendPromise));
+          timedPromise.exclusiveJoin(kj::mv(cancelTask)).wait(ioContext.waitScope);
+
+          clear_fulfiller();
+          req->done_promise.set_value(std::move(*result));
+        } catch (const kj::Exception &e) {
+          clear_fulfiller();
+          std::string desc = e.getDescription().cStr();
+          if (desc.find("timed out") != std::string::npos || desc.find("timeout") != std::string::npos) {
+            result->status = TaskStatus::kTimeout;
+            result->error_message = "Task timed out: " + desc;
+          } else {
+            result->status = TaskStatus::kCrashed;
+            result->error_message = "Worker peer disconnected: " + desc;
+          }
+          req->done_promise.set_value(std::move(*result));
+          if (result->status == TaskStatus::kCrashed) {
+            break;
+          }
+        } catch (const std::exception &e) {
+          clear_fulfiller();
+          result->status = TaskStatus::kCrashed;
+          result->error_message = std::string("Worker exception: ") + e.what();
+          req->done_promise.set_value(std::move(*result));
+          break;
+        } catch (...) {
+          clear_fulfiller();
+          result->status = TaskStatus::kCrashed;
+          result->error_message = "Worker unknown exception";
+          req->done_promise.set_value(std::move(*result));
           break;
         }
-      } catch (const std::exception &e) {
-        result.status = TaskStatus::kCrashed;
-        result.error_message = std::string("Worker exception: ") + e.what();
-        req->done_promise.set_value(std::move(result));
-        break;
-      } catch (...) {
-        result.status = TaskStatus::kCrashed;
-        result.error_message = "Worker unknown exception";
-        req->done_promise.set_value(std::move(result));
-        break;
+      }
+    } catch (...) {
+      if (!port_published) {
+        try {
+          port_promise_.set_value(0);
+        } catch (...) {
+        }
       }
     }
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      active_fulfiller_ = nullptr;
       stopped_ = true;
       while (!queue_.empty()) {
         auto pending = queue_.front();
@@ -256,17 +325,17 @@ class WorkerRpcChannel {
         pending->done_promise.set_value(std::move(res));
       }
     }
+    cv_.notify_all();
   }
 
-#ifdef _WIN32
-  HANDLE pipe_handle_ = nullptr;
-#else
-  int socket_fd_ = -1;
-#endif
+  std::promise<uint16_t> port_promise_;
+  uint16_t listening_port_ = 0;
   std::thread thread_;
   std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::shared_ptr<TaskRequest>> queue_;
+  kj::Maybe<kj::Own<kj::CrossThreadPromiseFulfiller<void>>> active_fulfiller_;
+  bool connected_ = false;
   bool stopped_ = false;
 };
 
@@ -277,11 +346,6 @@ WorkerInstance::WorkerInstance(WorkerInstance &&other) noexcept
     : process(std::move(other.process)),
       stdio_drain_thread(std::move(other.stdio_drain_thread)),
       pid(other.pid),
-#ifdef _WIN32
-      pipe_handle(other.pipe_handle),
-#else
-      socket_fd(other.socket_fd),
-#endif
       rpc_channel(std::move(other.rpc_channel)),
       state(other.state),
       current_doc_id(other.current_doc_id),
@@ -290,11 +354,6 @@ WorkerInstance::WorkerInstance(WorkerInstance &&other) noexcept
       idle_start_time(other.idle_start_time),
       total_tasks_processed(other.total_tasks_processed) {
   other.pid = 0;
-#ifdef _WIN32
-  other.pipe_handle = nullptr;
-#else
-  other.socket_fd = -1;
-#endif
   other.state = WorkerState::kIdle;
   other.current_doc_id = 0;
 }
@@ -305,13 +364,6 @@ WorkerInstance &WorkerInstance::operator=(WorkerInstance &&other) noexcept {
     process = std::move(other.process);
     stdio_drain_thread = std::move(other.stdio_drain_thread);
     pid = other.pid;
-#ifdef _WIN32
-    pipe_handle = other.pipe_handle;
-    other.pipe_handle = nullptr;
-#else
-    socket_fd = other.socket_fd;
-    other.socket_fd = -1;
-#endif
     rpc_channel = std::move(other.rpc_channel);
     state = other.state;
     current_doc_id = other.current_doc_id;
@@ -331,18 +383,6 @@ void WorkerInstance::CloseTransport() noexcept {
     rpc_channel->Stop();
     rpc_channel.reset();
   }
-#ifdef _WIN32
-  if (pipe_handle) {
-    CloseHandle(pipe_handle);
-    pipe_handle = nullptr;
-  }
-#else
-  if (socket_fd >= 0) {
-    shutdown(socket_fd, SHUT_RDWR);
-    close(socket_fd);
-    socket_fd = -1;
-  }
-#endif
 }
 
 void WorkerInstance::Reset(WorkerState next_state) noexcept {
@@ -526,141 +566,54 @@ void WorkerGuard::FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid
   }
 }
 
-#ifdef _WIN32
-bool WorkerGuard::SpawnWorkerWindows(size_t index) {
-  std::string pipe_name = "\\\\.\\pipe\\soeasy_ipc_" + std::to_string(GetCurrentProcessId()) + "_" +
-                          std::to_string(index) + "_" + std::to_string(NextUniqueIpcTag());
-  HANDLE hPipe =
-      CreateNamedPipeA(pipe_name.c_str(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1,
-                       1024 * 1024, 1024 * 1024, 5000, NULL);
-  if (hPipe == INVALID_HANDLE_VALUE) {
-    LOG_ERROR("[WorkerGuard] Failed to create named pipe for worker {}", index);
-    return false;
-  }
-
-  std::vector<std::string> args = BuildWorkerArgs("--pipe-name=" + pipe_name, index);
-  auto cmd = ToArgv(args);
-
-  int options =
-      subprocess_option_inherit_environment | subprocess_option_no_window | subprocess_option_combined_stdout_stderr;
-  auto proc = MakeSubprocess();
-  int r = subprocess_create(cmd.data(), options, proc.get());
-  if (r != 0) {
-    LOG_ERROR("[WorkerGuard] subprocess_create failed to start worker {}: error={}", index, r);
-    CloseHandle(hPipe);
-    return false;
-  }
-
-  pid_t pid = static_cast<pid_t>(GetProcessId(proc->hProcess));
-
-  if (job_handle_ && proc->hProcess) {
-    AssignProcessToJobObject(job_handle_, proc->hProcess);
-  }
-
-  BOOL connected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
-  if (!connected) {
-    LOG_ERROR("[WorkerGuard] ConnectNamedPipe failed for worker {}: {}", index, GetLastError());
-    CloseHandle(hPipe);
-    return false;
-  }
-
-  workers_[index].pipe_handle = hPipe;
-  workers_[index].rpc_channel = std::make_shared<WorkerRpcChannel>(hPipe);
-  FinalizeSpawnedWorker(index, std::move(proc), pid);
-  return true;
-}
-#else
-bool WorkerGuard::SpawnWorkerPosix(size_t index) {
-#ifdef SOCK_CLOEXEC
-  int listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-  if (listen_fd < 0) {
-    listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  }
-#else
-  int listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-#endif
-  if (listen_fd < 0) {
-    LOG_ERROR("[WorkerGuard] Failed to create socket for worker {}", index);
-    return false;
-  }
-
-  std::string sock_name =
-      "soeasy_ipc_" + std::to_string(getpid()) + "_" + std::to_string(index) + "_" + std::to_string(NextUniqueIpcTag());
-  struct sockaddr_un addr;
-  std::memset(&addr, 0, sizeof(addr));
-  addr.sun_family = AF_UNIX;
-  addr.sun_path[0] = '\0';
-  std::memcpy(addr.sun_path + 1, sock_name.c_str(), sock_name.size());
-  socklen_t addr_len = sizeof(sa_family_t) + 1 + sock_name.size();
-
-  if (bind(listen_fd, reinterpret_cast<struct sockaddr *>(&addr), addr_len) != 0) {
-    LOG_ERROR("[WorkerGuard] Failed to bind socket for worker {}: {}", index, strerror(errno));
-    close(listen_fd);
-    return false;
-  }
-
-  if (listen(listen_fd, 1) != 0) {
-    LOG_ERROR("[WorkerGuard] Failed to listen on socket for worker {}: {}", index, strerror(errno));
-    close(listen_fd);
-    return false;
-  }
-
-  std::vector<std::string> args = BuildWorkerArgs("--socket-name=" + sock_name, index);
-  auto cmd = ToArgv(args);
-
-  int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr;
-  auto proc = MakeSubprocess();
-  int r = subprocess_create(cmd.data(), options, proc.get());
-  if (r != 0) {
-    LOG_ERROR("[WorkerGuard] Failed to start worker binary {}: error={}", index, r);
-    close(listen_fd);
-    return false;
-  }
-
-  // Parent process: wait for child to connect with timeout
-  struct pollfd pfd;
-  pfd.fd = listen_fd;
-  pfd.events = POLLIN;
-  pfd.revents = 0;
-  int pret = poll(&pfd, 1, 3000);
-  if (pret <= 0 || !(pfd.revents & POLLIN)) {
-    LOG_ERROR("[WorkerGuard] Worker {} connect timeout or failed", index);
-    close(listen_fd);
-    return false;
-  }
-
-#if defined(__linux__) && defined(SOCK_CLOEXEC)
-  int client_fd = accept4(listen_fd, nullptr, nullptr, SOCK_CLOEXEC);
-#else
-  int client_fd = accept(listen_fd, nullptr, nullptr);
-  if (client_fd >= 0) {
-    fcntl(client_fd, F_SETFD, FD_CLOEXEC);
-  }
-#endif
-  close(listen_fd);
-
-  if (client_fd < 0) {
-    LOG_ERROR("[WorkerGuard] Failed to accept connection for worker {}: {}", index, strerror(errno));
-    return false;
-  }
-
-  pid_t pid = proc->child;
-  workers_[index].socket_fd = client_fd;
-  workers_[index].rpc_channel = std::make_shared<WorkerRpcChannel>(client_fd);
-  FinalizeSpawnedWorker(index, std::move(proc), pid);
-  return true;
-}
-#endif
-
 bool WorkerGuard::SpawnWorker(size_t index) {
   if (index >= workers_.size()) {
     return false;
   }
+
+  auto channel = std::make_shared<WorkerRpcChannel>();
+  const uint16_t port = channel->listening_port();
+  if (port == 0) {
+    LOG_ERROR("[WorkerGuard] Failed to bind Cap'n Proto RPC listener for worker {}", index);
+    channel->Stop();
+    return false;
+  }
+
+  std::vector<std::string> args = BuildWorkerArgs("--rpc-addr=127.0.0.1:" + std::to_string(port), index);
+  auto cmd = ToArgv(args);
+
 #ifdef _WIN32
-  return SpawnWorkerWindows(index);
+  int options =
+      subprocess_option_inherit_environment | subprocess_option_no_window | subprocess_option_combined_stdout_stderr;
 #else
-  return SpawnWorkerPosix(index);
+  int options = subprocess_option_inherit_environment | subprocess_option_combined_stdout_stderr;
 #endif
+  auto proc = MakeSubprocess();
+  int r = subprocess_create(cmd.data(), options, proc.get());
+  if (r != 0) {
+    LOG_ERROR("[WorkerGuard] subprocess_create failed to start worker {}: error={}", index, r);
+    channel->Stop();
+    return false;
+  }
+
+#ifdef _WIN32
+  pid_t pid = static_cast<pid_t>(GetProcessId(proc->hProcess));
+  if (job_handle_ && proc->hProcess) {
+    AssignProcessToJobObject(job_handle_, proc->hProcess);
+  }
+#else
+  pid_t pid = proc->child;
+#endif
+
+  if (!channel->WaitConnected(5000)) {
+    LOG_ERROR("[WorkerGuard] Worker {} RPC handshake timeout", index);
+    channel->Stop();
+    return false;
+  }
+
+  workers_[index].rpc_channel = std::move(channel);
+  FinalizeSpawnedWorker(index, std::move(proc), pid);
+  return true;
 }
 
 void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string &reason) {
@@ -762,7 +715,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
   out_result->slot_id = 0;
   out_result->extracted_bytes = 0;
   out_result->extracted_text.clear();
-  out_result->stream_chunks.clear();
+  out_result->stream_chunk_count = 0;
 
   size_t assigned_worker_idx = 0;
   auto start_time = std::chrono::steady_clock::now();

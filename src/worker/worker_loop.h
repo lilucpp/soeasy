@@ -8,25 +8,14 @@ namespace worker {
 
 class ParserRegistry;
 
-#ifdef _WIN32
 /**
- * @brief Run the worker message processing loop using Cap'n Proto RPC over a Win32 named pipe.
+ * @brief Run the worker message processing loop using Cap'n Proto RPC over kj::Network.
  *
- * @param pipe_handle Connected Win32 pipe HANDLE to master
+ * @param rpc_addr Target master RPC address (e.g. "127.0.0.1:54321")
  * @param custom_registry Optional custom parser registry (nullptr to use default)
  * @return int Exit status code
  */
-int RunWorkerLoop(void *pipe_handle, ParserRegistry *custom_registry = nullptr);
-#else
-/**
- * @brief Run the worker message processing loop using Cap'n Proto RPC over Unix domain socket.
- *
- * @param socket_fd Connected Unix domain stream socket to master
- * @param custom_registry Optional custom parser registry (nullptr to use default)
- * @return int Exit status code
- */
-int RunWorkerLoop(int socket_fd, ParserRegistry *custom_registry = nullptr);
-#endif
+int RunWorkerLoop(const std::string &rpc_addr, ParserRegistry *custom_registry = nullptr);
 
 }  // namespace worker
 }  // namespace soeasy

@@ -248,6 +248,7 @@ if(NOT WIN32)
 endif()
 target_link_libraries(soeasy_schema PUBLIC
     capnp-rpc capnp kj-async kj
+    $<$<BOOL:${WIN32}>:ws2_32>
 )
 
 # -------------------------------------------------------------

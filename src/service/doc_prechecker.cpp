@@ -22,20 +22,20 @@ PrecheckResult DocPrechecker::Check(const std::string &file_path, const std::str
   std::string lower_ext = ext;
   std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
 
-  // 1. Text and source code formats: lightning-fast 5s timeout
+  // 1. Text and source code formats: 60s timeout
   if (lower_ext == "txt" || lower_ext == "md" || lower_ext == "json" || lower_ext == "csv" || lower_ext == "xml" ||
       lower_ext == "html" || lower_ext == "cpp" || lower_ext == "h" || lower_ext == "c" || lower_ext == "py" ||
       lower_ext == "java" || lower_ext == "sh" || lower_ext == "log") {
-    res.recommended_timeout_ms = 5000;
+    res.recommended_timeout_ms = 60000;
     return res;
   }
 
-  // 2. Pure image formats: 120s timeout for heavy OCR
+  // 2. Pure image formats: 180s timeout for heavy OCR
   if (lower_ext == "jpg" || lower_ext == "jpeg" || lower_ext == "png" || lower_ext == "bmp" || lower_ext == "tiff" ||
       lower_ext == "tif" || lower_ext == "webp" || lower_ext == "gif" || lower_ext == "svg" || lower_ext == "pnm" ||
       lower_ext == "tga") {
     res.has_images = true;
-    res.recommended_timeout_ms = 120000;
+    res.recommended_timeout_ms = 180000;
     return res;
   }
 
@@ -99,10 +99,10 @@ PrecheckResult DocPrechecker::Check(const std::string &file_path, const std::str
     auto it_media = std::search(tail.begin(), tail.end(), kMediaPattern, kMediaPattern + 6);
     if (it_media != tail.end()) {
       res.has_images = true;
-      res.recommended_timeout_ms = 60000;  // 60s for document with embedded images
+      res.recommended_timeout_ms = 180000;  // 180s for document with embedded images
     } else {
       res.has_images = false;
-      res.recommended_timeout_ms = 15000;  // 15s for text-only office document
+      res.recommended_timeout_ms = 60000;  // 60s for text-only office document
     }
     return res;
   }
@@ -207,7 +207,7 @@ PrecheckResult DocPrechecker::Check(const std::string &file_path, const std::str
       }
     }
 
-    res.recommended_timeout_ms = 15000;
+    res.recommended_timeout_ms = 60000;
     return res;
   }
 
@@ -242,7 +242,7 @@ PrecheckResult DocPrechecker::Check(const std::string &file_path, const std::str
       return res;
     }
 
-    res.recommended_timeout_ms = 15000;
+    res.recommended_timeout_ms = 180000;  // 180s for PDFs (supports scanned PDF / embedded image OCR)
     return res;
   }
 

@@ -51,7 +51,7 @@ struct ParseTaskResult {
   bool is_scanned_pdf = false;
   std::string error_message;
   std::string extracted_text;   // Streamed directly over Cap'n Proto IPC
-  std::vector<std::string> stream_chunks;
+  size_t stream_chunk_count = 0;
   double elapsed_ms = 0.0;
 };
 
@@ -94,11 +94,6 @@ struct WorkerInstance {
   SubprocessHandle process;
   std::thread stdio_drain_thread;
   pid_t pid = 0;
-#ifdef _WIN32
-  HANDLE pipe_handle = nullptr;
-#else
-  int socket_fd = -1;
-#endif
   std::shared_ptr<WorkerRpcChannel> rpc_channel;
   WorkerState state = WorkerState::kIdle;
   int64_t current_doc_id = 0;
@@ -132,7 +127,7 @@ struct WorkerLoggingOptions {
 
 class WorkerGuard {
  public:
-  static constexpr uint32_t kDefaultTimeoutMs = 15000;                 // 15s default
+  static constexpr uint32_t kDefaultTimeoutMs = 60000;                 // 60s default
   static constexpr uint32_t kDefaultStallTimeoutMs = 5000;             // 5s stall heartbeat
   static constexpr uint32_t kDefaultIdleEvictMs = 60000;               // 60s idle eviction
   static constexpr size_t kDefaultMaxMemoryBytes = 512 * 1024 * 1024;  // 512MB RSS
@@ -192,11 +187,6 @@ class WorkerGuard {
 
  private:
   bool SpawnWorker(size_t index);
-#ifdef _WIN32
-  bool SpawnWorkerWindows(size_t index);
-#else
-  bool SpawnWorkerPosix(size_t index);
-#endif
   void FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid);
   void FinalizeBusyWorkerOnFailure(size_t worker_idx, TaskStatus status, const std::string &reason);
   static void DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t index, bool log_as_info);

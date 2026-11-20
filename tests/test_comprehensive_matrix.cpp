@@ -257,7 +257,7 @@ int main(int argc, char *argv[]) {
       if (is_large) {
         // Large file: received via Cap'n Proto streaming chunks with zero disk spill
         assert(res.extracted_text.size() == large_payload.size());
-        assert(!res.stream_chunks.empty());
+        assert(res.stream_chunk_count > 0);
         large_pass++;
       } else {
         // Small file: received via Cap'n Proto RPC

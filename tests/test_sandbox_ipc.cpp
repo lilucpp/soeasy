@@ -246,9 +246,9 @@ int main(int argc, char *argv[]) {
   guard.ExecuteTask(overflow_task, &overflow_res);
   assert(overflow_res.status == soeasy::service::TaskStatus::kSuccess);
   assert(overflow_res.extracted_text.size() == kSlotCap + 1);
-  assert(!overflow_res.stream_chunks.empty());
+  assert(overflow_res.stream_chunk_count > 0);
   std::cout << "    • 边界 2 (2MB + 1 字节): 成功触发流式分片，零磁盘溢出! 接收大小: "
-            << overflow_res.extracted_text.size() << " 字节，分片数: " << overflow_res.stream_chunks.size() << "\n";
+            << overflow_res.extracted_text.size() << " 字节，分片数: " << overflow_res.stream_chunk_count << "\n";
   std::remove(overflow_doc_path.c_str());
 
   // -------------------------------------------------------------
@@ -413,15 +413,10 @@ int main(int argc, char *argv[]) {
   stream_guard.ExecuteTask(stream_task, &stream_res);
   assert(stream_res.status == soeasy::service::TaskStatus::kSuccess);
   assert(stream_res.extracted_text == stream_content);
-  assert(!stream_res.stream_chunks.empty());
-  std::string reassembled;
-  for (const auto &chunk : stream_res.stream_chunks) {
-    reassembled += chunk;
-  }
-  assert(reassembled == stream_content);
+  assert(stream_res.stream_chunk_count > 1);
   stream_guard.Shutdown();
   std::remove(stream_doc_path.c_str());
-  std::cout << "    • 文档大小: " << stream_content.size() << " 字节, 接收分片数: " << stream_res.stream_chunks.size()
+  std::cout << "    • 文档大小: " << stream_content.size() << " 字节, 接收分片数: " << stream_res.stream_chunk_count
             << ", 拼装后 100% 一致!\n";
   std::cout << "[+] Cap'n Proto 流式分片传输验证成功!\n\n";
 

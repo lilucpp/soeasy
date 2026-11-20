@@ -18,7 +18,7 @@ enum class PrecheckStatus {
 struct PrecheckResult {
   PrecheckStatus status = PrecheckStatus::kValid;
   bool has_images = false;
-  uint32_t recommended_timeout_ms = 15000;
+  uint32_t recommended_timeout_ms = 60000;
   std::string reason;
 };
 

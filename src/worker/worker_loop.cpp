@@ -152,23 +152,7 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
   ParserRegistry &registry_;
 };
 
-#ifdef _WIN32
-int RunWorkerLoop(void *pipe_handle, ParserRegistry *custom_registry) {
-  std::unique_ptr<ParserRegistry> default_registry;
-  if (!custom_registry) {
-    default_registry = ParserRegistry::CreateDefaultRegistry();
-  }
-  ParserRegistry &registry = custom_registry ? *custom_registry : *default_registry;
-
-  kj::AsyncIoContext ioContext = kj::setupAsyncIo();
-  auto stream = ioContext.lowLevelProvider->wrapSocketFd(reinterpret_cast<uintptr_t>(pipe_handle));
-  capnp::TwoPartyServer server(kj::heap<WorkerAgentImpl>(registry));
-  server.accept(kj::mv(stream));
-  server.drain().wait(ioContext.waitScope);
-  return 0;
-}
-#else
-int RunWorkerLoop(int socket_fd, ParserRegistry *custom_registry) {
+int RunWorkerLoop(const std::string &rpc_addr, ParserRegistry *custom_registry) {
   std::unique_ptr<ParserRegistry> default_registry;
   if (!custom_registry) {
     default_registry = ParserRegistry::CreateDefaultRegistry();
@@ -177,7 +161,8 @@ int RunWorkerLoop(int socket_fd, ParserRegistry *custom_registry) {
 
   try {
     kj::AsyncIoContext ioContext = kj::setupAsyncIo();
-    auto stream = ioContext.lowLevelProvider->wrapSocketFd(socket_fd);
+    auto addr = ioContext.provider->getNetwork().parseAddress(rpc_addr).wait(ioContext.waitScope);
+    auto stream = addr->connect().wait(ioContext.waitScope);
     capnp::TwoPartyServer server(kj::heap<WorkerAgentImpl>(registry));
     server.accept(kj::mv(stream));
     server.drain().wait(ioContext.waitScope);
@@ -194,7 +179,6 @@ int RunWorkerLoop(int socket_fd, ParserRegistry *custom_registry) {
     return 1;
   }
 }
-#endif
 
 }  // namespace worker
 }  // namespace soeasy
