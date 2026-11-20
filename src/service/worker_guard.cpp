@@ -1,392 +1,40 @@
 #include "service/worker_guard.h"
 
 #ifdef _WIN32
-#include <psapi.h>
 #include <windows.h>
 #else
-#include <unistd.h>
-
 #include <csignal>
 #endif
 
-#include <capnp/rpc-twoparty.h>
-#include <kj/async-io.h>
-
-#include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
-#include <deque>
-#include <filesystem>
-#include <fstream>
-#include <future>
-#include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/logger.h"
-#include "soeasy_ipc.capnp.h"
+#include "service/worker_rpc_channel.h"
 
 namespace soeasy {
 namespace service {
 
-namespace {
-
-std::vector<const char *> ToArgv(const std::vector<std::string> &args) {
-  std::vector<const char *> cmd;
-  cmd.reserve(args.size() + 1);
-  for (const auto &arg : args) {
-    cmd.push_back(arg.c_str());
-  }
-  cmd.push_back(nullptr);
-  return cmd;
-}
-
-std::string ResolveWorkerBinary(const std::string &hint_path) {
-  std::error_code ec;
-  if (!hint_path.empty() && std::filesystem::exists(hint_path, ec)) {
-    return std::filesystem::canonical(hint_path, ec).string();
-  }
-
-  // 1. Try directory containing current executable
-#ifdef _WIN32
-  char exe_buf[MAX_PATH];
-  if (GetModuleFileNameA(NULL, exe_buf, MAX_PATH) > 0) {
-    std::filesystem::path dir = std::filesystem::path(exe_buf).parent_path();
-    std::filesystem::path target = dir / "soeasy-worker.exe";
-    if (std::filesystem::exists(target, ec)) {
-      return std::filesystem::canonical(target, ec).string();
-    }
-  }
-#elif defined(__linux__)
-  char exe_buf[PATH_MAX];
-  ssize_t len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
-  if (len > 0) {
-    exe_buf[len] = '\0';
-    std::filesystem::path dir = std::filesystem::path(exe_buf).parent_path();
-    std::filesystem::path target = dir / "soeasy-worker";
-    if (std::filesystem::exists(target, ec)) {
-      return std::filesystem::canonical(target, ec).string();
-    }
-  }
-#endif
-
-  return "";
-}
-
-std::string DeriveWorkerDocToTextLogPath(const std::string &configured_path, const std::string &log_dir, size_t index) {
-  const std::string suffix = "_worker_" + std::to_string(index);
-  if (configured_path.empty()) {
-    return (std::filesystem::path(log_dir) / ("doctotext" + suffix + ".log")).generic_string();
-  }
-  const std::filesystem::path p(configured_path);
-  if (!p.has_filename()) {
-    return (p / ("doctotext" + suffix + ".log")).generic_string();
-  }
-  return (p.parent_path() / (p.stem().string() + suffix + p.extension().string())).generic_string();
-}
-
-struct TaskRequest {
-  ParseTask task;
-  uint32_t timeout_ms = 15000;
-  std::promise<ParseTaskResult> done_promise;
-};
-
-}  // namespace
-
-class TextStreamReceiverImpl final : public soeasy::ipc::TextStreamReceiver::Server {
- public:
-  explicit TextStreamReceiverImpl(std::shared_ptr<ParseTaskResult> out) : out_(std::move(out)) {}
-
-  kj::Promise<void> sendChunk(SendChunkContext context) override {
-    auto chunk = context.getParams().getChunk();
-    if (out_ && chunk.size() > 0) {
-      out_->extracted_text.append(reinterpret_cast<const char *>(chunk.begin()), chunk.size());
-      out_->stream_chunk_count++;
-    }
-    return kj::READY_NOW;
-  }
-
-  kj::Promise<void> finish(FinishContext context) override {
-    auto p = context.getParams();
-    if (out_) {
-      out_->extracted_bytes = p.getTotalBytes();
-      out_->is_scanned_pdf = p.getIsScannedPdf();
-      out_->status =
-          (p.getStatusCode() == soeasy::ipc::ParseStatusCode::OK) ? TaskStatus::kSuccess : TaskStatus::kFailed;
-      out_->error_message = p.getErrorMsg().cStr();
-    }
-    return kj::READY_NOW;
-  }
-
- private:
-  std::shared_ptr<ParseTaskResult> out_;
-};
-
-class WorkerRpcChannel {
- public:
-  WorkerRpcChannel() {
-    auto port_fut = port_promise_.get_future();
-    thread_ = std::thread([this]() { Loop(); });
-    listening_port_ = port_fut.get();
-  }
-
-  ~WorkerRpcChannel() {
-    Stop();
-  }
-
-  WorkerRpcChannel(const WorkerRpcChannel &) = delete;
-  WorkerRpcChannel &operator=(const WorkerRpcChannel &) = delete;
-
-  uint16_t listening_port() const { return listening_port_; }
-
-  bool WaitConnected(uint32_t timeout_ms) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    return cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms),
-                        [this]() { return connected_ || stopped_; }) &&
-           connected_ && !stopped_;
-  }
-
-  ParseTaskResult Call(const ParseTask &task, uint32_t timeout_ms) {
-    auto req = std::make_shared<TaskRequest>();
-    req->task = task;
-    req->timeout_ms = timeout_ms;
-    auto fut = req->done_promise.get_future();
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      if (stopped_) {
-        ParseTaskResult res;
-        res.doc_id = task.doc_id;
-        res.status = TaskStatus::kCrashed;
-        res.error_message = "Worker RPC channel stopped";
-        return res;
-      }
-      queue_.push_back(req);
-    }
-    cv_.notify_one();
-    return fut.get();
-  }
-
-  void Stop() {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      stopped_ = true;
-      if (active_fulfiller_ != nullptr) {
-        KJ_IF_MAYBE(f, active_fulfiller_) {
-          (*f)->fulfill();
-        }
-        active_fulfiller_ = nullptr;
-      }
-    }
-    cv_.notify_all();
-    if (thread_.joinable() && thread_.get_id() != std::this_thread::get_id()) {
-      thread_.join();
-    }
-  }
-
- private:
-  void Loop() {
-    std::unique_ptr<kj::AsyncIoContext> ioContextPtr;
-    kj::Own<kj::AsyncIoStream> clientStream;
-    bool port_published = false;
-
-    auto clear_fulfiller = [this]() {
-      std::lock_guard<std::mutex> lock(mutex_);
-      active_fulfiller_ = nullptr;
-    };
-
-    try {
-      ioContextPtr = std::make_unique<kj::AsyncIoContext>(kj::setupAsyncIo());
-      auto &ioContext = *ioContextPtr;
-      auto addr = ioContext.provider->getNetwork().parseAddress("127.0.0.1", 0).wait(ioContext.waitScope);
-      auto listener = addr->listen();
-      port_promise_.set_value(static_cast<uint16_t>(listener->getPort()));
-      port_published = true;
-
-      auto cancelPaf = kj::newPromiseAndCrossThreadFulfiller<void>();
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (stopped_) {
-          cv_.notify_all();
-          return;
-        }
-        active_fulfiller_ = kj::mv(cancelPaf.fulfiller);
-      }
-
-      auto cancelAccept = cancelPaf.promise.then([]() -> kj::Own<kj::AsyncIoStream> {
-        KJ_FAIL_REQUIRE("Worker RPC accept cancelled");
-      });
-      auto acceptTimed =
-          ioContext.provider->getTimer().timeoutAfter(5000 * kj::MILLISECONDS, listener->accept());
-      clientStream = acceptTimed.exclusiveJoin(kj::mv(cancelAccept)).wait(ioContext.waitScope);
-      listener = nullptr;
-
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        active_fulfiller_ = nullptr;
-        connected_ = true;
-      }
-      cv_.notify_all();
-
-      capnp::TwoPartyClient client(*clientStream);
-      auto agent = client.bootstrap().castAs<soeasy::ipc::WorkerAgent>();
-
-      while (true) {
-        std::shared_ptr<TaskRequest> req;
-        {
-          std::unique_lock<std::mutex> lock(mutex_);
-          cv_.wait(lock, [this]() { return stopped_ || !queue_.empty(); });
-          if (stopped_ && queue_.empty()) {
-            break;
-          }
-          req = queue_.front();
-          queue_.pop_front();
-        }
-
-        auto result = std::make_shared<ParseTaskResult>();
-        result->doc_id = req->task.doc_id;
-
-        try {
-          auto taskCancelPaf = kj::newPromiseAndCrossThreadFulfiller<void>();
-          {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (stopped_) {
-              result->status = TaskStatus::kCrashed;
-              result->error_message = "Worker RPC channel stopped";
-              req->done_promise.set_value(std::move(*result));
-              break;
-            }
-            active_fulfiller_ = kj::mv(taskCancelPaf.fulfiller);
-          }
-
-          auto rpcReq = agent.parseFileStreamRequest();
-          rpcReq.setDocId(req->task.doc_id);
-          rpcReq.setFilePath(req->task.file_path);
-          rpcReq.setExt(req->task.ext);
-          rpcReq.setLevel(static_cast<soeasy::ipc::ParseLevel>(req->task.parse_level));
-          rpcReq.setReceiver(kj::heap<TextStreamReceiverImpl>(result));
-
-          auto sendPromise = rpcReq.send().ignoreResult();
-          auto cancelTask = taskCancelPaf.promise.then([]() { KJ_FAIL_REQUIRE("Worker RPC call cancelled"); });
-          auto timedPromise =
-              ioContext.provider->getTimer().timeoutAfter(req->timeout_ms * kj::MILLISECONDS, kj::mv(sendPromise));
-          timedPromise.exclusiveJoin(kj::mv(cancelTask)).wait(ioContext.waitScope);
-
-          clear_fulfiller();
-          req->done_promise.set_value(std::move(*result));
-        } catch (const kj::Exception &e) {
-          clear_fulfiller();
-          std::string desc = e.getDescription().cStr();
-          if (desc.find("timed out") != std::string::npos || desc.find("timeout") != std::string::npos) {
-            result->status = TaskStatus::kTimeout;
-            result->error_message = "Task timed out: " + desc;
-          } else {
-            result->status = TaskStatus::kCrashed;
-            result->error_message = "Worker peer disconnected: " + desc;
-          }
-          req->done_promise.set_value(std::move(*result));
-          if (result->status == TaskStatus::kCrashed) {
-            break;
-          }
-        } catch (const std::exception &e) {
-          clear_fulfiller();
-          result->status = TaskStatus::kCrashed;
-          result->error_message = std::string("Worker exception: ") + e.what();
-          req->done_promise.set_value(std::move(*result));
-          break;
-        } catch (...) {
-          clear_fulfiller();
-          result->status = TaskStatus::kCrashed;
-          result->error_message = "Worker unknown exception";
-          req->done_promise.set_value(std::move(*result));
-          break;
-        }
-      }
-    } catch (...) {
-      if (!port_published) {
-        try {
-          port_promise_.set_value(0);
-        } catch (...) {
-        }
-      }
-    }
-
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      active_fulfiller_ = nullptr;
-      stopped_ = true;
-      while (!queue_.empty()) {
-        auto pending = queue_.front();
-        queue_.pop_front();
-        ParseTaskResult res;
-        res.doc_id = pending->task.doc_id;
-        res.status = TaskStatus::kCrashed;
-        res.error_message = "Worker RPC channel terminated";
-        pending->done_promise.set_value(std::move(res));
-      }
-    }
-    cv_.notify_all();
-  }
-
-  std::promise<uint16_t> port_promise_;
-  uint16_t listening_port_ = 0;
-  std::thread thread_;
-  std::mutex mutex_;
-  std::condition_variable cv_;
-  std::deque<std::shared_ptr<TaskRequest>> queue_;
-  kj::Maybe<kj::Own<kj::CrossThreadPromiseFulfiller<void>>> active_fulfiller_;
-  bool connected_ = false;
-  bool stopped_ = false;
-};
-
-WorkerInstance::WorkerInstance() = default;
-WorkerInstance::~WorkerInstance() { Reset(); }
-
-WorkerInstance::WorkerInstance(WorkerInstance &&other) noexcept
-    : process(std::move(other.process)),
-      stdio_drain_thread(std::move(other.stdio_drain_thread)),
-      pid(other.pid),
-      rpc_channel(std::move(other.rpc_channel)),
-      state(other.state),
-      current_doc_id(other.current_doc_id),
-      current_timeout_ms(other.current_timeout_ms),
-      task_start_time(other.task_start_time),
-      idle_start_time(other.idle_start_time),
-      total_tasks_processed(other.total_tasks_processed) {
-  other.pid = 0;
-  other.state = WorkerState::kIdle;
-  other.current_doc_id = 0;
-}
-
-WorkerInstance &WorkerInstance::operator=(WorkerInstance &&other) noexcept {
+DetachedWorkerResources &DetachedWorkerResources::operator=(DetachedWorkerResources &&other) noexcept {
   if (this != &other) {
     Reset();
     process = std::move(other.process);
     stdio_drain_thread = std::move(other.stdio_drain_thread);
-    pid = other.pid;
     rpc_channel = std::move(other.rpc_channel);
-    state = other.state;
-    current_doc_id = other.current_doc_id;
-    current_timeout_ms = other.current_timeout_ms;
-    task_start_time = other.task_start_time;
-    idle_start_time = other.idle_start_time;
-    total_tasks_processed = other.total_tasks_processed;
-    other.pid = 0;
-    other.state = WorkerState::kIdle;
-    other.current_doc_id = 0;
   }
   return *this;
 }
 
-void WorkerInstance::CloseTransport() noexcept {
+void DetachedWorkerResources::Reset() noexcept {
   if (rpc_channel) {
     rpc_channel->Stop();
     rpc_channel.reset();
   }
-}
-
-void WorkerInstance::Reset(WorkerState next_state) noexcept {
-  CloseTransport();
   // Terminate and join the child before joining the stdio drain thread so its pipe write end closes cleanly.
   if (process) {
     if (subprocess_alive(process.get())) {
@@ -399,9 +47,20 @@ void WorkerInstance::Reset(WorkerState next_state) noexcept {
     stdio_drain_thread.join();
   }
   process.reset();
+}
+
+WorkerInstance::~WorkerInstance() {
+  Detach(WorkerState::kIdle).Reset();
+}
+
+DetachedWorkerResources WorkerInstance::Detach(WorkerState next_state) noexcept {
+  DetachedWorkerResources res;
+  res.rpc_channel = std::move(rpc_channel);
+  res.process = std::move(process);
+  res.stdio_drain_thread = std::move(stdio_drain_thread);
   pid = 0;
   state = next_state;
-  current_doc_id = 0;
+  return res;
 }
 
 WorkerGuard::WorkerGuard() = default;
@@ -410,91 +69,84 @@ WorkerGuard::~WorkerGuard() {
   Shutdown();
 }
 
+size_t WorkerGuard::worker_count() const {
+  std::lock_guard<std::mutex> lock(pool_mutex_);
+  return target_worker_count_ > 0 ? target_worker_count_ : workers_.size();
+}
+
 size_t WorkerGuard::active_worker_count() const {
   std::lock_guard<std::mutex> lock(pool_mutex_);
   size_t count = 0;
   for (const auto &w : workers_) {
-    if (w.pid > 0) count++;
+    if (w && w->pid > 0) count++;
   }
   return count;
 }
 
-size_t WorkerGuard::GetProcessRssBytes(pid_t pid) {
-#ifdef _WIN32
-  HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
-  if (!hProcess) return 0;
-  PROCESS_MEMORY_COUNTERS pmc;
-  size_t bytes = 0;
-  if (GetProcessMemoryInfo(hProcess, &pmc, sizeof(pmc))) {
-    bytes = pmc.WorkingSetSize;
-  }
-  CloseHandle(hProcess);
-  return bytes;
-#else
-  std::string statm_path = "/proc/" + std::to_string(pid) + "/statm";
-  std::ifstream statm(statm_path);
-  if (!statm.is_open()) {
-    return 0;
-  }
-  uint64_t size_pages = 0;
-  uint64_t resident_pages = 0;
-  statm >> size_pages >> resident_pages;
-  long page_size = sysconf(_SC_PAGESIZE);
-  return resident_pages * (page_size > 0 ? page_size : 4096);
-#endif
-}
-
-bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, uint32_t timeout_ms,
-                       size_t /*deprecated_slot_count*/, size_t /*deprecated_slot_capacity*/) {
-  Shutdown();
+bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, uint32_t timeout_ms) {
+  std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+  ShutdownLocked();
 
 #ifndef _WIN32
   signal(SIGPIPE, SIG_IGN);
 #endif
 
-  worker_bin_path_ = ResolveWorkerBinary(worker_bin_path);
-  if (worker_bin_path_.empty()) {
+  if (worker_count == 0) {
+    worker_count = 1;
+  }
+
+  std::string resolved_bin = ResolveWorkerBinary(worker_bin_path);
+  if (resolved_bin.empty()) {
     LOG_ERROR(
         "[WorkerGuard] Failed to locate soeasy-worker binary (hint: '{}'). Multithreaded in-process fork is "
         "prohibited.",
         worker_bin_path);
     return false;
   }
-  timeout_ms_ = timeout_ms;
+  timeout_ms_.store(timeout_ms > 0 ? timeout_ms : kDefaultTimeoutMs, std::memory_order_relaxed);
 
-#ifdef _WIN32
-  job_handle_ = CreateJobObjectA(NULL, NULL);
-  if (job_handle_) {
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
-    ZeroMemory(&jeli, sizeof(jeli));
-    jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    SetInformationJobObject(job_handle_, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
-  }
-#endif
-
-  is_running_.store(true, std::memory_order_release);
-  target_worker_count_ = worker_count;
-  workers_.resize(worker_count);
   {
-    std::lock_guard<std::mutex> lock(stdio_mutex_);
-    recent_stdio_.resize(worker_count);
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    worker_bin_path_ = std::move(resolved_bin);
+#ifdef _WIN32
+    job_handle_ = CreateJobObjectA(NULL, NULL);
+    if (job_handle_) {
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
+      ZeroMemory(&jeli, sizeof(jeli));
+      jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      SetInformationJobObject(job_handle_, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+    }
+#endif
+    pool_generation_++;
+    target_worker_count_ = worker_count;
+    workers_.clear();
+    workers_.reserve(worker_count);
+    auto now = std::chrono::steady_clock::now();
+    for (size_t i = 0; i < worker_count; ++i) {
+      auto inst = std::make_unique<WorkerInstance>();
+      inst->idle_start_time = now;
+      workers_.push_back(std::move(inst));
+    }
+    {
+      std::lock_guard<std::mutex> stdio_lock(stdio_mutex_);
+      recent_stdio_.assign(worker_count, {});
+    }
+    is_running_.store(true, std::memory_order_release);
   }
 
-  auto now = std::chrono::steady_clock::now();
-  for (size_t i = 0; i < worker_count; ++i) {
-    workers_[i].pid = 0;
-    workers_[i].state = WorkerState::kIdle;
-    workers_[i].idle_start_time = now;
+  try {
+    watchdog_thread_ = std::thread(&WorkerGuard::WatchdogLoop, this);
+  } catch (const std::exception &e) {
+    LOG_ERROR("[WorkerGuard] Failed to start watchdog thread: {}", e.what());
+    ShutdownLocked();
+    return false;
   }
-
-  watchdog_thread_ = std::thread(&WorkerGuard::WatchdogLoop, this);
   return true;
 }
 
 std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_param, size_t index) const {
   const std::string log_dir = worker_log_dir_.empty() ? "logs" : worker_log_dir_;
-  const std::string worker_log_file =
-      (std::filesystem::path(log_dir) / ("soeasy_worker_" + std::to_string(index) + ".log")).generic_string();
+  const std::string worker_log_file = DeriveWorkerLogPath(log_dir, index);
   const std::string worker_dt_log_file = DeriveWorkerDocToTextLogPath(doctotext_log_path_, log_dir, index);
   return {worker_bin_path_,
           ipc_param,
@@ -505,6 +157,13 @@ std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_par
           doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
           "--doctotext-log-path=" + worker_dt_log_file,
           embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
+}
+
+void WorkerGuard::ClearWorkerStdio(size_t index) {
+  std::lock_guard<std::mutex> lock(stdio_mutex_);
+  if (index < recent_stdio_.size()) {
+    recent_stdio_[index].clear();
+  }
 }
 
 void WorkerGuard::RecordWorkerStdio(size_t index, const std::string &line) {
@@ -549,29 +208,11 @@ void WorkerGuard::DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t inde
   }
 }
 
-void WorkerGuard::FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid) {
-  WorkerInstance &inst = workers_[index];
-  inst.process = std::move(proc);
-  inst.pid = pid;
-  inst.state = WorkerState::kIdle;
-  inst.idle_start_time = std::chrono::steady_clock::now();
-  inst.current_doc_id = 0;
-  inst.total_tasks_processed = 0;
-  if (inst.stdio_drain_thread.joinable()) {
-    inst.stdio_drain_thread.join();
-  }
-  if (inst.process && inst.process->stdout_file) {
-    inst.stdio_drain_thread =
-        std::thread(&WorkerGuard::DrainWorkerStdio, this, inst.process->stdout_file, index, log_console_);
-  }
-}
-
-bool WorkerGuard::SpawnWorker(size_t index) {
-  if (index >= workers_.size()) {
-    return false;
-  }
-
-  auto channel = std::make_shared<WorkerRpcChannel>();
+bool WorkerGuard::SpawnWorkerProcess(size_t index, DetachedWorkerResources *out_resources, WorkerPid *out_pid,
+                                       const std::vector<std::string> &args_template, bool log_as_info) {
+  ClearWorkerStdio(index);
+  constexpr uint32_t kHandshakeTimeoutMs = 5000;
+  auto channel = std::make_shared<WorkerRpcChannel>(kHandshakeTimeoutMs);
   const uint16_t port = channel->listening_port();
   if (port == 0) {
     LOG_ERROR("[WorkerGuard] Failed to bind Cap'n Proto RPC listener for worker {}", index);
@@ -579,7 +220,10 @@ bool WorkerGuard::SpawnWorker(size_t index) {
     return false;
   }
 
-  std::vector<std::string> args = BuildWorkerArgs("--rpc-addr=127.0.0.1:" + std::to_string(port), index);
+  std::vector<std::string> args = args_template;
+  if (args.size() > 1) {
+    args[1] = "--rpc-addr=127.0.0.1:" + std::to_string(port);
+  }
   auto cmd = ToArgv(args);
 
 #ifdef _WIN32
@@ -597,45 +241,33 @@ bool WorkerGuard::SpawnWorker(size_t index) {
   }
 
 #ifdef _WIN32
-  pid_t pid = static_cast<pid_t>(GetProcessId(proc->hProcess));
-  if (job_handle_ && proc->hProcess) {
-    AssignProcessToJobObject(job_handle_, proc->hProcess);
-  }
+  WorkerPid pid = static_cast<WorkerPid>(GetProcessId(proc->hProcess));
 #else
-  pid_t pid = proc->child;
+  WorkerPid pid = static_cast<WorkerPid>(proc->child);
 #endif
 
-  if (!channel->WaitConnected(5000)) {
-    LOG_ERROR("[WorkerGuard] Worker {} RPC handshake timeout", index);
-    channel->Stop();
+  // Start draining stdout/stderr before waiting for RPC handshake to prevent pipe-buffer startup deadlocks.
+  DetachedWorkerResources resources;
+  resources.rpc_channel = std::move(channel);
+  resources.process = std::move(proc);
+  if (resources.process && resources.process->stdout_file) {
+    resources.stdio_drain_thread =
+        std::thread(&WorkerGuard::DrainWorkerStdio, this, resources.process->stdout_file, index, log_as_info);
+  }
+
+  if (pid <= 0) {
+    LOG_ERROR("[WorkerGuard] Worker {} returned invalid PID {}", index, pid);
     return false;
   }
 
-  workers_[index].rpc_channel = std::move(channel);
-  FinalizeSpawnedWorker(index, std::move(proc), pid);
+  if (!resources.rpc_channel->WaitConnected(kHandshakeTimeoutMs)) {
+    LOG_ERROR("[WorkerGuard] Worker {} RPC handshake timeout", index);
+    return false;
+  }
+
+  *out_resources = std::move(resources);
+  *out_pid = pid;
   return true;
-}
-
-void WorkerGuard::KillWorker(size_t index, TaskStatus status, const std::string &reason) {
-  (void)status;
-  if (index >= workers_.size()) {
-    return;
-  }
-  WorkerInstance &inst = workers_[index];
-  LOG_WARN("[WorkerGuard] KillWorker index={}: reason={}", index, reason);
-  inst.Reset();
-}
-
-void WorkerGuard::FinalizeBusyWorkerOnFailure(size_t worker_idx, TaskStatus status,
-                                              const std::string &reason) {
-  WorkerInstance &worker = workers_[worker_idx];
-  const bool watchdog_handled =
-      (worker.state == WorkerState::kKilledByWatchdog || worker.state == WorkerState::kCrashed);
-  if (!watchdog_handled) {
-    KillWorker(worker_idx, status, reason);
-  }
-  worker.state = WorkerState::kIdle;
-  worker.idle_start_time = std::chrono::steady_clock::now();
 }
 
 void WorkerGuard::WatchdogLoop() {
@@ -649,60 +281,64 @@ void WorkerGuard::WatchdogLoop() {
       break;
     }
 
-    std::unique_lock<std::mutex> lock(pool_mutex_);
-    auto now = std::chrono::steady_clock::now();
+    std::vector<DetachedWorkerResources> to_cleanup;
+    bool notify_available = false;
+    {
+      std::unique_lock<std::mutex> lock(pool_mutex_);
+      auto now = std::chrono::steady_clock::now();
 
-    for (size_t i = 0; i < workers_.size(); ++i) {
-      WorkerInstance &inst = workers_[i];
-      if (!inst.process || inst.pid <= 0) {
-        continue;
-      }
+      for (size_t i = 0; i < workers_.size(); ++i) {
+        WorkerInstance &inst = *workers_[i];
+        if (!inst.process || inst.pid <= 0) {
+          continue;
+        }
 
-      // 1. Check if child crashed or exited unexpectedly
-      if (!subprocess_alive(inst.process.get())) {
-        int exit_code = 0;
-        if (inst.process) {
+        // 1. Check if child crashed or exited unexpectedly
+        if (!subprocess_alive(inst.process.get())) {
+          int exit_code = 0;
           subprocess_join(inst.process.get(), &exit_code);
-        }
-        LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
-        const bool was_busy = inst.is_busy();
-        inst.Reset(was_busy ? WorkerState::kCrashed : WorkerState::kIdle);
-        if (!was_busy) {
-          worker_available_cv_.notify_all();
-        }
-        continue;
-      }
-
-      // 2. Check for task timeout
-      if (inst.state == WorkerState::kBusy) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.task_start_time).count();
-        bool is_overtime = (elapsed > inst.current_timeout_ms + 1000);
-
-        if (is_overtime) {
-          LOG_WARN(
-              "[WorkerGuard] Watchdog killing worker {}: elapsed={}ms, timeout={}ms", i,
-              elapsed, inst.current_timeout_ms);
-          inst.Reset(WorkerState::kKilledByWatchdog);
-          continue;
-        }
-      }
-
-      // 3. Check idle eviction or memory limit when idle
-      if (inst.state == WorkerState::kIdle && inst.pid > 0) {
-        auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.idle_start_time).count();
-        if (idle_ms >= idle_evict_ms_) {
-          LOG_INFO("[WorkerGuard] Worker {} idle for {:.1f}s. Evicted to reclaim memory.", i, idle_ms / 1000.0);
-          inst.Reset();
+          LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
+          const bool was_busy = inst.is_busy();
+          to_cleanup.push_back(inst.Detach(was_busy ? WorkerState::kCrashed : WorkerState::kIdle));
+          if (!was_busy) {
+            notify_available = true;
+          }
           continue;
         }
 
-        size_t rss = GetProcessRssBytes(inst.pid);
-        if (rss > kDefaultMaxMemoryBytes) {
-          KillWorker(i, TaskStatus::kSuccess, "Memory limit exceeded; recycling");
-          worker_available_cv_.notify_all();
+        // 2. Check for task timeout
+        if (inst.state == WorkerState::kBusy) {
+          auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.task_start_time).count();
+          if (elapsed > static_cast<int64_t>(inst.current_timeout_ms) + 1000) {
+            LOG_WARN("[WorkerGuard] Watchdog killing worker {}: elapsed={}ms, timeout={}ms", i, elapsed,
+                     inst.current_timeout_ms);
+            to_cleanup.push_back(inst.Detach(WorkerState::kKilledByWatchdog));
+            continue;
+          }
         }
+
+        // 3. Check idle eviction or memory limit when idle
+        if (inst.state == WorkerState::kIdle && inst.pid > 0) {
+          auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.idle_start_time).count();
+          if (idle_ms >= static_cast<int64_t>(idle_evict_ms_.load(std::memory_order_relaxed))) {
+            LOG_INFO("[WorkerGuard] Worker {} idle for {:.1f}s. Evicted to reclaim memory.", i, idle_ms / 1000.0);
+            to_cleanup.push_back(inst.Detach(WorkerState::kIdle));
+            continue;
+          }
+
+          if (GetProcessRssBytes(inst.pid) > kDefaultMaxMemoryBytes) {
+            LOG_WARN("[WorkerGuard] Worker {} exceeded memory limit; recycling", i);
+            to_cleanup.push_back(inst.Detach(WorkerState::kIdle));
+            notify_available = true;
+          }
+        }
+      }
+
+      if (notify_available) {
+        worker_available_cv_.notify_all();
       }
     }
+    // to_cleanup is destroyed outside pool_mutex_.
   }
 }
 
@@ -712,13 +348,24 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
   }
   out_result->doc_id = task.doc_id;
   out_result->status = TaskStatus::kFailed;
-  out_result->slot_id = 0;
   out_result->extracted_bytes = 0;
+  out_result->is_scanned_pdf = false;
+  out_result->error_message.clear();
   out_result->extracted_text.clear();
   out_result->stream_chunk_count = 0;
+  out_result->elapsed_ms = 0.0;
 
   size_t assigned_worker_idx = 0;
-  auto start_time = std::chrono::steady_clock::now();
+  uint64_t generation = 0;
+  uint32_t effective_timeout_ms = task.timeout_ms > 0 ? task.timeout_ms : timeout_ms_.load(std::memory_order_relaxed);
+  if (effective_timeout_ms == 0) {
+    effective_timeout_ms = kDefaultTimeoutMs;
+  }
+  bool need_spawn = false;
+  std::shared_ptr<WorkerRpcChannel> chan;
+  std::vector<std::string> spawn_args;
+  bool spawn_log_as_info = false;
+  std::chrono::steady_clock::time_point exec_start_time;
 
   {
     std::unique_lock<std::mutex> lock(pool_mutex_);
@@ -729,7 +376,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       }
       size_t limit = (target_worker_count_ > 0) ? std::min(workers_.size(), target_worker_count_) : workers_.size();
       for (size_t i = 0; i < limit; ++i) {
-        if (workers_[i].state == WorkerState::kIdle) {
+        if (workers_[i]->state == WorkerState::kIdle) {
           assigned_worker_idx = i;
           return true;
         }
@@ -741,44 +388,96 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       return false;
     }
 
-    WorkerInstance &worker = workers_[assigned_worker_idx];
-    if (worker.pid <= 0 || !worker.rpc_channel) {
-      if (!SpawnWorker(assigned_worker_idx)) {
-        out_result->status = TaskStatus::kFailed;
-        out_result->error_message = "Failed to spawn worker on demand";
-        worker_available_cv_.notify_all();
-        return true;
-      }
-    }
+    generation = pool_generation_;
+    exec_start_time = std::chrono::steady_clock::now();
+    WorkerInstance &worker = *workers_[assigned_worker_idx];
     worker.state = WorkerState::kBusy;
-    worker.current_doc_id = task.doc_id;
-    worker.current_timeout_ms = task.timeout_ms > 0 ? task.timeout_ms : timeout_ms_;
-    worker.task_start_time = start_time;
+    worker.current_timeout_ms = effective_timeout_ms;
+    worker.task_start_time = exec_start_time;
+
+    need_spawn = (worker.pid <= 0 || !worker.rpc_channel);
+    if (need_spawn) {
+      spawn_args = BuildWorkerArgs("", assigned_worker_idx);
+      spawn_log_as_info = log_console_;
+    } else {
+      chan = worker.rpc_channel;
+    }
   }
 
-  // Execute RPC call to worker channel
-  ParseTaskResult rpc_res;
-  bool rpc_success = false;
-  {
-    std::shared_ptr<WorkerRpcChannel> chan;
+  // Spawn worker outside pool_mutex_ so handshake wait never stalls watchdog or other workers.
+  if (need_spawn) {
+    DetachedWorkerResources spawned;
+    WorkerPid spawned_pid = 0;
+    bool ok = SpawnWorkerProcess(assigned_worker_idx, &spawned, &spawned_pid, spawn_args, spawn_log_as_info);
+    if (!ok) {
+      std::lock_guard<std::mutex> lock(pool_mutex_);
+      const bool same_pool = is_running_.load(std::memory_order_acquire) && pool_generation_ == generation;
+      if (same_pool && assigned_worker_idx < workers_.size()) {
+        workers_[assigned_worker_idx]->state = WorkerState::kIdle;
+      }
+      out_result->status = TaskStatus::kFailed;
+      out_result->error_message = "Failed to spawn worker on demand";
+      worker_available_cv_.notify_all();
+      return same_pool;
+    }
+
+    DetachedWorkerResources stale_resources;
     {
       std::lock_guard<std::mutex> lock(pool_mutex_);
-      chan = workers_[assigned_worker_idx].rpc_channel;
+      if (!is_running_.load(std::memory_order_acquire) || pool_generation_ != generation ||
+          assigned_worker_idx >= workers_.size()) {
+        return false;
+      }
+      WorkerInstance &worker = *workers_[assigned_worker_idx];
+      if (worker.HasResources()) {
+        stale_resources = worker.Detach(WorkerState::kBusy);
+      }
+#ifdef _WIN32
+      if (job_handle_ && spawned.process && spawned.process->hProcess) {
+        AssignProcessToJobObject(job_handle_, spawned.process->hProcess);
+      }
+#endif
+      auto now = std::chrono::steady_clock::now();
+      worker.rpc_channel = std::move(spawned.rpc_channel);
+      worker.process = std::move(spawned.process);
+      worker.stdio_drain_thread = std::move(spawned.stdio_drain_thread);
+      worker.pid = spawned_pid;
+      worker.idle_start_time = now;
+      worker.task_start_time = now;
+      exec_start_time = now;
+      chan = worker.rpc_channel;
     }
-    if (chan) {
-      rpc_res = chan->Call(task, task.timeout_ms > 0 ? task.timeout_ms : timeout_ms_);
-      rpc_success = true;
-    }
+  }
+
+  ParseTaskResult rpc_res;
+  bool rpc_success = false;
+  if (chan) {
+    rpc_res = chan->Call(task, effective_timeout_ms);
+    rpc_success = true;
   }
 
   auto finish_time = std::chrono::steady_clock::now();
-  double elapsed_ms = std::chrono::duration<double, std::milli>(finish_time - start_time).count();
+  double elapsed_ms = std::chrono::duration<double, std::milli>(finish_time - exec_start_time).count();
 
+  DetachedWorkerResources to_cleanup;
   {
-    std::unique_lock<std::mutex> lock(pool_mutex_);
-    WorkerInstance &worker = workers_[assigned_worker_idx];
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    if (!is_running_.load(std::memory_order_acquire) || pool_generation_ != generation ||
+        assigned_worker_idx >= workers_.size()) {
+      out_result->status = TaskStatus::kCrashed;
+      out_result->error_message = "WorkerGuard shut down during task execution";
+      out_result->elapsed_ms = elapsed_ms;
+      return false;
+    }
+    WorkerInstance &worker = *workers_[assigned_worker_idx];
 
-    if (!rpc_success || rpc_res.status == TaskStatus::kCrashed) {
+    if (worker.state == WorkerState::kKilledByWatchdog || rpc_res.status == TaskStatus::kTimeout) {
+      out_result->status = TaskStatus::kTimeout;
+      out_result->error_message =
+          rpc_res.error_message.empty() ? "Task timed out or stalled (killed by watchdog)" : rpc_res.error_message;
+      to_cleanup = worker.Detach(WorkerState::kIdle);
+      worker.idle_start_time = finish_time;
+    } else if (!rpc_success || rpc_res.status == TaskStatus::kCrashed) {
       out_result->status = TaskStatus::kCrashed;
       std::string diag = GetRecentWorkerStdio(assigned_worker_idx);
       if (!diag.empty()) {
@@ -789,16 +488,12 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
                                        ? "Worker crashed (SIGSEGV/abort) during file parsing"
                                        : rpc_res.error_message;
       }
-      FinalizeBusyWorkerOnFailure(assigned_worker_idx, TaskStatus::kCrashed, out_result->error_message);
-    } else if (worker.state == WorkerState::kKilledByWatchdog || rpc_res.status == TaskStatus::kTimeout) {
-      out_result->status = TaskStatus::kTimeout;
-      out_result->error_message = "Task timed out or stalled (killed by watchdog)";
-      FinalizeBusyWorkerOnFailure(assigned_worker_idx, TaskStatus::kTimeout, out_result->error_message);
+      to_cleanup = worker.Detach(WorkerState::kIdle);
+      worker.idle_start_time = finish_time;
     } else {
       *out_result = std::move(rpc_res);
       worker.state = WorkerState::kIdle;
-      worker.idle_start_time = std::chrono::steady_clock::now();
-      worker.total_tasks_processed++;
+      worker.idle_start_time = finish_time;
     }
     out_result->elapsed_ms = elapsed_ms;
     worker_available_cv_.notify_all();
@@ -808,49 +503,66 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
 }
 
 void WorkerGuard::Shutdown() {
-  if (!is_running_.exchange(false, std::memory_order_acq_rel)) {
-    return;
-  }
+  std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+  ShutdownLocked();
+}
 
+void WorkerGuard::ShutdownLocked() {
+  is_running_.store(false, std::memory_order_release);
+
+  {
+    std::lock_guard<std::mutex> cv_lock(watchdog_mutex_);
+  }
   watchdog_cv_.notify_all();
+  {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+  }
   worker_available_cv_.notify_all();
+
   if (watchdog_thread_.joinable()) {
     watchdog_thread_.join();
   }
 
-  std::unique_lock<std::mutex> lock(pool_mutex_);
-  for (auto &inst : workers_) {
-    inst.Reset();
-  }
+  std::vector<std::unique_ptr<WorkerInstance>> old_workers;
+  {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    pool_generation_++;
+    target_worker_count_ = 0;
+    old_workers = std::move(workers_);
 #ifdef _WIN32
-  if (job_handle_) {
-    CloseHandle(job_handle_);
-    job_handle_ = nullptr;
-  }
+    if (job_handle_) {
+      CloseHandle(job_handle_);
+      job_handle_ = nullptr;
+    }
 #endif
-  workers_.clear();
+  }
+  worker_available_cv_.notify_all();
+  old_workers.clear();
 }
 
 void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
-  std::lock_guard<std::mutex> lock(pool_mutex_);
-  const std::string &next_log_dir = options.worker_log_dir.empty() ? worker_log_dir_ : options.worker_log_dir;
-  bool changed =
-      (log_level_ != options.level || log_console_ != options.enable_console || log_sync_ != options.enable_sync ||
-       doctotext_logging_ != options.doctotext_logging || doctotext_log_path_ != options.doctotext_log_path ||
-       embedded_image_ocr_ != options.embedded_image_ocr || worker_log_dir_ != next_log_dir);
-  log_level_ = options.level;
-  log_console_ = options.enable_console;
-  log_sync_ = options.enable_sync;
-  doctotext_logging_ = options.doctotext_logging;
-  doctotext_log_path_ = options.doctotext_log_path;
-  embedded_image_ocr_ = options.embedded_image_ocr;
-  worker_log_dir_ = next_log_dir;
+  std::vector<DetachedWorkerResources> to_cleanup;
+  {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    const std::string &next_log_dir = options.worker_log_dir.empty() ? worker_log_dir_ : options.worker_log_dir;
+    bool changed =
+        (log_level_ != options.level || log_console_ != options.enable_console || log_sync_ != options.enable_sync ||
+         doctotext_logging_ != options.doctotext_logging || doctotext_log_path_ != options.doctotext_log_path ||
+         embedded_image_ocr_ != options.embedded_image_ocr || worker_log_dir_ != next_log_dir);
+    log_level_ = options.level;
+    log_console_ = options.enable_console;
+    log_sync_ = options.enable_sync;
+    doctotext_logging_ = options.doctotext_logging;
+    doctotext_log_path_ = options.doctotext_log_path;
+    embedded_image_ocr_ = options.embedded_image_ocr;
+    worker_log_dir_ = next_log_dir;
 
-  if (changed) {
-    // Respawn idle workers with new arguments
-    for (size_t i = 0; i < workers_.size(); ++i) {
-      if (!workers_[i].is_busy() && workers_[i].pid > 0) {
-        KillWorker(i, TaskStatus::kSuccess, "Options changed");
+    if (changed) {
+      for (size_t i = 0; i < workers_.size(); ++i) {
+        if (workers_[i]->state == WorkerState::kIdle && workers_[i]->HasResources()) {
+          LOG_WARN("[WorkerGuard] Recycling idle worker {} due to logging options change", i);
+          to_cleanup.push_back(workers_[i]->Detach(WorkerState::kIdle));
+        }
       }
     }
   }
@@ -860,67 +572,92 @@ void WorkerGuard::SetWorkerCount(size_t new_count) {
   if (new_count == 0) {
     new_count = 1;
   }
-  std::unique_lock<std::mutex> lock(pool_mutex_);
-  if (!is_running_.load(std::memory_order_acquire)) {
-    return;
-  }
-  size_t current_count = target_worker_count_ > 0 ? target_worker_count_ : workers_.size();
-  if (new_count == current_count && workers_.size() == new_count) {
-    return;
-  }
 
-  target_worker_count_ = new_count;
+  std::vector<DetachedWorkerResources> to_cleanup;
+  {
+    std::unique_lock<std::mutex> lock(pool_mutex_);
+    if (!is_running_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const uint64_t generation = pool_generation_;
+    size_t current_count = target_worker_count_ > 0 ? target_worker_count_ : workers_.size();
+    if (new_count == current_count && workers_.size() == new_count) {
+      return;
+    }
 
-  if (new_count > workers_.size()) {
-    size_t old_size = workers_.size();
-    workers_.resize(new_count);
-    {
-      std::lock_guard<std::mutex> stdio_lock(stdio_mutex_);
-      recent_stdio_.resize(new_count);
-    }
-    auto now = std::chrono::steady_clock::now();
-    for (size_t i = old_size; i < new_count; ++i) {
-      workers_[i].pid = 0;
-      workers_[i].state = WorkerState::kIdle;
-      workers_[i].idle_start_time = now;
-    }
-    LOG_INFO("[WorkerGuard] Dynamically scaled UP worker pool from {} to {}", current_count, new_count);
-    worker_available_cv_.notify_all();
-  } else {
-    LOG_INFO("[WorkerGuard] Dynamically scaling DOWN worker pool from {} to {}", current_count, new_count);
-    // 1. Immediately kill any idle workers beyond new_count
-    for (size_t i = new_count; i < workers_.size(); ++i) {
-      if (workers_[i].state == WorkerState::kIdle && workers_[i].pid > 0) {
-        KillWorker(i, TaskStatus::kSuccess, "Scaled down by user config");
+    target_worker_count_ = new_count;
+
+    if (new_count > workers_.size()) {
+      auto now = std::chrono::steady_clock::now();
+      workers_.reserve(new_count);
+      while (workers_.size() < new_count) {
+        auto inst = std::make_unique<WorkerInstance>();
+        inst->idle_start_time = now;
+        workers_.push_back(std::move(inst));
       }
-    }
-    // 2. Wait for any busy workers in [new_count, workers_.size()) to finish their ongoing task.
-    while (true) {
-      bool any_busy = false;
+      {
+        std::lock_guard<std::mutex> stdio_lock(stdio_mutex_);
+        recent_stdio_.resize(new_count);
+      }
+      LOG_INFO("[WorkerGuard] Dynamically scaled UP worker pool from {} to {}", current_count, new_count);
+      worker_available_cv_.notify_all();
+    } else {
+      if (new_count > current_count) {
+        LOG_INFO("[WorkerGuard] Dynamically scaling UP worker pool from {} to {} (draining excess slots)",
+                 current_count, new_count);
+        worker_available_cv_.notify_all();
+      } else {
+        LOG_INFO("[WorkerGuard] Dynamically scaling DOWN worker pool from {} to {}", current_count, new_count);
+      }
+
+      std::vector<DetachedWorkerResources> idle_cleanup;
       for (size_t i = new_count; i < workers_.size(); ++i) {
-        if (workers_[i].is_busy()) {
-          any_busy = true;
-          break;
+        if (workers_[i]->state == WorkerState::kIdle && workers_[i]->HasResources()) {
+          idle_cleanup.push_back(workers_[i]->Detach(WorkerState::kIdle));
         }
       }
-      if (!any_busy) {
-        break;
+      if (!idle_cleanup.empty()) {
+        lock.unlock();
+        idle_cleanup.clear();
+        lock.lock();
       }
-      worker_available_cv_.wait_for(lock, std::chrono::milliseconds(10));
-    }
-    // 3. Clean up processes of workers that finished
-    for (size_t i = new_count; i < workers_.size(); ++i) {
-      if (workers_[i].pid > 0) {
-        KillWorker(i, TaskStatus::kSuccess, "Scaled down by user config");
+
+      while (true) {
+        if (!is_running_.load(std::memory_order_acquire) || pool_generation_ != generation ||
+            target_worker_count_ != new_count) {
+          return;
+        }
+        bool any_busy = false;
+        for (size_t i = new_count; i < workers_.size(); ++i) {
+          if (workers_[i]->state != WorkerState::kIdle) {
+            any_busy = true;
+            break;
+          }
+        }
+        if (!any_busy) {
+          break;
+        }
+        worker_available_cv_.wait_for(lock, std::chrono::milliseconds(10));
       }
+      if (!is_running_.load(std::memory_order_acquire) || pool_generation_ != generation ||
+          target_worker_count_ != new_count) {
+        return;
+      }
+      for (size_t i = new_count; i < workers_.size(); ++i) {
+        if (workers_[i]->HasResources()) {
+          to_cleanup.push_back(workers_[i]->Detach(WorkerState::kIdle));
+        }
+      }
+      if (new_count < workers_.size()) {
+        workers_.resize(new_count);
+      }
+      {
+        std::lock_guard<std::mutex> stdio_lock(stdio_mutex_);
+        recent_stdio_.resize(new_count);
+      }
+      LOG_INFO("[WorkerGuard] Worker pool successfully adjusted to {}", new_count);
+      worker_available_cv_.notify_all();
     }
-    workers_.resize(new_count);
-    {
-      std::lock_guard<std::mutex> stdio_lock(stdio_mutex_);
-      recent_stdio_.resize(new_count);
-    }
-    LOG_INFO("[WorkerGuard] Worker pool successfully scaled DOWN to {}", new_count);
-    worker_available_cv_.notify_all();
   }
 }
 

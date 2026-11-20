@@ -354,6 +354,8 @@ add_library(soeasy_service STATIC
     src/service/index_orchestrator.cpp
     src/service/index_pipeline.cpp
     src/service/worker_guard.cpp
+    src/service/worker_process_utils.cpp
+    src/service/worker_rpc_channel.cpp
     src/service/async_write_queue.cpp
     src/service/dictionary_service.cpp
 )

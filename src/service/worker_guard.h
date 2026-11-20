@@ -1,7 +1,6 @@
 #ifndef SOEASY_SRC_SERVICE_WORKER_GUARD_H_
 #define SOEASY_SRC_SERVICE_WORKER_GUARD_H_
 
-#include <sys/types.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -12,14 +11,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "subprocess.h"
+#include "service/worker_process_utils.h"
 
 namespace soeasy {
 namespace service {
@@ -27,12 +25,10 @@ namespace service {
 class WorkerRpcChannel;
 
 enum class TaskStatus {
-  kPending = 0,
-  kRunning = 1,
-  kSuccess = 2,
-  kTimeout = 3,
-  kCrashed = 4,
-  kFailed = 5,
+  kSuccess = 0,
+  kTimeout = 1,
+  kCrashed = 2,
+  kFailed = 3,
 };
 
 struct ParseTask {
@@ -40,79 +36,60 @@ struct ParseTask {
   std::string file_path;
   std::string ext;
   int parse_level = 1;
-  uint32_t timeout_ms = 15000;  // Dynamic timeout computed by DocPrechecker
+  uint32_t timeout_ms = 60000;  // Dynamic timeout computed by DocPrechecker
 };
 
 struct ParseTaskResult {
   int64_t doc_id = 0;
   TaskStatus status = TaskStatus::kFailed;
-  uint32_t slot_id = 0;
   uint64_t extracted_bytes = 0;
   bool is_scanned_pdf = false;
   std::string error_message;
-  std::string extracted_text;   // Streamed directly over Cap'n Proto IPC
+  std::string extracted_text;  // Streamed directly over Cap'n Proto IPC
   size_t stream_chunk_count = 0;
   double elapsed_ms = 0.0;
 };
 
 enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2, kCrashed = 3 };
 
-struct SubprocessDeleter {
-  void operator()(subprocess_s *proc) const noexcept {
-    if (!proc) {
-      return;
-    }
-#if defined(_WIN32)
-    if (proc->hProcess) {
-      if (subprocess_alive(proc)) {
-        subprocess_terminate(proc);
-      }
-      int exit_code = 0;
-      subprocess_join(proc, &exit_code);
-    }
-#else
-    if (proc->child > 0 || proc->alive) {
-      if (subprocess_alive(proc)) {
-        subprocess_terminate(proc);
-      }
-      int exit_code = 0;
-      subprocess_join(proc, &exit_code);
-    }
-#endif
-    subprocess_destroy(proc);
-    delete proc;
-  }
+struct DetachedWorkerResources {
+  SubprocessHandle process;
+  std::thread stdio_drain_thread;
+  std::shared_ptr<WorkerRpcChannel> rpc_channel;
+
+  ~DetachedWorkerResources() { Reset(); }
+  DetachedWorkerResources() = default;
+  DetachedWorkerResources(DetachedWorkerResources &&) noexcept = default;
+  DetachedWorkerResources &operator=(DetachedWorkerResources &&other) noexcept;
+  DetachedWorkerResources(const DetachedWorkerResources &) = delete;
+  DetachedWorkerResources &operator=(const DetachedWorkerResources &) = delete;
+
+  void Reset() noexcept;
 };
-
-using SubprocessHandle = std::unique_ptr<subprocess_s, SubprocessDeleter>;
-
-inline SubprocessHandle MakeSubprocess() {
-  return SubprocessHandle(new subprocess_s{}, SubprocessDeleter{});
-}
 
 struct WorkerInstance {
   SubprocessHandle process;
   std::thread stdio_drain_thread;
-  pid_t pid = 0;
+  WorkerPid pid = 0;
   std::shared_ptr<WorkerRpcChannel> rpc_channel;
   WorkerState state = WorkerState::kIdle;
-  int64_t current_doc_id = 0;
-  uint32_t current_timeout_ms = 15000;
+  uint32_t current_timeout_ms = 60000;
   std::chrono::steady_clock::time_point task_start_time;
   std::chrono::steady_clock::time_point idle_start_time;
-  uint64_t total_tasks_processed = 0;
 
-  WorkerInstance();
+  WorkerInstance() = default;
   ~WorkerInstance();
-  WorkerInstance(WorkerInstance &&other) noexcept;
-  WorkerInstance &operator=(WorkerInstance &&other) noexcept;
   WorkerInstance(const WorkerInstance &) = delete;
   WorkerInstance &operator=(const WorkerInstance &) = delete;
+  WorkerInstance(WorkerInstance &&) = delete;
+  WorkerInstance &operator=(WorkerInstance &&) = delete;
 
-  bool is_busy() const { return state == WorkerState::kBusy; }
+  bool is_busy() const noexcept { return state == WorkerState::kBusy; }
+  bool HasResources() const noexcept {
+    return pid > 0 || process != nullptr || rpc_channel != nullptr || stdio_drain_thread.joinable();
+  }
 
-  void CloseTransport() noexcept;
-  void Reset(WorkerState next_state = WorkerState::kIdle) noexcept;
+  DetachedWorkerResources Detach(WorkerState next_state = WorkerState::kIdle) noexcept;
 };
 
 struct WorkerLoggingOptions {
@@ -128,14 +105,12 @@ struct WorkerLoggingOptions {
 class WorkerGuard {
  public:
   static constexpr uint32_t kDefaultTimeoutMs = 60000;                 // 60s default
-  static constexpr uint32_t kDefaultStallTimeoutMs = 5000;             // 5s stall heartbeat
   static constexpr uint32_t kDefaultIdleEvictMs = 60000;               // 60s idle eviction
   static constexpr size_t kDefaultMaxMemoryBytes = 512 * 1024 * 1024;  // 512MB RSS
 
   WorkerGuard();
   ~WorkerGuard();
 
-  // Disallow copy and assign
   WorkerGuard(const WorkerGuard &) = delete;
   WorkerGuard &operator=(const WorkerGuard &) = delete;
 
@@ -145,12 +120,9 @@ class WorkerGuard {
    * @param worker_bin_path Absolute path to soeasy-worker binary, or empty to auto-resolve from executable directory
    * @param worker_count Number of worker processes to spawn
    * @param timeout_ms Max execution time allowed per document before SIGKILL
-   * @param deprecated_slot_count Deprecated (previously SHM slot count, ignored)
-   * @param deprecated_slot_capacity Deprecated (previously SHM slot capacity, ignored)
    * @return true on success
    */
-  bool Init(const std::string &worker_bin_path, size_t worker_count = 2, uint32_t timeout_ms = kDefaultTimeoutMs,
-            size_t deprecated_slot_count = 0, size_t deprecated_slot_capacity = 0);
+  bool Init(const std::string &worker_bin_path, size_t worker_count = 2, uint32_t timeout_ms = kDefaultTimeoutMs);
 
   /**
    * @brief Terminate all workers, stop watchdog thread, and close RPC connections.
@@ -158,7 +130,7 @@ class WorkerGuard {
   void Shutdown();
 
   /**
-   * @brief Dispatch a file parse task to an available worker and block until complete or timeout.
+   * @brief Synchronously execute a document parsing task on an available sandbox worker.
    *
    * @param task Document parsing request
    * @param out_result Receives execution status, extracted size, and text
@@ -166,40 +138,35 @@ class WorkerGuard {
    */
   bool ExecuteTask(const ParseTask &task, ParseTaskResult *out_result);
 
-  /**
-   * @brief Deprecated no-op for backward compatibility.
-   */
-  void ReleaseSlot(uint32_t /*slot_id*/ = 0) noexcept {}
-
-  size_t worker_count() const { return target_worker_count_ > 0 ? target_worker_count_ : workers_.size(); }
+  size_t worker_count() const;
   size_t active_worker_count() const;
   void SetWorkerCount(size_t new_count);
-  uint32_t timeout_ms() const { return timeout_ms_; }
-  void set_timeout_ms(uint32_t ms) { timeout_ms_ = ms; }
-  uint32_t idle_evict_ms() const { return idle_evict_ms_; }
-  void set_idle_evict_ms(uint32_t ms) { idle_evict_ms_ = ms; }
+  uint32_t timeout_ms() const { return timeout_ms_.load(std::memory_order_relaxed); }
+  void set_timeout_ms(uint32_t ms) {
+    timeout_ms_.store(ms > 0 ? ms : kDefaultTimeoutMs, std::memory_order_relaxed);
+  }
+  uint32_t idle_evict_ms() const { return idle_evict_ms_.load(std::memory_order_relaxed); }
+  void set_idle_evict_ms(uint32_t ms) { idle_evict_ms_.store(ms, std::memory_order_relaxed); }
 
   void SetLoggingOptions(const WorkerLoggingOptions &options);
-
   void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                          bool doctotext_logging = false, const std::string &doctotext_log_path = "",
                          bool embedded_image_ocr = false, const std::string &worker_log_dir = "");
 
  private:
-  bool SpawnWorker(size_t index);
-  void FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid);
-  void FinalizeBusyWorkerOnFailure(size_t worker_idx, TaskStatus status, const std::string &reason);
+  void ShutdownLocked();
+  bool SpawnWorkerProcess(size_t index, DetachedWorkerResources *out_resources, WorkerPid *out_pid,
+                          const std::vector<std::string> &args_template, bool log_as_info);
   static void DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t index, bool log_as_info);
+  void ClearWorkerStdio(size_t index);
   void RecordWorkerStdio(size_t index, const std::string &line);
   std::string GetRecentWorkerStdio(size_t index) const;
   std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param, size_t index) const;
-  void KillWorker(size_t index, TaskStatus status, const std::string &reason);
   void WatchdogLoop();
-  static size_t GetProcessRssBytes(pid_t pid);
 
   std::string worker_bin_path_;
-  uint32_t timeout_ms_ = kDefaultTimeoutMs;
-  uint32_t idle_evict_ms_ = kDefaultIdleEvictMs;
+  std::atomic<uint32_t> timeout_ms_{kDefaultTimeoutMs};
+  std::atomic<uint32_t> idle_evict_ms_{kDefaultIdleEvictMs};
   std::string log_level_ = "info";
   bool log_console_ = false;
   bool log_sync_ = false;
@@ -208,17 +175,19 @@ class WorkerGuard {
   bool embedded_image_ocr_ = false;
   std::string worker_log_dir_ = "logs";
 
+  std::mutex lifecycle_mutex_;
+  uint64_t pool_generation_ = 0;
   size_t target_worker_count_ = 0;
-  std::vector<WorkerInstance> workers_;
+  std::vector<std::unique_ptr<WorkerInstance>> workers_;
   mutable std::mutex stdio_mutex_;
   std::vector<std::deque<std::string>> recent_stdio_;
   mutable std::mutex pool_mutex_;
   std::condition_variable worker_available_cv_;
 
   std::atomic<bool> is_running_{false};
-  std::thread watchdog_thread_;
   std::mutex watchdog_mutex_;
   std::condition_variable watchdog_cv_;
+  std::thread watchdog_thread_;
 #ifdef _WIN32
   HANDLE job_handle_ = nullptr;
 #endif

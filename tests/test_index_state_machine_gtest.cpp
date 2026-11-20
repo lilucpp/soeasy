@@ -77,7 +77,7 @@ class IndexStateMachineTest : public ::testing::Test {
     ASSERT_TRUE(storage_->Open(db_path_.string(), "SoEasy_SM_Test_Passphrase!", soeasy::test::FindDictDir()));
 
     worker_guard_ = std::make_shared<WorkerGuard>();
-    ASSERT_TRUE(worker_guard_->Init(soeasy::test::FindWorkerBin(), 2, 5000, 4, 4 * 1024 * 1024));
+    ASSERT_TRUE(worker_guard_->Init(soeasy::test::FindWorkerBin(), 2, 5000));
 
     config_ = std::make_shared<IndexConfig>();
     config_->set_debounce_ms(debounce_ms);

@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
   {
     soeasy::service::WorkerGuard guard;
     // 2 workers, timeout 2000ms, dynamic SHM (3 slots x 2MB)
-    bool init_ok = guard.Init(worker_bin, /*worker_count=*/2, /*timeout_ms=*/2000, 0, 0);
+    bool init_ok = guard.Init(worker_bin, /*worker_count=*/2, /*timeout_ms=*/2000);
     assert(init_ok);
     (void)init_ok;
 
@@ -228,7 +228,7 @@ int main(int argc, char *argv[]) {
   std::cout << "------------------------------------------------------------------------\n";
   {
     soeasy::service::WorkerGuard guard;
-    guard.Init(worker_bin, 2, 2000, 0, 0);
+    guard.Init(worker_bin, 2, 2000);
 
     const int kIterations = 20;  // 20 次大小文件极速交替
     std::string small_file = temp_dir + "/matrix_small.txt";
@@ -325,7 +325,7 @@ int main(int argc, char *argv[]) {
   std::cout << "------------------------------------------------------------------------\n";
   {
     soeasy::service::WorkerGuard guard;
-    guard.Init(worker_bin, 2, 2000, 0, 0);
+    guard.Init(worker_bin, 2, 2000);
 
     // Baseline Idle
     size_t idle_rss_start = GetCurrentProcessRssBytes();
