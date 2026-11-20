@@ -102,11 +102,12 @@ std::string ResolveWorkerBinary(const std::string &hint_path) {
     }
     if (len < exe_buf.size()) {
       std::filesystem::path dir = std::filesystem::path(exe_buf.data()).parent_path();
-      std::filesystem::path target = dir / L"soeasy-worker.exe";
-      if (std::filesystem::exists(target, ec)) {
-        std::filesystem::path resolved = std::filesystem::canonical(target, ec);
-        if (!ec) {
-          return PathToUtf8(resolved);
+      for (const auto &target : {dir / L"soeasy-worker.exe", dir / L"bin" / L"soeasy-worker.exe"}) {
+        if (std::filesystem::exists(target, ec)) {
+          std::filesystem::path resolved = std::filesystem::canonical(target, ec);
+          if (!ec) {
+            return PathToUtf8(resolved);
+          }
         }
       }
       break;
@@ -119,11 +120,12 @@ std::string ResolveWorkerBinary(const std::string &hint_path) {
   if (len > 0) {
     exe_buf[len] = '\0';
     std::filesystem::path dir = std::filesystem::path(exe_buf).parent_path();
-    std::filesystem::path target = dir / "soeasy-worker";
-    if (std::filesystem::exists(target, ec)) {
-      std::filesystem::path resolved = std::filesystem::canonical(target, ec);
-      if (!ec) {
-        return PathToUtf8(resolved);
+    for (const auto &target : {dir / "soeasy-worker", dir / "bin" / "soeasy-worker"}) {
+      if (std::filesystem::exists(target, ec)) {
+        std::filesystem::path resolved = std::filesystem::canonical(target, ec);
+        if (!ec) {
+          return PathToUtf8(resolved);
+        }
       }
     }
   }

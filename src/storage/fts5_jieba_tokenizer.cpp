@@ -106,6 +106,142 @@ void xDelete(Fts5Tokenizer *tokenizer) {
   }
 }
 
+constexpr size_t kTargetChunkBytes = 32 * 1024;
+constexpr size_t kMinChunkBytes = 16 * 1024;
+
+bool IsCjkBoundaryPunct3(const char *p) {
+  // UTF-8 3-byte Chinese sentence/clause punctuation: 。(E3 80 82) 、(E3 80 81) ；(EF BC 9B) ！(EF BC 81) ？(EF BC 9F)
+  const auto b0 = static_cast<unsigned char>(p[0]);
+  const auto b1 = static_cast<unsigned char>(p[1]);
+  const auto b2 = static_cast<unsigned char>(p[2]);
+  if (b0 == 0xE3 && b1 == 0x80 && (b2 == 0x81 || b2 == 0x82)) {
+    return true;
+  }
+  if (b0 == 0xEF && b1 == 0xBC && (b2 == 0x81 || b2 == 0x9B || b2 == 0x9F)) {
+    return true;
+  }
+  return false;
+}
+
+size_t FindChunkEnd(const char *data, size_t len, size_t start) {
+  if (len - start <= kTargetChunkBytes) {
+    return len;
+  }
+  const size_t target = start + kTargetChunkBytes;
+  const size_t min_pos = start + kMinChunkBytes;
+
+  // Tier 1: Line / paragraph boundary (\n or \r)
+  for (size_t i = target; i > min_pos; --i) {
+    const char c = data[i - 1];
+    if (c == '\n' || c == '\r') {
+      return i;
+    }
+  }
+
+  // Tier 2: Whitespace or ASCII / CJK punctuation boundary
+  for (size_t i = target; i > min_pos; --i) {
+    const char c = data[i - 1];
+    if (c == ' ' || c == '\t' || c == ',' || c == ';' || c == '.') {
+      return i;
+    }
+    if (i >= start + 3 && IsCjkBoundaryPunct3(data + i - 3)) {
+      return i;
+    }
+  }
+
+  // Tier 3: Fallback to a valid UTF-8 codepoint leading byte so we never split a multibyte character
+  size_t end = target;
+  while (end > start && (static_cast<unsigned char>(data[end]) & 0xC0) == 0x80) {
+    --end;
+  }
+  return (end > start) ? end : target;
+}
+
+int EmitWordsForChunk(const std::vector<cppjieba::Word> &words, size_t chunk_base_offset, int flags, void *ctx,
+                      int (*token_cb)(void *ctx, int tflags, const char *token, int token_len, int start_offset,
+                                      int end_offset),
+                      std::string *lower_token) {
+  for (const auto &w : words) {
+    if (w.word.empty()) {
+      continue;
+    }
+
+    // Skip tokens that are pure whitespace
+    bool all_whitespace = true;
+    for (char c : w.word) {
+      if (!std::isspace(static_cast<unsigned char>(c))) {
+        all_whitespace = false;
+        break;
+      }
+    }
+    if (all_whitespace) {
+      continue;
+    }
+
+    // Fold ASCII uppercase to lowercase for case-insensitive matching
+    lower_token->assign(w.word);
+    std::transform(lower_token->begin(), lower_token->end(), lower_token->begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    const size_t token_start = chunk_base_offset + w.offset;
+    const int start_pos = static_cast<int>(token_start);
+    const int end_pos = static_cast<int>(token_start + w.word.size());
+
+    // 1. Emit primary word token
+    int rc = token_cb(ctx, 0, lower_token->data(), static_cast<int>(lower_token->size()), start_pos, end_pos);
+    if (rc != SQLITE_OK) {
+      return rc;
+    }
+
+    // 2. Colocated sub-character emission for multi-character CJK words:
+    // Enables single-character queries to match compound words in documents.
+    // CRITICAL: NEVER emit colocated sub-characters during QUERY tokenization
+    // (flags & FTS5_TOKENIZE_QUERY), because SQLite FTS5 treats colocated tokens
+    // in a query as OR alternatives (which would turn "测试" into "测试 OR 测 OR 试"
+    // and falsely match documents containing "检测" or "考试")!
+    if (!(flags & FTS5_TOKENIZE_QUERY)) {
+      bool has_cjk = false;
+      for (char c : *lower_token) {
+        if (static_cast<unsigned char>(c) >= 0x80) {
+          has_cjk = true;
+          break;
+        }
+      }
+
+      std::string::const_iterator it = lower_token->begin();
+      std::string::const_iterator end = lower_token->end();
+      size_t char_count = 0;
+      try {
+        char_count = utf8::distance(it, end);
+      } catch (...) {
+        char_count = 0;
+      }
+
+      if (has_cjk && char_count > 1) {
+        size_t byte_offset = token_start;
+        while (it != end) {
+          std::string::const_iterator next = it;
+          try {
+            utf8::next(next, end);
+          } catch (...) {
+            break;
+          }
+          size_t char_len = next - it;
+          rc = token_cb(ctx, FTS5_TOKEN_COLOCATED, &(*it), static_cast<int>(char_len), static_cast<int>(byte_offset),
+                        static_cast<int>(byte_offset + char_len));
+          if (rc != SQLITE_OK) {
+            return rc;
+          }
+
+          byte_offset += char_len;
+          it = next;
+        }
+      }
+    }
+  }
+  return SQLITE_OK;
+}
+
 int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, int text_len,
               int (*token_cb)(void *ctx, int tflags, const char *token, int token_len, int start_offset,
                               int end_offset)) {
@@ -131,107 +267,39 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
   };
   thread_local Scratch tls;
 
-  std::string &sentence = tls.sentence;
-  std::string &cleaned = tls.cleaned;
-  std::vector<cppjieba::Word> &words = tls.words;
-  std::string &lower_token = tls.lower_token;
+  const size_t total_len = static_cast<size_t>(text_len);
+  const char *src_data = text;
+  size_t src_len = total_len;
+  std::string repaired_utf8;
 
-  sentence.assign(text, static_cast<size_t>(text_len));
-
-  // Ensure valid UTF-8 sequence
-  if (!utf8::is_valid(sentence.begin(), sentence.end())) {
-    cleaned.clear();
-    utf8::replace_invalid(sentence.begin(), sentence.end(), std::back_inserter(cleaned));
-    sentence.swap(cleaned);
+  if (!utf8::is_valid(text, text + total_len)) {
+    repaired_utf8.reserve(total_len);
+    utf8::replace_invalid(text, text + total_len, std::back_inserter(repaired_utf8));
+    src_data = repaired_utf8.data();
+    src_len = repaired_utf8.size();
   }
 
-  words.clear();
+  int rc = SQLITE_OK;
+  size_t pos = 0;
+  while (pos < src_len) {
+    const size_t end = FindChunkEnd(src_data, src_len, pos);
+    tls.sentence.assign(src_data + pos, end - pos);
+    tls.words.clear();
 
-  // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
-  jieba->Cut(sentence, words, true);
+    // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
+    jieba->Cut(tls.sentence, tls.words, true);
 
-  for (const auto &w : words) {
-    if (w.word.empty()) {
-      continue;
-    }
-
-    // Skip tokens that are pure whitespace
-    bool all_whitespace = true;
-    for (char c : w.word) {
-      if (!std::isspace(static_cast<unsigned char>(c))) {
-        all_whitespace = false;
-        break;
-      }
-    }
-    if (all_whitespace) {
-      continue;
-    }
-
-    // Fold ASCII uppercase to lowercase for case-insensitive matching
-    lower_token.assign(w.word);
-    std::transform(lower_token.begin(), lower_token.end(), lower_token.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    int start_pos = static_cast<int>(w.offset);
-    int end_pos = static_cast<int>(w.offset + w.word.size());
-
-    // 1. Emit primary word token
-    int rc = token_cb(ctx, 0, lower_token.data(), static_cast<int>(lower_token.size()), start_pos, end_pos);
+    rc = EmitWordsForChunk(tls.words, pos, flags, ctx, token_cb, &tls.lower_token);
     if (rc != SQLITE_OK) {
-      return rc;
+      break;
     }
-
-    // 2. Colocated sub-character emission for multi-character CJK words:
-    // Enables single-character queries to match compound words in documents.
-    // CRITICAL: NEVER emit colocated sub-characters during QUERY tokenization
-    // (flags & FTS5_TOKENIZE_QUERY), because SQLite FTS5 treats colocated tokens
-    // in a query as OR alternatives (which would turn "测试" into "测试 OR 测 OR 试"
-    // and falsely match documents containing "检测" or "考试")!
-    if (!(flags & FTS5_TOKENIZE_QUERY)) {
-      bool has_cjk = false;
-      for (char c : lower_token) {
-        if (static_cast<unsigned char>(c) >= 0x80) {
-          has_cjk = true;
-          break;
-        }
-      }
-
-      std::string::const_iterator it = lower_token.begin();
-      std::string::const_iterator end = lower_token.end();
-      size_t char_count = 0;
-      try {
-        char_count = utf8::distance(it, end);
-      } catch (...) {
-        char_count = 0;
-      }
-
-      if (has_cjk && char_count > 1) {
-        size_t byte_offset = w.offset;
-        while (it != end) {
-          std::string::const_iterator next = it;
-          try {
-            utf8::next(next, end);
-          } catch (...) {
-            break;
-          }
-          size_t char_len = next - it;
-          rc = token_cb(ctx, FTS5_TOKEN_COLOCATED, &(*it), static_cast<int>(char_len), static_cast<int>(byte_offset),
-                        static_cast<int>(byte_offset + char_len));
-          if (rc != SQLITE_OK) {
-            return rc;
-          }
-
-          byte_offset += char_len;
-          it = next;
-        }
-      }
-    }
+    pos = end;
   }
 
-  if (tls.sentence.capacity() > 512 * 1024) std::string().swap(tls.sentence);
-  if (tls.cleaned.capacity() > 512 * 1024) std::string().swap(tls.cleaned);
+  if (tls.sentence.capacity() > 128 * 1024) std::string().swap(tls.sentence);
+  if (tls.cleaned.capacity() > 128 * 1024) std::string().swap(tls.cleaned);
   if (tls.words.capacity() > 16384) std::vector<cppjieba::Word>().swap(tls.words);
-  return SQLITE_OK;
+  return rc;
 }
 
 void xDestroyContext(void *user_data) {

@@ -386,5 +386,249 @@ TEST_F(Fts5SyntaxTest, LikeWildcardInPathPrefixIsEscaped) {
   EXPECT_TRUE(hits_other.empty());
 }
 
+TEST_F(Fts5SyntaxTest, LargeDocumentChunkedTokenizationPreservesOffsetsAndPhrases) {
+  // Construct > 120 KB bilingual text crossing multiple 32KB chunk boundaries
+  std::string body;
+  body.reserve(140 * 1024);
+  const std::string line = "2026-11-20 INFO 桌面搜索引擎分块分词回归测试样本行 desktop search engine chunked tokenization.\n";
+  while (body.size() < 31 * 1024) {
+    body += line;
+  }
+  // Place a boundary-crossing phrase right around the 32KB line boundary
+  body += "第一块末尾关键词 量子计算\n第二块起始关键词 异构加速\n";
+  while (body.size() < 120 * 1024) {
+    body += line;
+  }
+  body += "文档尾部唯一标识 麒麟架构 深度检索\n";
+
+  DocumentIndexEntry entry;
+  entry.doc_id = 101;
+  entry.file_path = "/large/chunked_doc.txt";
+  entry.file_name = "chunked_doc.txt";
+  entry.ext = "txt";
+  entry.file_size = body.size();
+  entry.mtime = 1700000101;
+  entry.parse_level = 1;
+  entry.utf8_content = body;
+  ASSERT_TRUE(engine_->IndexDocument(entry));
+
+  // 1. Phrase query crossing the ~32KB chunk boundary
+  int total_phrase = 0;
+  auto hits_phrase = engine_->Search("\"量子计算 第二块起始关键词\"", 10, 0, "", &total_phrase);
+  EXPECT_EQ(total_phrase, 1);
+  ASSERT_EQ(hits_phrase.size(), 1u);
+  EXPECT_EQ(hits_phrase[0].doc_id, 101);
+
+  // 2. Tail keyword and NEAR query past 120KB (verifies later chunks and exact token positions)
+  int total_tail = 0;
+  auto hits_tail = engine_->Search("NEAR(麒麟架构 深度检索, 2)", 10, 0, "", &total_tail);
+  EXPECT_EQ(total_tail, 1);
+  ASSERT_EQ(hits_tail.size(), 1u);
+  EXPECT_EQ(hits_tail[0].doc_id, 101);
+
+  // 3. Single-character CJK colocated token past 120KB
+  int total_char = 0;
+  auto hits_char = engine_->Search("麟", 10, 0, "", &total_char);
+  EXPECT_EQ(total_char, 1);
+  ASSERT_EQ(hits_char.size(), 1u);
+  EXPECT_EQ(hits_char[0].doc_id, 101);
+}
+
+TEST_F(Fts5SyntaxTest, LargeDocumentWithoutNewlinesUtf8BoundarySafety) {
+  // Construct > 80 KB continuous Chinese text with NO newlines and NO spaces (exercises Tier 3 UTF-8 fallback)
+  std::string body;
+  body.reserve(90 * 1024);
+  const std::string unit = "人工智能神经网络分布式检索";
+  while (body.size() < 80 * 1024) {
+    body += unit;
+  }
+  body += "超长无换行尾部词条星际穿越";
+
+  DocumentIndexEntry entry;
+  entry.doc_id = 102;
+  entry.file_path = "/large/no_newlines_utf8.txt";
+  entry.file_name = "no_newlines_utf8.txt";
+  entry.ext = "txt";
+  entry.file_size = body.size();
+  entry.mtime = 1700000102;
+  entry.parse_level = 1;
+  entry.utf8_content = body;
+  ASSERT_TRUE(engine_->IndexDocument(entry));
+
+  int total = 0;
+  auto hits = engine_->Search("星际穿越", 10, 0, "", &total);
+  EXPECT_EQ(total, 1);
+  ASSERT_EQ(hits.size(), 1u);
+  EXPECT_EQ(hits[0].doc_id, 102);
+}
+
+TEST_F(Fts5SyntaxTest, Exact32KBBoundaryFastPathAndChunkedPath) {
+  // 1. Exactly 32768 bytes (kTargetChunkBytes fast path)
+  const std::string tail_exact = "精确边界尾词甲";
+  std::string body_exact(32768 - tail_exact.size(), 'a');
+  body_exact += tail_exact;
+  ASSERT_EQ(body_exact.size(), 32768u);
+
+  DocumentIndexEntry e1;
+  e1.doc_id = 103;
+  e1.file_path = "/large/exact_32k.txt";
+  e1.file_name = "exact_32k.txt";
+  e1.ext = "txt";
+  e1.file_size = body_exact.size();
+  e1.mtime = 1700000103;
+  e1.utf8_content = body_exact;
+  ASSERT_TRUE(engine_->IndexDocument(e1));
+
+  // 2. Exactly 32769 bytes (1 byte over kTargetChunkBytes -> triggers chunked path)
+  const std::string tail_over = "精确边界尾词乙";
+  std::string body_over(32769 - tail_over.size(), 'b');
+  body_over += tail_over;
+  ASSERT_EQ(body_over.size(), 32769u);
+
+  DocumentIndexEntry e2;
+  e2.doc_id = 104;
+  e2.file_path = "/large/over_32k.txt";
+  e2.file_name = "over_32k.txt";
+  e2.ext = "txt";
+  e2.file_size = body_over.size();
+  e2.mtime = 1700000104;
+  e2.utf8_content = body_over;
+  ASSERT_TRUE(engine_->IndexDocument(e2));
+
+  int t1 = 0;
+  auto h1 = engine_->Search("精确边界尾词甲", 10, 0, "", &t1);
+  EXPECT_EQ(t1, 1);
+  ASSERT_EQ(h1.size(), 1u);
+  EXPECT_EQ(h1[0].doc_id, 103);
+
+  int t2 = 0;
+  auto h2 = engine_->Search("精确边界尾词乙", 10, 0, "", &t2);
+  EXPECT_EQ(t2, 1);
+  ASSERT_EQ(h2.size(), 1u);
+  EXPECT_EQ(h2[0].doc_id, 104);
+}
+
+TEST_F(Fts5SyntaxTest, Tier2CjkPunctuationBoundaryNoNewlines) {
+  // > 40 KB Chinese text with NO newlines and NO spaces, only separated by Chinese punctuation (。；！)
+  std::string body;
+  body.reserve(48 * 1024);
+  const std::string sentence = "搜索引擎采用双数组字典树实现高效中文分词与全文检索。";
+  while (body.size() < 31 * 1024) {
+    body += sentence;
+  }
+  body += "标点前词条玄武岩。标点后词条黑曜石；";
+  while (body.size() < 44 * 1024) {
+    body += sentence;
+  }
+
+  DocumentIndexEntry entry;
+  entry.doc_id = 105;
+  entry.file_path = "/large/cjk_punct_only.txt";
+  entry.file_name = "cjk_punct_only.txt";
+  entry.ext = "txt";
+  entry.file_size = body.size();
+  entry.mtime = 1700000105;
+  entry.utf8_content = body;
+  ASSERT_TRUE(engine_->IndexDocument(entry));
+
+  int total_near = 0;
+  auto hits = engine_->Search("NEAR(玄武岩 黑曜石, 5)", 10, 0, "", &total_near);
+  EXPECT_EQ(total_near, 1);
+  ASSERT_EQ(hits.size(), 1u);
+  EXPECT_EQ(hits[0].doc_id, 105);
+}
+
+TEST_F(Fts5SyntaxTest, Tier2AsciiCommaBoundarySingleLineCsv) {
+  // > 70 KB single-line CSV with NO newlines (exercises Tier 2 ASCII comma boundary)
+  std::string body;
+  body.reserve(75 * 1024);
+  const std::string col = "record_id,timestamp_2026,status_ok,payload_alpha,";
+  while (body.size() < 31 * 1024) {
+    body += col;
+  }
+  body += "csv_mid_marker_apollo,csv_after_marker_artemis,";
+  while (body.size() < 70 * 1024) {
+    body += col;
+  }
+  body += "csv_tail_marker_voyager";
+
+  DocumentIndexEntry entry;
+  entry.doc_id = 106;
+  entry.file_path = "/large/single_line.csv";
+  entry.file_name = "single_line.csv";
+  entry.ext = "csv";
+  entry.file_size = body.size();
+  entry.mtime = 1700000106;
+  entry.utf8_content = body;
+  ASSERT_TRUE(engine_->IndexDocument(entry));
+
+  int t_mid = 0;
+  auto h_mid = engine_->Search("NEAR(csv_mid_marker_apollo csv_after_marker_artemis, 3)", 10, 0, "", &t_mid);
+  EXPECT_EQ(t_mid, 1);
+  ASSERT_EQ(h_mid.size(), 1u);
+  EXPECT_EQ(h_mid[0].doc_id, 106);
+
+  int t_tail = 0;
+  auto h_tail = engine_->Search("csv_tail_marker_voyager", 10, 0, "", &t_tail);
+  EXPECT_EQ(t_tail, 1);
+  ASSERT_EQ(h_tail.size(), 1u);
+  EXPECT_EQ(h_tail[0].doc_id, 106);
+}
+
+TEST_F(Fts5SyntaxTest, Tier3FourByteUtf8AtExact32KBBoundary) {
+  // Force a 4-byte UTF-8 character (𠀀 = F0 A0 80 80) to straddle byte offset 32768 with no spaces/newlines/punct
+  std::string body(32766, 'x');  // bytes [0..32765]
+  body += "\xF0\xA0\x80\x80";    // bytes [32766..32769] -> byte 32768 is continuation byte 0x80
+  body += "四字节边界词条凤凰涅槃";
+  body.append(8000, 'y');
+
+  DocumentIndexEntry entry;
+  entry.doc_id = 107;
+  entry.file_path = "/large/utf8_4byte_boundary.txt";
+  entry.file_name = "utf8_4byte_boundary.txt";
+  entry.ext = "txt";
+  entry.file_size = body.size();
+  entry.mtime = 1700000107;
+  entry.utf8_content = body;
+  ASSERT_TRUE(engine_->IndexDocument(entry));
+
+  int total = 0;
+  auto hits = engine_->Search("凤凰涅槃", 10, 0, "", &total);
+  EXPECT_EQ(total, 1);
+  ASSERT_EQ(hits.size(), 1u);
+  EXPECT_EQ(hits[0].doc_id, 107);
+}
+
+TEST_F(Fts5SyntaxTest, LargeDocumentWithInvalidUtf8AndCrlfBoundary) {
+  // Mix invalid UTF-8 bytes and CRLF (\r\n) right across the 32KB boundary
+  std::string body;
+  body.reserve(45 * 1024);
+  const std::string line = "Windows CRLF line content 混合测试行\r\n";
+  while (body.size() < 32767 - 20) {
+    body += line;
+  }
+  body += "损坏前词条鲲鹏\xFF\xFE\x80\r\n损坏后词条鸿蒙\r\n";
+  while (body.size() < 42 * 1024) {
+    body += line;
+  }
+  body += "结尾合法词条盘古\r\n";
+
+  DocumentIndexEntry entry;
+  entry.doc_id = 108;
+  entry.file_path = "/large/invalid_utf8_crlf.txt";
+  entry.file_name = "invalid_utf8_crlf.txt";
+  entry.ext = "txt";
+  entry.file_size = body.size();
+  entry.mtime = 1700000108;
+  entry.utf8_content = body;
+  ASSERT_TRUE(engine_->IndexDocument(entry));
+
+  int t1 = 0;
+  auto h1 = engine_->Search("鲲鹏 AND 鸿蒙 AND 盘古", 10, 0, "", &t1);
+  EXPECT_EQ(t1, 1);
+  ASSERT_EQ(h1.size(), 1u);
+  EXPECT_EQ(h1[0].doc_id, 108);
+}
+
 }  // namespace test
 }  // namespace soeasy

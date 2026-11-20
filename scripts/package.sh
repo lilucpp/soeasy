@@ -17,8 +17,19 @@ ZIP_FILE="${DIST_DIR}/${DIST_NAME}.zip"
 
 # 检测并自动优先使用高效的 Ninja 构建系统
 CMAKE_GEN_ARGS=()
+DESIRED_GENERATOR="Unix Makefiles"
 if command -v ninja >/dev/null 2>&1; then
     CMAKE_GEN_ARGS=(-G "Ninja")
+    DESIRED_GENERATOR="Ninja"
+fi
+
+# 若已有缓存的生成器与当前期望生成器不一致，自动清理重建避免 CMake 报错
+if [ -f "${BUILD_DIR}/CMakeCache.txt" ]; then
+    CACHED_GENERATOR="$(grep -m1 '^CMAKE_GENERATOR:INTERNAL=' "${BUILD_DIR}/CMakeCache.txt" | cut -d= -f2- || true)"
+    if [ -n "${CACHED_GENERATOR}" ] && [ "${CACHED_GENERATOR}" != "${DESIRED_GENERATOR}" ]; then
+        echo "[CMake] 检测到生成器变更 (${CACHED_GENERATOR} -> ${DESIRED_GENERATOR})，自动清理 ${BUILD_DIR}..."
+        rm -rf "${BUILD_DIR}"
+    fi
 fi
 
 echo "========================================================"
@@ -140,10 +151,10 @@ exec "${APP_DIR}/bin/soeasy-worker" "$@"
 EOF
 chmod +x "${STAGE_DIR}/soeasy-worker.sh"
 
-# 6. 打包生成独立 zip 归档
+# 6. 打包生成独立 zip 归档 (保留符号链接，避免重复拷贝可执行文件并确保 /proc/self/exe 指向 bin/)
 echo "[6/6] 生成独立 ZIP 压缩分发包..."
 cd "${DIST_DIR}"
-zip -r -q "${ZIP_FILE}" "${DIST_NAME}"
+zip -r -y -q "${ZIP_FILE}" "${DIST_NAME}"
 cd "${PROJECT_ROOT}"
 
 ZIP_SIZE=$(du -h "${ZIP_FILE}" | cut -f1)
