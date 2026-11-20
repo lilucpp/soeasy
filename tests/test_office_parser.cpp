@@ -407,15 +407,9 @@ int main(int argc, char *argv[]) {
   CHECK(worker_docx_ok);
   CHECK(docx_task_res.status == soeasy::service::TaskStatus::kSuccess);
 
-  std::string docx_shm_text;
-  const uint8_t *docx_slot_ptr = nullptr;
-  size_t docx_slot_bytes = 0;
-  if (worker_guard->shm_pool()->ReadSlot(docx_task_res.slot_id, &docx_slot_ptr, &docx_slot_bytes)) {
-    docx_shm_text.assign(reinterpret_cast<const char *>(docx_slot_ptr), docx_slot_bytes);
-    worker_guard->shm_pool()->ReleaseSlot(docx_task_res.slot_id);
-  }
+  std::string docx_shm_text = docx_task_res.extracted_text;
   CHECK(docx_shm_text.find("人工智能战略规划") != std::string::npos);
-  std::cout << "  [+] 沙箱跨进程 DOCX 解析与 SHM 槽位传输成功! 耗时: " << docx_task_res.elapsed_ms << " ms\n";
+  std::cout << "  [+] 沙箱跨进程 DOCX 解析与 RPC 传输成功! 耗时: " << docx_task_res.elapsed_ms << " ms\n";
 
   soeasy::service::ParseTask xlsx_task;
   xlsx_task.doc_id = 1002;
@@ -428,15 +422,9 @@ int main(int argc, char *argv[]) {
   CHECK(worker_xlsx_ok);
   CHECK(xlsx_task_res.status == soeasy::service::TaskStatus::kSuccess);
 
-  std::string xlsx_shm_text;
-  const uint8_t *xlsx_slot_ptr = nullptr;
-  size_t xlsx_slot_bytes = 0;
-  if (worker_guard->shm_pool()->ReadSlot(xlsx_task_res.slot_id, &xlsx_slot_ptr, &xlsx_slot_bytes)) {
-    xlsx_shm_text.assign(reinterpret_cast<const char *>(xlsx_slot_ptr), xlsx_slot_bytes);
-    worker_guard->shm_pool()->ReleaseSlot(xlsx_task_res.slot_id);
-  }
+  std::string xlsx_shm_text = xlsx_task_res.extracted_text;
   CHECK(xlsx_shm_text.find("2026年度第一季度财务报表") != std::string::npos);
-  std::cout << "  [+] 沙箱跨进程 XLSX 解析与 SHM 槽位传输成功! 耗时: " << xlsx_task_res.elapsed_ms << " ms\n";
+  std::cout << "  [+] 沙箱跨进程 XLSX 解析与 RPC 传输成功! 耗时: " << xlsx_task_res.elapsed_ms << " ms\n";
 
   // -------------------------------------------------------------
   // Test 7: End-to-End Indexing & FTS5 Chinese Keyword Retrieval

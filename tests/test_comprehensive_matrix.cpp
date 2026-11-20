@@ -23,7 +23,6 @@
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
-#include "common/shm_pool.h"
 #include "service/worker_guard.h"
 #include "tests/test_helper.h"
 
@@ -93,7 +92,6 @@ int main(int argc, char *argv[]) {
     bool ok1 = guard.ExecuteTask(task1, &res1);
     assert(ok1 && res1.status == soeasy::service::TaskStatus::kSuccess);
     (void)ok1;
-    guard.shm_pool()->ReleaseSlot(res1.slot_id);
 
     size_t active_w1 = guard.active_worker_count();
     size_t rss_round1 = GetCurrentProcessRssBytes();
@@ -118,7 +116,6 @@ int main(int argc, char *argv[]) {
     bool ok2 = guard.ExecuteTask(task2, &res2);
     assert(ok2 && res2.status == soeasy::service::TaskStatus::kSuccess);
     (void)ok2;
-    guard.shm_pool()->ReleaseSlot(res2.slot_id);
 
     size_t active_w2 = guard.active_worker_count();
     size_t rss_round2 = GetCurrentProcessRssBytes();
@@ -150,14 +147,11 @@ int main(int argc, char *argv[]) {
     // 1. 测试 4 个 Worker
     {
       soeasy::service::WorkerGuard guard4;
-      bool init_ok = guard4.Init(worker_bin, /*worker_count=*/4, /*timeout_ms=*/2000, 0, 0);
+      bool init_ok = guard4.Init(worker_bin, /*worker_count=*/4, /*timeout_ms=*/2000);
       assert(init_ok);
       (void)init_ok;
-      assert(guard4.shm_pool()->slot_count() == 5);  // 4 + 1 slots
-      assert(guard4.shm_pool()->slot_capacity() == 2 * 1024 * 1024);
-      std::cout << "  [4 Workers 配置] 槽位数: " << guard4.shm_pool()->slot_count()
-                << " (公式: 4 + 1 = 5) | 总共享内存: "
-                << (guard4.shm_pool()->slot_count() * guard4.shm_pool()->slot_capacity()) / (1024 * 1024) << " MB\n";
+      assert(guard4.worker_count() == 4);
+      std::cout << "  [4 Workers 配置] Worker 数: " << guard4.worker_count() << "\n";
 
       // 4 线程并发压测 24 个任务
       std::string task_file = temp_dir + "/soeasy_burst_sample.txt";
@@ -171,7 +165,6 @@ int main(int argc, char *argv[]) {
             soeasy::service::ParseTask task{2000 + t * 10 + i, task_file, "txt", 1};
             soeasy::service::ParseTaskResult res;
             if (guard4.ExecuteTask(task, &res) && res.status == soeasy::service::TaskStatus::kSuccess) {
-              guard4.ReleaseSlot(res.slot_id);
               success_count++;
             } else {
               std::cerr << "[-] Task failed: status=" << static_cast<int>(res.status) << " err=" << res.error_message
@@ -190,14 +183,11 @@ int main(int argc, char *argv[]) {
     // 2. 测试 8 个 Worker
     {
       soeasy::service::WorkerGuard guard8;
-      bool init_ok = guard8.Init(worker_bin, /*worker_count=*/8, /*timeout_ms=*/2000, 0, 0);
+      bool init_ok = guard8.Init(worker_bin, /*worker_count=*/8, /*timeout_ms=*/2000);
       assert(init_ok);
       (void)init_ok;
-      assert(guard8.shm_pool()->slot_count() == 9);  // 8 + 1 slots
-      assert(guard8.shm_pool()->slot_capacity() == 2 * 1024 * 1024);
-      std::cout << "  [8 Workers 配置] 槽位数: " << guard8.shm_pool()->slot_count()
-                << " (公式: 8 + 1 = 9) | 总共享内存: "
-                << (guard8.shm_pool()->slot_count() * guard8.shm_pool()->slot_capacity()) / (1024 * 1024) << " MB\n";
+      assert(guard8.worker_count() == 8);
+      std::cout << "  [8 Workers 配置] Worker 数: " << guard8.worker_count() << "\n";
 
       // 8 线程并发压测 40 个任务
       std::string task_file = temp_dir + "/soeasy_burst_sample.txt";
@@ -209,7 +199,6 @@ int main(int argc, char *argv[]) {
             soeasy::service::ParseTask task{3000 + t * 10 + i, task_file, "txt", 1};
             soeasy::service::ParseTaskResult res;
             if (guard8.ExecuteTask(task, &res) && res.status == soeasy::service::TaskStatus::kSuccess) {
-              guard8.ReleaseSlot(res.slot_id);
               success_count8++;
             }
           }
@@ -266,66 +255,38 @@ int main(int argc, char *argv[]) {
       (void)ok;
 
       if (is_large) {
-        // Must be spilled
-        assert(!res.spill_file_path.empty());
-        assert(std::filesystem::exists(res.spill_file_path));
-        // Verify size
-        assert(std::filesystem::file_size(res.spill_file_path) == large_payload.size());
-        // Clean up immediately (as pipeline does)
-        std::error_code ec;
-        std::filesystem::remove(res.spill_file_path, ec);
+        // Large file: received via Cap'n Proto streaming chunks with zero disk spill
+        assert(res.extracted_text.size() == large_payload.size());
+        assert(!res.stream_chunks.empty());
         large_pass++;
       } else {
-        // Must be in SHM
-        assert(res.spill_file_path.empty());
-        const uint8_t *slot_ptr = nullptr;
-        size_t slot_bytes = 0;
-        bool read_ok = guard.shm_pool()->ReadSlot(res.slot_id, &slot_ptr, &slot_bytes);
-        assert(read_ok && slot_bytes == small_payload.size());
-        (void)read_ok;
+        // Small file: received via Cap'n Proto RPC
+        assert(res.extracted_text.size() == small_payload.size());
         small_pass++;
       }
-      guard.shm_pool()->ReleaseSlot(res.slot_id);
     }
 
-    std::cout << "  [交替压测结果] 总交替轮次: " << kIterations << " | 小文件 (SHM 零拷贝) 成功: " << small_pass
-              << " | 大文件 (Spill 磁盘缓存) 成功: " << large_pass << "\n";
+    std::cout << "  [交替压测结果] 总交替轮次: " << kIterations << " | 小文件成功: " << small_pass
+              << " | 大文件 (零磁盘流式分片) 成功: " << large_pass << "\n";
     assert(small_pass == 10 && large_pass == 10);
-
-    // 检查是否有任何临时文件残留
-    size_t lingering = 0;
-    std::error_code ec;
-    for (const auto &entry : std::filesystem::directory_iterator(guard.GetSpillDirectory(), ec)) {
-      if (ec) break;
-      std::string fn = entry.path().filename().string();
-      if (fn.rfind("soeasy_spill_", 0) == 0 && fn.find(".tmp") != std::string::npos) lingering++;
-    }
-    assert(lingering == 0);
-    std::cout << "    • 磁盘零残留断言: 临时溢出目录残留文件严格为 0!\n";
 
     std::remove(small_file.c_str());
     std::remove(large_file.c_str());
     guard.Shutdown();
-    std::cout << "  [+] 结论: 大小文件高频交替无缝切换，数据保真度 100%，无槽位或文件泄漏!\n\n";
+    std::cout << "  [+] 结论: 大小文件高频交替无缝切换，数据保真度 100%，RPC 传输稳定无泄漏!\n\n";
   }
 
   // =========================================================================
-  // Part 4: 进程异常崩溃时 (文件正常清理、共享内存槽位自愈)
+  // Part 4: 进程异常崩溃时 (沙箱隔离、自动重启与状态无损自愈)
   // =========================================================================
   std::cout << "------------------------------------------------------------------------\n";
-  std::cout << "[Test 4/5] 验证: 进程异常崩溃 (SIGSEGV) 时临时文件正常清理、共享内存无损自愈\n";
+  std::cout << "[Test 4/5] 验证: 进程异常崩溃 (SIGSEGV) 时沙箱隔离与自动重启自愈\n";
   std::cout << "------------------------------------------------------------------------\n";
   {
     soeasy::service::WorkerGuard guard;
-    guard.Init(worker_bin, 2, 1500, 0, 0);
+    guard.Init(worker_bin, 2, 1500);
 
-    // 1. 模拟在崩溃前有孤儿溢出文件残留在磁盘中
-    std::filesystem::path orphan_file =
-        std::filesystem::path(guard.GetSpillDirectory()) / "soeasy_spill_11111_999_77777.tmp";
-    WriteFile(orphan_file.string(), "Data written right before process died.");
-    assert(std::filesystem::exists(orphan_file));
-
-    // 2. 下发恶意触发 SIGSEGV 的畸形任务
+    // 1. 下发恶意触发 SIGSEGV 的畸形任务
     std::cout << "    • 向 Worker 下发触发 SIGSEGV 段错误的畸形文档任务...\n";
     std::string crash_file = temp_dir + "/TEST_TRIGGER_CRASH_exploit.bin";
     WriteFile(crash_file, "crash trigger");
@@ -338,13 +299,8 @@ int main(int argc, char *argv[]) {
               << " | 返回码 executed=" << executed << "\n";
     assert(crash_res.status == soeasy::service::TaskStatus::kCrashed);
 
-    // 3. 验证崩溃后的扫除与自愈
-    soeasy::service::WorkerGuard::CleanupOrphanSpillFiles();
-    assert(!std::filesystem::exists(orphan_file));
-    std::cout << "    • 孤儿文件清理: 崩溃遗留的临时溢出文件被自动清理扫除!\n";
-
-    // 4. 验证共享内存槽位是否因崩溃而泄漏
-    // 派发正常任务，验证槽位依然可用且能够正常读写
+    // 2. 验证崩溃后的沙箱自愈与新 Worker 自动拉起
+    // 派发正常任务，验证依然可用且能够正常解析
     std::string normal_file = temp_dir + "/soeasy_normal_recovery.txt";
     WriteFile(normal_file, "Recovery document after crash: system state is fully intact.");
     soeasy::service::ParseTask recovery_task{5002, normal_file, "txt", 1};
@@ -352,19 +308,13 @@ int main(int argc, char *argv[]) {
     bool recovery_ok = guard.ExecuteTask(recovery_task, &recovery_res);
     assert(recovery_ok && recovery_res.status == soeasy::service::TaskStatus::kSuccess);
     (void)recovery_ok;
-
-    const uint8_t *slot_data = nullptr;
-    size_t slot_bytes = 0;
-    bool read_ok = guard.shm_pool()->ReadSlot(recovery_res.slot_id, &slot_data, &slot_bytes);
-    assert(read_ok && slot_bytes > 0);
-    (void)read_ok;
-    guard.shm_pool()->ReleaseSlot(recovery_res.slot_id);
-    std::cout << "    • 共享内存自愈: 新 Worker 顺畅接管任务，槽位分配/读写校验 100% 正确!\n";
+    assert(recovery_res.extracted_text.find("Recovery document") != std::string::npos);
+    std::cout << "    • 沙箱自愈: 新 Worker 顺畅接管任务，解析校验 100% 正确!\n";
 
     std::remove(crash_file.c_str());
     std::remove(normal_file.c_str());
     guard.Shutdown();
-    std::cout << "  [+] 结论: 子进程崩溃后沙箱自愈、临时文件扫除与共享内存防泄漏全部通过!\n\n";
+    std::cout << "  [+] 结论: 子进程崩溃后沙箱自愈与 RPC 连接隔离全部通过!\n\n";
   }
 
   // =========================================================================
@@ -399,7 +349,6 @@ int main(int argc, char *argv[]) {
       soeasy::service::ParseTask task{6000 + i, test_files[i], "txt", 1};
       soeasy::service::ParseTaskResult res;
       guard.ExecuteTask(task, &res);
-      guard.shm_pool()->ReleaseSlot(res.slot_id);
 
       size_t cur_rss = GetCurrentProcessRssBytes();
       if (cur_rss > peak_rss) peak_rss = cur_rss;

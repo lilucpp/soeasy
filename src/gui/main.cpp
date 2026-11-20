@@ -185,9 +185,6 @@ int main(int argc, char *argv[]) {
              instance_server_name.toStdString(), instance_server->errorString().toStdString());
   }
 
-  // Clean orphan spill temporary files left by previous abnormal exits or crashes
-  soeasy::service::WorkerGuard::CleanupOrphanSpillFiles();
-
   // 2. Initialize Index Config from persistent JSON file
   auto config = std::make_shared<soeasy::service::IndexConfig>();
   QString config_path = app_data_dir + "/config.json";

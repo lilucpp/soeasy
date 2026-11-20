@@ -37,14 +37,10 @@ int main(int argc, char *argv[]) {
   mallopt(M_ARENA_MAX, 2);
 #endif
   int socket_fd = -1;
+  std::string socket_name;
 #ifdef _WIN32
   std::string pipe_name;
-#else
-  std::string socket_name;
 #endif
-  std::string shm_name;
-  size_t slot_count = 8;
-  size_t slot_capacity = 8 * 1024 * 1024;
   std::string log_file = "logs/soeasy_worker.log";
   std::string log_level_str = "info";
   bool enable_console = false;
@@ -60,18 +56,10 @@ int main(int argc, char *argv[]) {
       pipe_name = arg.substr(12);
     } else
 #endif
-        if (arg.rfind("--socket-fd=", 0) == 0) {
+    if (arg.rfind("--socket-fd=", 0) == 0) {
       socket_fd = std::stoi(arg.substr(12));
-#ifndef _WIN32
     } else if (arg.rfind("--socket-name=", 0) == 0) {
       socket_name = arg.substr(14);
-#endif
-    } else if (arg.rfind("--shm-name=", 0) == 0) {
-      shm_name = arg.substr(11);
-    } else if (arg.rfind("--slot-count=", 0) == 0) {
-      slot_count = std::stoull(arg.substr(13));
-    } else if (arg.rfind("--slot-capacity=", 0) == 0) {
-      slot_capacity = std::stoull(arg.substr(16));
     } else if (arg.rfind("--log-level=", 0) == 0) {
       log_level_str = arg.substr(12);
     } else if (arg == "--log-console") {
@@ -110,9 +98,8 @@ int main(int argc, char *argv[]) {
 
 #ifdef _WIN32
   (void)socket_fd;
-  if (pipe_name.empty() || shm_name.empty()) {
-    std::cerr << "Usage: soeasy-worker --pipe-name=<name> --shm-name=<name> "
-              << "[--slot-count=<N>] [--slot-capacity=<bytes>]\n";
+  if (pipe_name.empty()) {
+    std::cerr << "Usage: soeasy-worker --pipe-name=<name>\n";
     return 1;
   }
 
@@ -125,12 +112,16 @@ int main(int argc, char *argv[]) {
 
   RedirectStdinToNull("NUL");
 
-  int ret = soeasy::worker::RunWorkerLoop(h_pipe, shm_name, slot_count, slot_capacity);
+  int ret = soeasy::worker::RunWorkerLoop(h_pipe);
   CloseHandle(h_pipe);
   return ret;
 #else
   if (socket_fd < 0 && !socket_name.empty()) {
+#ifdef SOCK_CLOEXEC
+    int sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#else
     int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+#endif
     if (sock >= 0) {
       struct sockaddr_un addr;
       std::memset(&addr, 0, sizeof(addr));
@@ -143,20 +134,21 @@ int main(int argc, char *argv[]) {
       } else {
         LOG_ERROR("Failed to connect to abstract socket '{}': {}", socket_name, strerror(errno));
         close(sock);
-        return 1;
       }
     }
   }
 
-  if (socket_fd < 0 || shm_name.empty()) {
-    std::cerr << "Usage: soeasy-worker (--socket-name=<name> | --socket-fd=<fd>) --shm-name=<name> "
-              << "[--slot-count=<N>] [--slot-capacity=<bytes>]\n";
+  if (socket_fd < 0) {
+    LOG_ERROR("[Worker Main] socket_fd < 0! socket_name='{}'", socket_name);
+    std::cerr << "Usage: soeasy-worker (--socket-name=<name> | --socket-fd=<fd>)\n";
     return 1;
   }
 
   RedirectStdinToNull("/dev/null");
 
-  int ret = soeasy::worker::RunWorkerLoop(socket_fd, shm_name, slot_count, slot_capacity);
+  LOG_INFO("[Worker Main] Starting RunWorkerLoop on socket_fd={}", socket_fd);
+  int ret = soeasy::worker::RunWorkerLoop(socket_fd);
+  LOG_INFO("[Worker Main] RunWorkerLoop returned {}", ret);
   close(socket_fd);
   return ret;
 #endif

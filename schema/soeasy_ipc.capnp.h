@@ -38,8 +38,6 @@ enum class ParseStatusCode_a6dec0bc62f9cc8e: uint16_t {
   CRASHED,
 };
 CAPNP_DECLARE_ENUM(ParseStatusCode, a6dec0bc62f9cc8e);
-CAPNP_DECLARE_SCHEMA(c363ad0262e4fb32);
-CAPNP_DECLARE_SCHEMA(effa0075f0ef75d3);
 CAPNP_DECLARE_SCHEMA(92a5148d5bfad478);
 CAPNP_DECLARE_SCHEMA(bf7a87bf410a799f);
 CAPNP_DECLARE_SCHEMA(bf94156e52ac50be);
@@ -65,36 +63,6 @@ typedef ::capnp::schemas::ParseLevel_e80cc4a94b8545ed ParseLevel;
 
 typedef ::capnp::schemas::ParseStatusCode_a6dec0bc62f9cc8e ParseStatusCode;
 
-struct ShmSlotRef {
-  ShmSlotRef() = delete;
-
-  class Reader;
-  class Builder;
-  class Pipeline;
-
-  struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(c363ad0262e4fb32, 2, 1)
-    #if !CAPNP_LITE
-    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
-    #endif  // !CAPNP_LITE
-  };
-};
-
-struct ParseRequest {
-  ParseRequest() = delete;
-
-  class Reader;
-  class Builder;
-  class Pipeline;
-
-  struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(effa0075f0ef75d3, 2, 3)
-    #if !CAPNP_LITE
-    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
-    #endif  // !CAPNP_LITE
-  };
-};
-
 struct ParseResult {
   ParseResult() = delete;
 
@@ -103,7 +71,7 @@ struct ParseResult {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(92a5148d5bfad478, 3, 3)
+    CAPNP_DECLARE_STRUCT_HEADER(92a5148d5bfad478, 3, 2)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -237,7 +205,7 @@ struct WorkerAgent::ParseFileParams {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(851cc74915feed4c, 2, 3)
+    CAPNP_DECLARE_STRUCT_HEADER(851cc74915feed4c, 2, 2)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -321,209 +289,6 @@ struct WorkerAgent::PingResults {
 
 // =======================================================================================
 
-class ShmSlotRef::Reader {
-public:
-  typedef ShmSlotRef Reads;
-
-  Reader() = default;
-  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
-
-  inline ::capnp::MessageSize totalSize() const {
-    return _reader.totalSize().asPublic();
-  }
-
-#if !CAPNP_LITE
-  inline ::kj::StringTree toString() const {
-    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
-  }
-#endif  // !CAPNP_LITE
-
-  inline bool hasShmName() const;
-  inline  ::capnp::Text::Reader getShmName() const;
-
-  inline  ::uint32_t getSlotId() const;
-
-  inline  ::uint64_t getDataSize() const;
-
-private:
-  ::capnp::_::StructReader _reader;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::_::PointerHelpers;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::List;
-  friend class ::capnp::MessageBuilder;
-  friend class ::capnp::Orphanage;
-};
-
-class ShmSlotRef::Builder {
-public:
-  typedef ShmSlotRef Builds;
-
-  Builder() = delete;  // Deleted to discourage incorrect usage.
-                       // You can explicitly initialize to nullptr instead.
-  inline Builder(decltype(nullptr)) {}
-  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
-  inline operator Reader() const { return Reader(_builder.asReader()); }
-  inline Reader asReader() const { return *this; }
-
-  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
-#if !CAPNP_LITE
-  inline ::kj::StringTree toString() const { return asReader().toString(); }
-#endif  // !CAPNP_LITE
-
-  inline bool hasShmName();
-  inline  ::capnp::Text::Builder getShmName();
-  inline void setShmName( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initShmName(unsigned int size);
-  inline void adoptShmName(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownShmName();
-
-  inline  ::uint32_t getSlotId();
-  inline void setSlotId( ::uint32_t value);
-
-  inline  ::uint64_t getDataSize();
-  inline void setDataSize( ::uint64_t value);
-
-private:
-  ::capnp::_::StructBuilder _builder;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-  friend class ::capnp::Orphanage;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::_::PointerHelpers;
-};
-
-#if !CAPNP_LITE
-class ShmSlotRef::Pipeline {
-public:
-  typedef ShmSlotRef Pipelines;
-
-  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
-  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
-      : _typeless(kj::mv(typeless)) {}
-
-private:
-  ::capnp::AnyPointer::Pipeline _typeless;
-  friend class ::capnp::PipelineHook;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-};
-#endif  // !CAPNP_LITE
-
-class ParseRequest::Reader {
-public:
-  typedef ParseRequest Reads;
-
-  Reader() = default;
-  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
-
-  inline ::capnp::MessageSize totalSize() const {
-    return _reader.totalSize().asPublic();
-  }
-
-#if !CAPNP_LITE
-  inline ::kj::StringTree toString() const {
-    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
-  }
-#endif  // !CAPNP_LITE
-
-  inline  ::int64_t getDocId() const;
-
-  inline bool hasFilePath() const;
-  inline  ::capnp::Text::Reader getFilePath() const;
-
-  inline bool hasExt() const;
-  inline  ::capnp::Text::Reader getExt() const;
-
-  inline  ::soeasy::ipc::ParseLevel getLevel() const;
-
-  inline bool hasTargetSlot() const;
-  inline  ::soeasy::ipc::ShmSlotRef::Reader getTargetSlot() const;
-
-private:
-  ::capnp::_::StructReader _reader;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::_::PointerHelpers;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::List;
-  friend class ::capnp::MessageBuilder;
-  friend class ::capnp::Orphanage;
-};
-
-class ParseRequest::Builder {
-public:
-  typedef ParseRequest Builds;
-
-  Builder() = delete;  // Deleted to discourage incorrect usage.
-                       // You can explicitly initialize to nullptr instead.
-  inline Builder(decltype(nullptr)) {}
-  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
-  inline operator Reader() const { return Reader(_builder.asReader()); }
-  inline Reader asReader() const { return *this; }
-
-  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
-#if !CAPNP_LITE
-  inline ::kj::StringTree toString() const { return asReader().toString(); }
-#endif  // !CAPNP_LITE
-
-  inline  ::int64_t getDocId();
-  inline void setDocId( ::int64_t value);
-
-  inline bool hasFilePath();
-  inline  ::capnp::Text::Builder getFilePath();
-  inline void setFilePath( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initFilePath(unsigned int size);
-  inline void adoptFilePath(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownFilePath();
-
-  inline bool hasExt();
-  inline  ::capnp::Text::Builder getExt();
-  inline void setExt( ::capnp::Text::Reader value);
-  inline  ::capnp::Text::Builder initExt(unsigned int size);
-  inline void adoptExt(::capnp::Orphan< ::capnp::Text>&& value);
-  inline ::capnp::Orphan< ::capnp::Text> disownExt();
-
-  inline  ::soeasy::ipc::ParseLevel getLevel();
-  inline void setLevel( ::soeasy::ipc::ParseLevel value);
-
-  inline bool hasTargetSlot();
-  inline  ::soeasy::ipc::ShmSlotRef::Builder getTargetSlot();
-  inline void setTargetSlot( ::soeasy::ipc::ShmSlotRef::Reader value);
-  inline  ::soeasy::ipc::ShmSlotRef::Builder initTargetSlot();
-  inline void adoptTargetSlot(::capnp::Orphan< ::soeasy::ipc::ShmSlotRef>&& value);
-  inline ::capnp::Orphan< ::soeasy::ipc::ShmSlotRef> disownTargetSlot();
-
-private:
-  ::capnp::_::StructBuilder _builder;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-  friend class ::capnp::Orphanage;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::_::PointerHelpers;
-};
-
-#if !CAPNP_LITE
-class ParseRequest::Pipeline {
-public:
-  typedef ParseRequest Pipelines;
-
-  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
-  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
-      : _typeless(kj::mv(typeless)) {}
-
-  inline  ::soeasy::ipc::ShmSlotRef::Pipeline getTargetSlot();
-private:
-  ::capnp::AnyPointer::Pipeline _typeless;
-  friend class ::capnp::PipelineHook;
-  template <typename, ::capnp::Kind>
-  friend struct ::capnp::ToDynamic_;
-};
-#endif  // !CAPNP_LITE
-
 class ParseResult::Reader {
 public:
   typedef ParseResult Reads;
@@ -553,9 +318,6 @@ public:
 
   inline bool hasMessage() const;
   inline  ::capnp::Text::Reader getMessage() const;
-
-  inline bool hasChunks() const;
-  inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader getChunks() const;
 
   inline bool hasExtractedText() const;
   inline  ::capnp::Text::Reader getExtractedText() const;
@@ -609,14 +371,6 @@ public:
   inline  ::capnp::Text::Builder initMessage(unsigned int size);
   inline void adoptMessage(::capnp::Orphan< ::capnp::Text>&& value);
   inline ::capnp::Orphan< ::capnp::Text> disownMessage();
-
-  inline bool hasChunks();
-  inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder getChunks();
-  inline void setChunks( ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader value);
-  inline void setChunks(::kj::ArrayPtr<const  ::capnp::Data::Reader> value);
-  inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder initChunks(unsigned int size);
-  inline void adoptChunks(::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>&& value);
-  inline ::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>> disownChunks();
 
   inline bool hasExtractedText();
   inline  ::capnp::Text::Builder getExtractedText();
@@ -964,7 +718,7 @@ public:
 
   inline bool getIsScannedPdf() const;
 
-  inline  ::int32_t getStatusCode() const;
+  inline  ::soeasy::ipc::ParseStatusCode getStatusCode() const;
 
   inline bool hasErrorMsg() const;
   inline  ::capnp::Text::Reader getErrorMsg() const;
@@ -1003,8 +757,8 @@ public:
   inline bool getIsScannedPdf();
   inline void setIsScannedPdf(bool value);
 
-  inline  ::int32_t getStatusCode();
-  inline void setStatusCode( ::int32_t value);
+  inline  ::soeasy::ipc::ParseStatusCode getStatusCode();
+  inline void setStatusCode( ::soeasy::ipc::ParseStatusCode value);
 
   inline bool hasErrorMsg();
   inline  ::capnp::Text::Builder getErrorMsg();
@@ -1202,9 +956,6 @@ public:
 
   inline  ::soeasy::ipc::ParseLevel getLevel() const;
 
-  inline bool hasTargetSlot() const;
-  inline  ::soeasy::ipc::ShmSlotRef::Reader getTargetSlot() const;
-
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1253,13 +1004,6 @@ public:
   inline  ::soeasy::ipc::ParseLevel getLevel();
   inline void setLevel( ::soeasy::ipc::ParseLevel value);
 
-  inline bool hasTargetSlot();
-  inline  ::soeasy::ipc::ShmSlotRef::Builder getTargetSlot();
-  inline void setTargetSlot( ::soeasy::ipc::ShmSlotRef::Reader value);
-  inline  ::soeasy::ipc::ShmSlotRef::Builder initTargetSlot();
-  inline void adoptTargetSlot(::capnp::Orphan< ::soeasy::ipc::ShmSlotRef>&& value);
-  inline ::capnp::Orphan< ::soeasy::ipc::ShmSlotRef> disownTargetSlot();
-
 private:
   ::capnp::_::StructBuilder _builder;
   template <typename, ::capnp::Kind>
@@ -1278,7 +1022,6 @@ public:
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
       : _typeless(kj::mv(typeless)) {}
 
-  inline  ::soeasy::ipc::ShmSlotRef::Pipeline getTargetSlot();
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -1710,203 +1453,6 @@ private:
 
 // =======================================================================================
 
-inline bool ShmSlotRef::Reader::hasShmName() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
-}
-inline bool ShmSlotRef::Builder::hasShmName() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
-}
-inline  ::capnp::Text::Reader ShmSlotRef::Reader::getShmName() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-inline  ::capnp::Text::Builder ShmSlotRef::Builder::getShmName() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-inline void ShmSlotRef::Builder::setShmName( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
-}
-inline  ::capnp::Text::Builder ShmSlotRef::Builder::initShmName(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
-}
-inline void ShmSlotRef::Builder::adoptShmName(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::capnp::Text> ShmSlotRef::Builder::disownShmName() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-
-inline  ::uint32_t ShmSlotRef::Reader::getSlotId() const {
-  return _reader.getDataField< ::uint32_t>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
-}
-
-inline  ::uint32_t ShmSlotRef::Builder::getSlotId() {
-  return _builder.getDataField< ::uint32_t>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
-}
-inline void ShmSlotRef::Builder::setSlotId( ::uint32_t value) {
-  _builder.setDataField< ::uint32_t>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
-}
-
-inline  ::uint64_t ShmSlotRef::Reader::getDataSize() const {
-  return _reader.getDataField< ::uint64_t>(
-      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
-}
-
-inline  ::uint64_t ShmSlotRef::Builder::getDataSize() {
-  return _builder.getDataField< ::uint64_t>(
-      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
-}
-inline void ShmSlotRef::Builder::setDataSize( ::uint64_t value) {
-  _builder.setDataField< ::uint64_t>(
-      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
-}
-
-inline  ::int64_t ParseRequest::Reader::getDocId() const {
-  return _reader.getDataField< ::int64_t>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
-}
-
-inline  ::int64_t ParseRequest::Builder::getDocId() {
-  return _builder.getDataField< ::int64_t>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
-}
-inline void ParseRequest::Builder::setDocId( ::int64_t value) {
-  _builder.setDataField< ::int64_t>(
-      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
-}
-
-inline bool ParseRequest::Reader::hasFilePath() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
-}
-inline bool ParseRequest::Builder::hasFilePath() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
-}
-inline  ::capnp::Text::Reader ParseRequest::Reader::getFilePath() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-inline  ::capnp::Text::Builder ParseRequest::Builder::getFilePath() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-inline void ParseRequest::Builder::setFilePath( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), value);
-}
-inline  ::capnp::Text::Builder ParseRequest::Builder::initFilePath(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), size);
-}
-inline void ParseRequest::Builder::adoptFilePath(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::capnp::Text> ParseRequest::Builder::disownFilePath() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
-      ::capnp::bounded<0>() * ::capnp::POINTERS));
-}
-
-inline bool ParseRequest::Reader::hasExt() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
-}
-inline bool ParseRequest::Builder::hasExt() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
-}
-inline  ::capnp::Text::Reader ParseRequest::Reader::getExt() const {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-inline  ::capnp::Text::Builder ParseRequest::Builder::getExt() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-inline void ParseRequest::Builder::setExt( ::capnp::Text::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
-}
-inline  ::capnp::Text::Builder ParseRequest::Builder::initExt(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
-}
-inline void ParseRequest::Builder::adoptExt(
-    ::capnp::Orphan< ::capnp::Text>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::capnp::Text> ParseRequest::Builder::disownExt() {
-  return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-
-inline  ::soeasy::ipc::ParseLevel ParseRequest::Reader::getLevel() const {
-  return _reader.getDataField< ::soeasy::ipc::ParseLevel>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
-}
-
-inline  ::soeasy::ipc::ParseLevel ParseRequest::Builder::getLevel() {
-  return _builder.getDataField< ::soeasy::ipc::ParseLevel>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
-}
-inline void ParseRequest::Builder::setLevel( ::soeasy::ipc::ParseLevel value) {
-  _builder.setDataField< ::soeasy::ipc::ParseLevel>(
-      ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
-}
-
-inline bool ParseRequest::Reader::hasTargetSlot() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
-}
-inline bool ParseRequest::Builder::hasTargetSlot() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
-}
-inline  ::soeasy::ipc::ShmSlotRef::Reader ParseRequest::Reader::getTargetSlot() const {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::get(_reader.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-inline  ::soeasy::ipc::ShmSlotRef::Builder ParseRequest::Builder::getTargetSlot() {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::get(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-#if !CAPNP_LITE
-inline  ::soeasy::ipc::ShmSlotRef::Pipeline ParseRequest::Pipeline::getTargetSlot() {
-  return  ::soeasy::ipc::ShmSlotRef::Pipeline(_typeless.getPointerField(2));
-}
-#endif  // !CAPNP_LITE
-inline void ParseRequest::Builder::setTargetSlot( ::soeasy::ipc::ShmSlotRef::Reader value) {
-  ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::set(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
-}
-inline  ::soeasy::ipc::ShmSlotRef::Builder ParseRequest::Builder::initTargetSlot() {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::init(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-inline void ParseRequest::Builder::adoptTargetSlot(
-    ::capnp::Orphan< ::soeasy::ipc::ShmSlotRef>&& value) {
-  ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::adopt(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::soeasy::ipc::ShmSlotRef> ParseRequest::Builder::disownTargetSlot() {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::disown(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-
 inline  ::int64_t ParseResult::Reader::getDocId() const {
   return _reader.getDataField< ::int64_t>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS);
@@ -2011,76 +1557,38 @@ inline ::capnp::Orphan< ::capnp::Text> ParseResult::Builder::disownMessage() {
       ::capnp::bounded<0>() * ::capnp::POINTERS));
 }
 
-inline bool ParseResult::Reader::hasChunks() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
-}
-inline bool ParseResult::Builder::hasChunks() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
-}
-inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader ParseResult::Reader::getChunks() const {
-  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::get(_reader.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder ParseResult::Builder::getChunks() {
-  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::get(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-inline void ParseResult::Builder::setChunks( ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Reader value) {
-  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
-}
-inline void ParseResult::Builder::setChunks(::kj::ArrayPtr<const  ::capnp::Data::Reader> value) {
-  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::set(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
-}
-inline  ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>::Builder ParseResult::Builder::initChunks(unsigned int size) {
-  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::init(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
-}
-inline void ParseResult::Builder::adoptChunks(
-    ::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>&& value) {
-  ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::adopt(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>> ParseResult::Builder::disownChunks() {
-  return ::capnp::_::PointerHelpers< ::capnp::List< ::capnp::Data,  ::capnp::Kind::BLOB>>::disown(_builder.getPointerField(
-      ::capnp::bounded<1>() * ::capnp::POINTERS));
-}
-
 inline bool ParseResult::Reader::hasExtractedText() const {
   return !_reader.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
 inline bool ParseResult::Builder::hasExtractedText() {
   return !_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+      ::capnp::bounded<1>() * ::capnp::POINTERS).isNull();
 }
 inline  ::capnp::Text::Reader ParseResult::Reader::getExtractedText() const {
   return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_reader.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 inline  ::capnp::Text::Builder ParseResult::Builder::getExtractedText() {
   return ::capnp::_::PointerHelpers< ::capnp::Text>::get(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 inline void ParseResult::Builder::setExtractedText( ::capnp::Text::Reader value) {
   ::capnp::_::PointerHelpers< ::capnp::Text>::set(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
+      ::capnp::bounded<1>() * ::capnp::POINTERS), value);
 }
 inline  ::capnp::Text::Builder ParseResult::Builder::initExtractedText(unsigned int size) {
   return ::capnp::_::PointerHelpers< ::capnp::Text>::init(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), size);
+      ::capnp::bounded<1>() * ::capnp::POINTERS), size);
 }
 inline void ParseResult::Builder::adoptExtractedText(
     ::capnp::Orphan< ::capnp::Text>&& value) {
   ::capnp::_::PointerHelpers< ::capnp::Text>::adopt(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
+      ::capnp::bounded<1>() * ::capnp::POINTERS), kj::mv(value));
 }
 inline ::capnp::Orphan< ::capnp::Text> ParseResult::Builder::disownExtractedText() {
   return ::capnp::_::PointerHelpers< ::capnp::Text>::disown(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
+      ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 
 inline  ::uint64_t WorkerPingResponse::Reader::getRssBytes() const {
@@ -2197,18 +1705,18 @@ inline void TextStreamReceiver::FinishParams::Builder::setIsScannedPdf(bool valu
       ::capnp::bounded<64>() * ::capnp::ELEMENTS, value);
 }
 
-inline  ::int32_t TextStreamReceiver::FinishParams::Reader::getStatusCode() const {
-  return _reader.getDataField< ::int32_t>(
-      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+inline  ::soeasy::ipc::ParseStatusCode TextStreamReceiver::FinishParams::Reader::getStatusCode() const {
+  return _reader.getDataField< ::soeasy::ipc::ParseStatusCode>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
 }
 
-inline  ::int32_t TextStreamReceiver::FinishParams::Builder::getStatusCode() {
-  return _builder.getDataField< ::int32_t>(
-      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+inline  ::soeasy::ipc::ParseStatusCode TextStreamReceiver::FinishParams::Builder::getStatusCode() {
+  return _builder.getDataField< ::soeasy::ipc::ParseStatusCode>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
 }
-inline void TextStreamReceiver::FinishParams::Builder::setStatusCode( ::int32_t value) {
-  _builder.setDataField< ::int32_t>(
-      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+inline void TextStreamReceiver::FinishParams::Builder::setStatusCode( ::soeasy::ipc::ParseStatusCode value) {
+  _builder.setDataField< ::soeasy::ipc::ParseStatusCode>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool TextStreamReceiver::FinishParams::Reader::hasErrorMsg() const {
@@ -2363,45 +1871,6 @@ inline  ::soeasy::ipc::ParseLevel WorkerAgent::ParseFileParams::Builder::getLeve
 inline void WorkerAgent::ParseFileParams::Builder::setLevel( ::soeasy::ipc::ParseLevel value) {
   _builder.setDataField< ::soeasy::ipc::ParseLevel>(
       ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
-}
-
-inline bool WorkerAgent::ParseFileParams::Reader::hasTargetSlot() const {
-  return !_reader.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
-}
-inline bool WorkerAgent::ParseFileParams::Builder::hasTargetSlot() {
-  return !_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
-}
-inline  ::soeasy::ipc::ShmSlotRef::Reader WorkerAgent::ParseFileParams::Reader::getTargetSlot() const {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::get(_reader.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-inline  ::soeasy::ipc::ShmSlotRef::Builder WorkerAgent::ParseFileParams::Builder::getTargetSlot() {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::get(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-#if !CAPNP_LITE
-inline  ::soeasy::ipc::ShmSlotRef::Pipeline WorkerAgent::ParseFileParams::Pipeline::getTargetSlot() {
-  return  ::soeasy::ipc::ShmSlotRef::Pipeline(_typeless.getPointerField(2));
-}
-#endif  // !CAPNP_LITE
-inline void WorkerAgent::ParseFileParams::Builder::setTargetSlot( ::soeasy::ipc::ShmSlotRef::Reader value) {
-  ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::set(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
-}
-inline  ::soeasy::ipc::ShmSlotRef::Builder WorkerAgent::ParseFileParams::Builder::initTargetSlot() {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::init(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
-}
-inline void WorkerAgent::ParseFileParams::Builder::adoptTargetSlot(
-    ::capnp::Orphan< ::soeasy::ipc::ShmSlotRef>&& value) {
-  ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::adopt(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
-}
-inline ::capnp::Orphan< ::soeasy::ipc::ShmSlotRef> WorkerAgent::ParseFileParams::Builder::disownTargetSlot() {
-  return ::capnp::_::PointerHelpers< ::soeasy::ipc::ShmSlotRef>::disown(_builder.getPointerField(
-      ::capnp::bounded<2>() * ::capnp::POINTERS));
 }
 
 inline bool WorkerAgent::ParseFileResults::Reader::hasResult() const {

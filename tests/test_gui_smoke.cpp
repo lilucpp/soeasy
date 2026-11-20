@@ -198,8 +198,7 @@ int main(int argc, char *argv[]) {
       dlg_perf.SetCurrentTab(2);
       app.processEvents();
       auto *hint_en = dlg_perf.findChild<QLabel *>("label_workers_hint");
-      CHECK(hint_en != nullptr && hint_en->text() == soeasy::gui::Tr("hint_workers_restart"));
-      CHECK(!soeasy::gui::Tr("msg_worker_count_restart").isEmpty());
+      CHECK(hint_en != nullptr && hint_en->text().isEmpty());
       dlg_perf.grab().save("/tmp/tab5_combo_fixed.png");
     }
 
@@ -214,8 +213,7 @@ int main(int argc, char *argv[]) {
     // Switch back to Chinese
     soeasy::gui::I18n::Instance().SetLanguage("zh");
     config->set_ui_language("zh");
-    CHECK(soeasy::gui::Tr("hint_workers_restart").contains("重启"));
-    CHECK(soeasy::gui::Tr("msg_worker_count_restart").contains("重启"));
+    CHECK(soeasy::gui::Tr("hint_workers_restart").isEmpty());
     CHECK(!soeasy::gui::Tr("guide_tips_title").contains(QString::fromUtf8("\xF0\x9F\x92\xA1")));
     CHECK(soeasy::gui::Tr("guide_tips_title").contains("★"));
     CHECK(soeasy::gui::Tr("guide_tips_html").contains("NEAR("));

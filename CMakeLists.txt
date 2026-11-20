@@ -212,10 +212,9 @@ add_subdirectory(third_party/efsw ${CMAKE_BINARY_DIR}/efsw_build EXCLUDE_FROM_AL
 include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/third_party/subprocess)
 
 # -------------------------------------------------------------
-# 4. Common Library (SHM Slot Pool + spdlog Logging)
+# 4. Common Library (spdlog Logging + System Utilities)
 # -------------------------------------------------------------
 add_library(soeasy_common STATIC
-    src/common/shm_pool.cpp
     src/common/logger.cpp
     src/common/encoding_utils.cpp
     src/common/system_env.cpp
@@ -234,7 +233,7 @@ else()
 endif()
 
 # -------------------------------------------------------------
-# 5. Cap'n Proto Schema Library
+# 5. Cap'n Proto Schema & RPC Library
 # -------------------------------------------------------------
 add_library(soeasy_schema STATIC
     schema/soeasy_ipc.capnp.c++
@@ -248,7 +247,7 @@ if(NOT WIN32)
     )
 endif()
 target_link_libraries(soeasy_schema PUBLIC
-    capnp kj
+    capnp-rpc capnp kj-async kj
 )
 
 # -------------------------------------------------------------

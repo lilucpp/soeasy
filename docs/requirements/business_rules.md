@@ -29,12 +29,12 @@
 * **对应实现**：`src/service/doc_prechecker.cpp` (`DocPrechecker::Precheck`)
 * **验证用例**：`tests/test_office_parser.cpp`
 
-#### **[BR-PRE-002] 超大正文提取文本磁盘溢出 (Spill) 规则**
+#### **[BR-PRE-002] 超大正文提取文本流式传输 (Zero-Spill Streaming) 规则**
 * **分类**：计算与动作触发规则 (Computation & Action Enabler)
-* **业务逻辑**：单次任务共享内存（SHM）槽位默认容量为 $2\text{MB}$。若 L2/L3 解析器提取出的纯文本字节数 $> 2\text{MB}$，解析器自动将正文写入临时 Spill 溢出文件，并仅在共享内存中传递文件描述符；主服务读入完成入库后，必须**同步物理删除该临时溢出文件**。
-* **设计意图**：实测证明，如果无限制放大共享内存槽位，会导致 8 个 Worker 占用常驻内存成倍暴增；采用 Spill 机制实现了超大文档可检索与进程内存稳定在 54MB 的完美平衡。实测残留临时文件严格为 0。
-* **对应实现**：`src/service/worker_guard.cpp` (`WorkerGuard::OnTaskComplete`)
-* **验证用例**：`tests/test_comprehensive_matrix.cpp` [Test 3]
+* **业务逻辑**：单次任务共享内存（SHM）槽位默认容量为 $2\text{MB}$。若 L2/L3 解析器提取出的纯文本字节数 $> 2\text{MB}$，解析器自动启用 Cap'n Proto 256KB 分片能力流式传输（`TextStreamReceiver`），在全内存中无阻塞推送至主进程；彻底消除传统将大文本溢出落盘为临时 Spill 文件的磁盘 I/O 开销与序列化冗余。
+* **设计意图**：既避免了无限制放大共享内存槽位导致的内存暴增，又彻底杜绝了频繁磁盘落盘产生的 I/O 放大与临时文件残留风险。实测残留临时文件严格为 0。
+* **对应实现**：`src/worker/worker_loop.cpp` 与 `src/service/worker_guard.cpp`
+* **验证用例**：`tests/test_comprehensive_matrix.cpp` [Test 3]、`tests/test_sandbox_ipc.cpp` [Step 8]
 
 #### **[BR-PRE-003] 图像 OCR 文本有效性过滤规则**
 * **分类**：推导规则 (Inference)

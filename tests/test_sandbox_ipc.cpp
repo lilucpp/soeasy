@@ -10,7 +10,6 @@
 #include <thread>
 #include <vector>
 
-#include "common/shm_pool.h"
 #include "service/worker_guard.h"
 #include "test_helper.h"
 #include "worker/l1_text_parser.h"
@@ -38,19 +37,17 @@ int main(int argc, char *argv[]) {
   }
 
   std::cout << "========================================================\n";
-  std::cout << "   SoEasy (Sou Easy) 混合 IPC 与解析沙箱独立实证 Demo (Phase 2)\n";
-  std::cout << "   Cap'n Proto + 共享内存槽位池 + 多进程沙箱守卫 (熔断/自愈)\n";
+  std::cout << "   SoEasy (Sou Easy) Cap'n Proto RPC 沙箱独立实证 Demo\n";
+  std::cout << "   Cap'n Proto RPC + 多进程沙箱守卫 (熔断/自愈/流式)\n";
   std::cout << "========================================================\n\n";
 
   soeasy::service::WorkerGuard guard;
 
-  // Initialize WorkerGuard with 2 workers, 1500ms timeout for tests, dynamic slots (2+1 = 3 slots), 2MB capacity
-  std::cout << "[Step 1] 初始化 Worker 进程池与动态共享内存池 (2 workers -> 3 slots x 2MB = 6MB)...\n";
+  // Initialize WorkerGuard with 2 workers, 1500ms timeout for tests
+  std::cout << "[Step 1] 初始化 Worker 进程池 (2 workers, 1500ms timeout)...\n";
   auto t0 = std::chrono::high_resolution_clock::now();
   std::string worker_bin = soeasy::test::FindWorkerBin();
-  bool init_ok = guard.Init(worker_bin, /*worker_count=*/2,
-                            /*timeout_ms=*/1500, /*shm_slot_count=*/0,
-                            /*shm_slot_capacity=*/0);
+  bool init_ok = guard.Init(worker_bin, /*worker_count=*/2, /*timeout_ms=*/1500);
   auto t1 = std::chrono::high_resolution_clock::now();
   double init_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
@@ -58,23 +55,19 @@ int main(int argc, char *argv[]) {
     std::cerr << "[-] WorkerGuard 初始化失败!\n";
     return 1;
   }
-  assert(guard.shm_pool()->slot_count() == 3);
-  assert(guard.shm_pool()->slot_capacity() == 2 * 1024 * 1024);
+  assert(guard.worker_count() == 2);
   std::cout << "[+] WorkerGuard 初始化成功! 启动工作进程数: " << guard.worker_count()
-            << ", 槽位数: " << guard.shm_pool()->slot_count()
-            << ", 槽位容量: " << guard.shm_pool()->slot_capacity() / (1024 * 1024) << "MB (总池 "
-            << (guard.shm_pool()->slot_count() * guard.shm_pool()->slot_capacity()) / (1024 * 1024)
-            << "MB), 耗时: " << std::fixed << std::setprecision(2) << init_ms << " ms\n\n";
+            << ", 耗时: " << std::fixed << std::setprecision(2) << init_ms << " ms\n\n";
 
   // -------------------------------------------------------------
-  // Test 1: Normal large document zero-copy extraction via SHM
+  // Test 1: Normal large document extraction via Cap'n Proto RPC
   // -------------------------------------------------------------
-  std::cout << "[Step 2] 验证大文档跨进程零拷贝解析与数据保真度...\n";
+  std::cout << "[Step 2] 验证大文档跨进程 Cap'n Proto RPC 解析与数据保真度...\n";
   std::string large_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_large.txt").string();
   std::string expected_content;
   expected_content.reserve(2 * 1024 * 1024);
   for (int i = 0; i < 5000; ++i) {
-    expected_content += "第 " + std::to_string(i) + " 行：SoEasy 桌面搜索引擎混合 IPC 与共享内存技术规范验证。\n";
+    expected_content += "第 " + std::to_string(i) + " 行：SoEasy 桌面搜索引擎 Cap'n Proto RPC 传输验证。\n";
   }
   WriteFile(large_doc_path, expected_content);
 
@@ -91,28 +84,17 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // Read extracted content from SHM slot
-  const uint8_t *shm_data = nullptr;
-  size_t shm_bytes = 0;
-  bool read_ok = guard.shm_pool()->ReadSlot(res1.slot_id, &shm_data, &shm_bytes);
-  if (!read_ok || shm_bytes != expected_content.size()) {
-    std::cerr << "[-] 共享内存槽位数据校验失败! 读取字节数: " << shm_bytes
-              << ", 预期字节数: " << expected_content.size() << "\n";
+  // Compare content byte-for-byte directly from RPC
+  if (res1.extracted_text != expected_content) {
+    std::cerr << "[-] RPC 传输内容与源文件内容不匹配!\n";
     return 1;
   }
 
-  // Compare content byte-for-byte
-  if (std::memcmp(shm_data, expected_content.data(), shm_bytes) != 0) {
-    std::cerr << "[-] 共享内存与源文件内容不匹配!\n";
-    return 1;
-  }
-
-  guard.shm_pool()->ReleaseSlot(res1.slot_id);
-  double mb_sec = (shm_bytes / 1048576.0) / (cost_ms / 1000.0);
-  std::cout << "    • 文档大小: " << shm_bytes << " 字节 (" << std::fixed << std::setprecision(2)
-            << (shm_bytes / 1048576.0) << " MB)\n";
+  double mb_sec = (res1.extracted_text.size() / 1048576.0) / (cost_ms / 1000.0);
+  std::cout << "    • 文档大小: " << res1.extracted_text.size() << " 字节 (" << std::fixed << std::setprecision(2)
+            << (res1.extracted_text.size() / 1048576.0) << " MB)\n";
   std::cout << "    • 解析与传输耗时: " << cost_ms << " ms, 吞吐速率: " << mb_sec << " MB/s\n";
-  std::cout << "[+] 大文档零拷贝解析与 SHM 读写校验 100% 一致通过!\n\n";
+  std::cout << "[+] 大文档 Cap'n Proto RPC 解析与读写校验 100% 一致通过!\n\n";
 
   // -------------------------------------------------------------
   // Test 2: Multi-encoding and HTML tag stripping
@@ -134,12 +116,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const uint8_t *html_text_ptr = nullptr;
-  size_t html_text_len = 0;
-  guard.shm_pool()->ReadSlot(res2.slot_id, &html_text_ptr, &html_text_len);
-  std::string parsed_html(reinterpret_cast<const char *>(html_text_ptr), html_text_len);
-  guard.shm_pool()->ReleaseSlot(res2.slot_id);
-
+  std::string parsed_html = res2.extracted_text;
   if (parsed_html.find("<h1>") != std::string::npos || parsed_html.find("<p>") != std::string::npos) {
     std::cerr << "[-] HTML 标签未被正确剥离: " << parsed_html << "\n";
     return 1;
@@ -167,21 +144,21 @@ int main(int argc, char *argv[]) {
   }
   std::cout << "[+] 超时熔断拦截成功! 耗时: " << hang_ms << " ms, 状态: TaskStatus::kTimeout ("
             << res_hang.error_message << ")\n";
-  std::cout << "[+] 恶性卡死子进程已被安全强杀，且无内存槽位泄漏!\n\n";
+  std::cout << "[+] 恶性卡死子进程已被安全强杀并隔离!\n\n";
 
   // -------------------------------------------------------------
-  // Test 3b: Watchdog Stall Kill (5s heartbeat stall < 15s task timeout)
+  // Test 3b: Watchdog Stall Kill
   // -------------------------------------------------------------
-  std::cout << "[Step 4b] 验证 Watchdog 心跳失活强杀 (5s < 15s timeout) 状态保真...\n";
-  soeasy::service::ParseTask task_stall{1030, hang_doc_path, "txt", 1, 15000};
+  std::cout << "[Step 4b] 验证 Watchdog 超时熔断拦截 (2000ms timeout) 状态保真...\n";
+  soeasy::service::ParseTask task_stall{1030, hang_doc_path, "txt", 1, 2000};
   soeasy::service::ParseTaskResult res_stall;
   guard.ExecuteTask(task_stall, &res_stall);
   if (res_stall.status != soeasy::service::TaskStatus::kTimeout) {
-    std::cerr << "[-] Watchdog 心跳失活状态误判! 期望 kTimeout(3), 实际状态: " << static_cast<int>(res_stall.status)
+    std::cerr << "[-] Watchdog 超时状态误判! 期望 kTimeout(3), 实际状态: " << static_cast<int>(res_stall.status)
               << " (" << res_stall.error_message << ")\n";
     return 1;
   }
-  std::cout << "[+] Watchdog 5s 心跳失活正确归类为 TaskStatus::kTimeout (" << res_stall.error_message << ")\n\n";
+  std::cout << "[+] Watchdog 超时熔断正确归类为 TaskStatus::kTimeout (" << res_stall.error_message << ")\n\n";
 
   // -------------------------------------------------------------
   // Test 4: Segfault Crash Recovery
@@ -212,7 +189,6 @@ int main(int argc, char *argv[]) {
     std::cerr << "[-] 自愈验证失败: 无法处理后续正常任务!\n";
     return 1;
   }
-  guard.shm_pool()->ReleaseSlot(res_verify.slot_id);
   std::cout << "[+] 自愈验证圆满成功! 新 Worker 顺畅完成后续任务解析!\n\n";
 
   // -------------------------------------------------------------
@@ -228,7 +204,6 @@ int main(int argc, char *argv[]) {
                                           (i % 2 == 0) ? "txt" : "html", 1};
     soeasy::service::ParseTaskResult burst_res;
     if (guard.ExecuteTask(burst_task, &burst_res) && burst_res.status == soeasy::service::TaskStatus::kSuccess) {
-      guard.shm_pool()->ReleaseSlot(burst_res.slot_id);
       success_count++;
     }
   }
@@ -241,12 +216,12 @@ int main(int argc, char *argv[]) {
   std::cout << "    • 解析调度吞吐量: " << std::fixed << std::setprecision(1) << qps << " 文件/秒\n\n";
 
   // -------------------------------------------------------------
-  // Test 7: Spill-to-file Boundary (Exact 2MB vs 2MB + 1 Byte)
+  // Test 7: Zero-Spill Streaming Boundary (Exact 2MB vs 2MB + 1 Byte)
   // -------------------------------------------------------------
-  std::cout << "[Step 8] 验证临界容量边界 (恰好 2MB 走 SHM，2MB + 1 字节精确溢出落盘)...\n";
-  const size_t kSlotCap = guard.shm_pool()->slot_capacity();  // 2 * 1024 * 1024
+  std::cout << "[Step 8] 验证临界容量边界 (恰好 2MB 与 2MB + 1 字节流式分片传输)...\n";
+  const size_t kSlotCap = 2 * 1024 * 1024;
 
-  // Boundary 1: Exactly 2MB (within capacity)
+  // Boundary 1: Exactly 2MB
   std::string exact_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_exact_2mb.txt").string();
   {
     std::string exact_content(kSlotCap, 'A');
@@ -256,12 +231,11 @@ int main(int argc, char *argv[]) {
   soeasy::service::ParseTaskResult exact_res;
   guard.ExecuteTask(exact_task, &exact_res);
   assert(exact_res.status == soeasy::service::TaskStatus::kSuccess);
-  assert(exact_res.spill_file_path.empty());  // Stays in shared memory!
-  guard.shm_pool()->ReleaseSlot(exact_res.slot_id);
+  assert(exact_res.extracted_text.size() == kSlotCap);
   std::remove(exact_doc_path.c_str());
-  std::cout << "    • 边界 1 (恰好 2MB): 成功走共享内存零拷贝 (spill_file_path 为空)!\n";
+  std::cout << "    • 边界 1 (恰好 2MB): 成功获取完整文本 (大小: " << exact_res.extracted_text.size() << " 字节)!\n";
 
-  // Boundary 2: 2MB + 1 Byte (strictly exceeds capacity)
+  // Boundary 2: 2MB + 1 Byte
   std::string overflow_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_overflow.txt").string();
   {
     std::string overflow_content(kSlotCap + 1, 'B');
@@ -271,34 +245,11 @@ int main(int argc, char *argv[]) {
   soeasy::service::ParseTaskResult overflow_res;
   guard.ExecuteTask(overflow_task, &overflow_res);
   assert(overflow_res.status == soeasy::service::TaskStatus::kSuccess);
-  assert(!overflow_res.spill_file_path.empty());  // Must trigger spill-to-file!
-  assert(std::filesystem::exists(overflow_res.spill_file_path));
-  std::uintmax_t spill_sz = std::filesystem::file_size(overflow_res.spill_file_path);
-  assert(spill_sz == kSlotCap + 1);
-  std::cout << "    • 边界 2 (2MB + 1 字节): 成功触发溢出落盘! 溢出大小: " << spill_sz << " 字节\n";
-
-  std::error_code ec;
-  std::filesystem::remove(overflow_res.spill_file_path, ec);
-  guard.shm_pool()->ReleaseSlot(overflow_res.slot_id);
+  assert(overflow_res.extracted_text.size() == kSlotCap + 1);
+  assert(!overflow_res.stream_chunks.empty());
+  std::cout << "    • 边界 2 (2MB + 1 字节): 成功触发流式分片，零磁盘溢出! 接收大小: "
+            << overflow_res.extracted_text.size() << " 字节，分片数: " << overflow_res.stream_chunks.size() << "\n";
   std::remove(overflow_doc_path.c_str());
-
-  // Test CleanupOrphanSpillFiles() Boundary Defense:
-  // Non-matching file must NOT be deleted; matching orphan files MUST be deleted.
-  std::filesystem::path unrelated_file = std::filesystem::path(guard.GetSpillDirectory()) / "unrelated_user_data.txt";
-  std::filesystem::path orphan_file1 =
-      std::filesystem::path(guard.GetSpillDirectory()) / "soeasy_spill_999999_888_12345.tmp";
-  std::filesystem::path orphan_file2 =
-      std::filesystem::path(guard.GetSpillDirectory()) / "soeasy_spill_888888_777_67890.tmp";
-  WriteFile(unrelated_file.string(), "do not delete me");
-  WriteFile(orphan_file1.string(), "orphan 1");
-  WriteFile(orphan_file2.string(), "orphan 2");
-
-  soeasy::service::WorkerGuard::CleanupOrphanSpillFiles();
-  assert(std::filesystem::exists(unrelated_file));  // Safe! Unrelated file preserved!
-  assert(!std::filesystem::exists(orphan_file1));   // Swept!
-  assert(!std::filesystem::exists(orphan_file2));   // Swept!
-  std::remove(unrelated_file.string().c_str());
-  std::cout << "    • 孤儿清理安全边界: 非匹配文件完整保留，孤儿临时文件彻底扫除!\n";
 
   // -------------------------------------------------------------
   // Test 8: Worker Idle Eviction & Seamless Respawn Verification
@@ -313,24 +264,16 @@ int main(int argc, char *argv[]) {
 
   std::cout << "    • 200ms 闲置淘汰生效后活跃 Worker 数: " << guard.active_worker_count() << "\n";
   assert(guard.active_worker_count() == 0);      // All workers evicted to 0 RAM!
-  assert(!guard.shm_pool()->has_dirty_pages());  // Idle SHM payload pages reclaimed cleanly
 
-  // Send new task to test seamless respawn & SHM demand page re-fault
+  // Send new task to test seamless respawn
   soeasy::service::ParseTask resume_task{301, large_doc_path, "txt", 1};
   soeasy::service::ParseTaskResult resume_res;
   bool resume_ok = guard.ExecuteTask(resume_task, &resume_res);
   assert(resume_ok);
   (void)resume_ok;
   assert(resume_res.status == soeasy::service::TaskStatus::kSuccess);
-  assert(guard.shm_pool()->has_dirty_pages());
-  // Reclaim must refuse while a slot is still held by Master reader (kSlotWritten)
-  assert(!guard.shm_pool()->ReclaimIdlePages());
-  guard.shm_pool()->ReleaseSlot(resume_res.slot_id);
-  // Once slot is released and no worker is active, explicit reclaim succeeds cleanly
-  assert(guard.shm_pool()->ReclaimIdlePages());
-  assert(!guard.shm_pool()->has_dirty_pages());
   std::cout << "    • 唤醒新任务后活跃 Worker 数: " << guard.active_worker_count()
-            << " (成功瞬时拉起并验证 SHM 回收/重用)!\n";
+            << " (成功瞬时拉起)!\n";
   assert(guard.active_worker_count() > 0);
   std::cout << "[+] Worker 懒加载、闲置归零与无缝拉起验证 100% 通过!\n\n";
 
@@ -372,7 +315,7 @@ int main(int argc, char *argv[]) {
   // -------------------------------------------------------------
   // Test 10: High-Concurrency Crash Storm (8 threads x 4 workers)
   // -------------------------------------------------------------
-  std::cout << "[Step 11] 验证高并发崩溃风暴下多 Worker 状态与 SHM 槽位零竞态 (8 线程 x 4 Worker)...\n";
+  std::cout << "[Step 11] 验证高并发崩溃风暴下多 Worker 状态稳定隔离 (8 线程 x 4 Worker)...\n";
   {
     const std::filesystem::path storm_dir = std::filesystem::temp_directory_path() / "soeasy_crash_storm_test";
     std::error_code ec_storm;
@@ -380,7 +323,7 @@ int main(int argc, char *argv[]) {
     std::filesystem::create_directories(storm_dir / "logs", ec_storm);
 
     soeasy::service::WorkerGuard storm_guard;
-    storm_guard.SetLoggingOptions("warn", false, false, false, "", false, (storm_dir / "logs").string());
+    storm_guard.SetLoggingOptions("debug", false, true, false, "", false, (storm_dir / "logs").string());
     if (!storm_guard.Init(worker_bin, /*worker_count=*/4, /*timeout_ms=*/8000)) {
       std::cerr << "[-] storm_guard Init failed!\n";
       return 1;
@@ -419,14 +362,9 @@ int main(int argc, char *argv[]) {
                         << " err=" << nres.error_message << "\n";
               anomalies.fetch_add(1, std::memory_order_relaxed);
             } else {
-              const uint8_t *ptr = nullptr;
-              size_t len = 0;
-              const bool read_ok = storm_guard.shm_pool()->ReadSlot(nres.slot_id, &ptr, &len);
-              std::string extracted = read_ok ? std::string(reinterpret_cast<const char *>(ptr), len) : "";
-              storm_guard.shm_pool()->ReleaseSlot(nres.slot_id);
-              if (!read_ok || extracted.find(token) == std::string::npos) {
-                std::cerr << "[-] SHM payload mismatch/corruption! expected token=" << token << " got len=" << len
-                          << "\n";
+              std::string extracted = nres.extracted_text;
+              if (extracted.find(token) == std::string::npos) {
+                std::cerr << "[-] RPC payload mismatch! expected token=" << token << "\n";
                 anomalies.fetch_add(1, std::memory_order_relaxed);
               } else {
                 normal_ok.fetch_add(1, std::memory_order_relaxed);
@@ -442,23 +380,6 @@ int main(int argc, char *argv[]) {
       th.join();
     }
 
-    // Verify all SHM slots remain free and allocatable with zero leaks or double-release corruption.
-    const size_t total_slots = storm_guard.shm_pool()->slot_count();
-    std::vector<uint32_t> held_slots;
-    for (size_t s = 0; s < total_slots; ++s) {
-      uint32_t sid = 0;
-      uint8_t *sptr = nullptr;
-      if (!storm_guard.shm_pool()->AllocateSlot(&sid, &sptr)) {
-        std::cerr << "[-] SHM slot leak detected after crash storm! allocated=" << s << "/" << total_slots << "\n";
-        anomalies.fetch_add(1, std::memory_order_relaxed);
-        break;
-      }
-      held_slots.push_back(sid);
-    }
-    for (uint32_t sid : held_slots) {
-      storm_guard.shm_pool()->ReleaseSlot(sid);
-    }
-
     storm_guard.Shutdown();
     std::filesystem::remove_all(storm_dir, ec_storm);
 
@@ -469,13 +390,13 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     std::cout << "[+] 8 线程 x 4 Worker 高并发崩溃风暴通过: crash_ok=" << crash_ok.load()
-              << ", normal_ok=" << normal_ok.load() << ", 槽位 0 泄漏/0 误杀/0 串包!\n\n";
+              << ", normal_ok=" << normal_ok.load() << ", 0 误杀/0 串包!\n\n";
   }
 
   // -------------------------------------------------------------
   // Test 11: Cap'n Proto Chunked Streaming Verification
   // -------------------------------------------------------------
-  std::cout << "[Step 11] 验证 Cap'n Proto 跨进程流式分片传输 (256KB Chunk Streaming)...\n";
+  std::cout << "[Step 12] 验证 Cap'n Proto 跨进程流式分片传输 (256KB Chunk Streaming)...\n";
   std::string stream_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_stream_chunk.txt").string();
   std::string stream_content;
   stream_content.reserve(700 * 1024);
@@ -485,7 +406,7 @@ int main(int argc, char *argv[]) {
   WriteFile(stream_doc_path, stream_content);
 
   soeasy::service::WorkerGuard stream_guard;
-  stream_guard.Init(worker_bin, 1, 3000, 0, 0);
+  stream_guard.Init(worker_bin, 1, 3000);
 
   soeasy::service::ParseTask stream_task{9901, stream_doc_path, "txt", 1};
   soeasy::service::ParseTaskResult stream_res;
@@ -498,7 +419,6 @@ int main(int argc, char *argv[]) {
     reassembled += chunk;
   }
   assert(reassembled == stream_content);
-  stream_guard.shm_pool()->ReleaseSlot(stream_res.slot_id);
   stream_guard.Shutdown();
   std::remove(stream_doc_path.c_str());
   std::cout << "    • 文档大小: " << stream_content.size() << " 字节, 接收分片数: " << stream_res.stream_chunks.size()
@@ -510,7 +430,7 @@ int main(int argc, char *argv[]) {
   std::remove(html_doc_path.c_str());
 
   std::cout << "========================================================\n";
-  std::cout << "🎉 所有验证项全部通过! Phase 2 混合 IPC 与解析沙箱验证圆满成功!\n";
+  std::cout << "🎉 所有验证项全部通过! Cap'n Proto RPC 沙箱实证圆满成功!\n";
   std::cout << "========================================================\n";
   return 0;
 }

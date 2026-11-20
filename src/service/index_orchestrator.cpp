@@ -772,13 +772,6 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
   if (!ok || res.status != TaskStatus::kSuccess) {
-    if (res.slot_id > 0) {
-      worker_guard_->ReleaseSlot(res.slot_id);
-    }
-    if (!res.spill_file_path.empty()) {
-      std::error_code ec;
-      std::filesystem::remove(res.spill_file_path, ec);
-    }
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_parse_failures++;
     LOG_ERROR(
@@ -794,46 +787,9 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     return false;
   }
 
-  // Read extracted plain text from shared memory slot or spill file
-  std::string parsed_text;
-  size_t extracted_bytes = 0;
-
-  struct SpillFileGuard {
-    explicit SpillFileGuard(std::string p) : path(std::move(p)) {}
-    ~SpillFileGuard() {
-      if (!path.empty()) {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-      }
-    }
-    SpillFileGuard(const SpillFileGuard &) = delete;
-    SpillFileGuard &operator=(const SpillFileGuard &) = delete;
-    SpillFileGuard(SpillFileGuard &&) = delete;
-    SpillFileGuard &operator=(SpillFileGuard &&) = delete;
-    std::string path;
-  } spill_guard{res.spill_file_path};
-
-  if (!res.extracted_text.empty()) {
-    parsed_text = std::move(res.extracted_text);
-    extracted_bytes = parsed_text.size();
-  } else if (!res.spill_file_path.empty()) {
-    std::error_code ec;
-    auto ifs = common::EncodingUtils::OpenIfstream(res.spill_file_path);
-    if (ifs.is_open()) {
-      parsed_text.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-      ifs.close();
-      extracted_bytes = parsed_text.size();
-    }
-    std::filesystem::remove(res.spill_file_path, ec);
-    spill_guard.path.clear();
-  } else {
-    const uint8_t *extracted_data = nullptr;
-    bool read_ok = worker_guard_->shm_pool()->ReadSlot(res.slot_id, &extracted_data, &extracted_bytes);
-    if (read_ok && extracted_data && extracted_bytes > 0) {
-      parsed_text.assign(reinterpret_cast<const char *>(extracted_data), extracted_bytes);
-    }
-  }
-  worker_guard_->ReleaseSlot(res.slot_id);
+  // Read extracted plain text directly from Cap'n Proto RPC response
+  std::string parsed_text = std::move(res.extracted_text);
+  size_t extracted_bytes = parsed_text.size();
 
   PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text));
 
@@ -1037,6 +993,7 @@ void IndexOrchestrator::DoApplyRuntimeConfig() {
     worker_guard_->SetLoggingOptions(config_->log_level(), config_->log_console(), config_->log_sync(),
                                      config_->doctotext_logging(), config_->doctotext_log_path(),
                                      config_->enable_embedded_image_ocr());
+    worker_guard_->SetWorkerCount(config_->worker_count());
   }
   const auto profile = config_->resource_profile();
   const auto tuning = common::GetResourceTuning(profile);

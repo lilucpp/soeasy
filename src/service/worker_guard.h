@@ -19,11 +19,12 @@
 #include <thread>
 #include <vector>
 
-#include "common/shm_pool.h"
 #include "subprocess.h"
 
 namespace soeasy {
 namespace service {
+
+class WorkerRpcChannel;
 
 enum class TaskStatus {
   kPending = 0,
@@ -49,7 +50,6 @@ struct ParseTaskResult {
   uint64_t extracted_bytes = 0;
   bool is_scanned_pdf = false;
   std::string error_message;
-  std::string spill_file_path;  // Set when text exceeds slot capacity and spilled to temp file
   std::string extracted_text;   // Streamed directly over Cap'n Proto IPC
   std::vector<std::string> stream_chunks;
   double elapsed_ms = 0.0;
@@ -99,18 +99,18 @@ struct WorkerInstance {
 #else
   int socket_fd = -1;
 #endif
+  std::shared_ptr<WorkerRpcChannel> rpc_channel;
   WorkerState state = WorkerState::kIdle;
   int64_t current_doc_id = 0;
-  uint32_t current_slot_id = 0;
   uint32_t current_timeout_ms = 15000;
   std::chrono::steady_clock::time_point task_start_time;
   std::chrono::steady_clock::time_point idle_start_time;
   uint64_t total_tasks_processed = 0;
 
-  WorkerInstance() = default;
-  ~WorkerInstance() { Reset(); }
-  WorkerInstance(WorkerInstance &&) noexcept = default;
-  WorkerInstance &operator=(WorkerInstance &&) noexcept = default;
+  WorkerInstance();
+  ~WorkerInstance();
+  WorkerInstance(WorkerInstance &&other) noexcept;
+  WorkerInstance &operator=(WorkerInstance &&other) noexcept;
   WorkerInstance(const WorkerInstance &) = delete;
   WorkerInstance &operator=(const WorkerInstance &) = delete;
 
@@ -145,31 +145,20 @@ class WorkerGuard {
   WorkerGuard &operator=(const WorkerGuard &) = delete;
 
   /**
-   * @brief Ensure orphan spill temp files from prior crashed runs are swept and removed.
-   */
-  static void CleanupOrphanSpillFiles();
-
-  /**
-   * @brief Canonical directory path for temporary spilled text files.
-   */
-  static std::string GetSpillDirectory();
-
-  /**
-   * @brief Initialize worker pool and shared memory pool.
+   * @brief Initialize worker pool.
    *
    * @param worker_bin_path Absolute path to soeasy-worker binary, or empty to auto-resolve from executable directory
    * @param worker_count Number of worker processes to spawn
    * @param timeout_ms Max execution time allowed per document before SIGKILL
-   * @param shm_slot_count Number of SHM slots
-   * @param shm_slot_capacity Capacity per slot in bytes
+   * @param deprecated_slot_count Deprecated (previously SHM slot count, ignored)
+   * @param deprecated_slot_capacity Deprecated (previously SHM slot capacity, ignored)
    * @return true on success
    */
   bool Init(const std::string &worker_bin_path, size_t worker_count = 2, uint32_t timeout_ms = kDefaultTimeoutMs,
-            size_t shm_slot_count = common::ShmSlotPool::kDefaultSlotCount,
-            size_t shm_slot_capacity = common::ShmSlotPool::kDefaultSlotCapacity);
+            size_t deprecated_slot_count = 0, size_t deprecated_slot_capacity = 0);
 
   /**
-   * @brief Terminate all workers, stop watchdog thread, and destroy SHM.
+   * @brief Terminate all workers, stop watchdog thread, and close RPC connections.
    */
   void Shutdown();
 
@@ -177,23 +166,19 @@ class WorkerGuard {
    * @brief Dispatch a file parse task to an available worker and block until complete or timeout.
    *
    * @param task Document parsing request
-   * @param out_result Receives execution status, extracted size, and slot reference
+   * @param out_result Receives execution status, extracted size, and text
    * @return true if execution completed (even if status is timeout/crash/failed)
    */
   bool ExecuteTask(const ParseTask &task, ParseTaskResult *out_result);
 
   /**
-   * @brief Access shared memory slot pool for reading zero-copy extracted text.
+   * @brief Deprecated no-op for backward compatibility.
    */
-  common::ShmSlotPool *shm_pool() { return &shm_pool_; }
+  void ReleaseSlot(uint32_t /*slot_id*/ = 0) noexcept {}
 
-  /**
-   * @brief Safely release an allocated slot and notify any waiting worker threads.
-   */
-  void ReleaseSlot(uint32_t slot_id);
-
-  size_t worker_count() const { return workers_.size(); }
+  size_t worker_count() const { return target_worker_count_ > 0 ? target_worker_count_ : workers_.size(); }
   size_t active_worker_count() const;
+  void SetWorkerCount(size_t new_count);
   uint32_t timeout_ms() const { return timeout_ms_; }
   void set_timeout_ms(uint32_t ms) { timeout_ms_ = ms; }
   uint32_t idle_evict_ms() const { return idle_evict_ms_; }
@@ -213,7 +198,7 @@ class WorkerGuard {
   bool SpawnWorkerPosix(size_t index);
 #endif
   void FinalizeSpawnedWorker(size_t index, SubprocessHandle proc, pid_t pid);
-  void FinalizeBusyWorkerOnFailure(size_t worker_idx, uint32_t slot_id, TaskStatus status, const std::string &reason);
+  void FinalizeBusyWorkerOnFailure(size_t worker_idx, TaskStatus status, const std::string &reason);
   static void DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t index, bool log_as_info);
   void RecordWorkerStdio(size_t index, const std::string &line);
   std::string GetRecentWorkerStdio(size_t index) const;
@@ -232,8 +217,8 @@ class WorkerGuard {
   std::string doctotext_log_path_;
   bool embedded_image_ocr_ = false;
   std::string worker_log_dir_ = "logs";
-  common::ShmSlotPool shm_pool_;
 
+  size_t target_worker_count_ = 0;
   std::vector<WorkerInstance> workers_;
   mutable std::mutex stdio_mutex_;
   std::vector<std::deque<std::string>> recent_stdio_;
