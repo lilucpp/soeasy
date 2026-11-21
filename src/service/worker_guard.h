@@ -74,6 +74,7 @@ struct WorkerInstance {
   std::shared_ptr<WorkerRpcChannel> rpc_channel;
   WorkerState state = WorkerState::kIdle;
   uint32_t current_timeout_ms = 60000;
+  size_t tasks_since_mem_check = 0;
   std::chrono::steady_clock::time_point task_start_time;
   std::chrono::steady_clock::time_point idle_start_time;
 
@@ -104,9 +105,10 @@ struct WorkerLoggingOptions {
 
 class WorkerGuard {
  public:
-  static constexpr uint32_t kDefaultTimeoutMs = 60000;                 // 60s default
-  static constexpr uint32_t kDefaultIdleEvictMs = 60000;               // 60s idle eviction
-  static constexpr size_t kDefaultMaxMemoryBytes = 512 * 1024 * 1024;  // 512MB RSS
+  static constexpr uint32_t kDefaultTimeoutMs = 60000;                  // 60s default
+  static constexpr uint32_t kDefaultIdleEvictMs = 60000;                // 60s idle eviction
+  static constexpr size_t kDefaultMaxMemoryBytes = 256 * 1024 * 1024;   // 256MB RSS
+  static constexpr size_t kDefaultMemoryCheckIntervalTasks = 32;
 
   WorkerGuard();
   ~WorkerGuard();
@@ -147,6 +149,15 @@ class WorkerGuard {
   }
   uint32_t idle_evict_ms() const { return idle_evict_ms_.load(std::memory_order_relaxed); }
   void set_idle_evict_ms(uint32_t ms) { idle_evict_ms_.store(ms, std::memory_order_relaxed); }
+  size_t max_memory_bytes() const { return max_memory_bytes_.load(std::memory_order_relaxed); }
+  void set_max_memory_bytes(size_t bytes) { max_memory_bytes_.store(bytes, std::memory_order_relaxed); }
+  size_t memory_check_interval_tasks() const {
+    return memory_check_interval_tasks_.load(std::memory_order_relaxed);
+  }
+  void set_memory_check_interval_tasks(size_t interval) {
+    memory_check_interval_tasks_.store(interval > 0 ? interval : 1, std::memory_order_relaxed);
+  }
+  uint64_t memory_recycle_count() const { return memory_recycle_count_.load(std::memory_order_relaxed); }
 
   void SetLoggingOptions(const WorkerLoggingOptions &options);
   void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
@@ -167,6 +178,9 @@ class WorkerGuard {
   std::string worker_bin_path_;
   std::atomic<uint32_t> timeout_ms_{kDefaultTimeoutMs};
   std::atomic<uint32_t> idle_evict_ms_{kDefaultIdleEvictMs};
+  std::atomic<size_t> max_memory_bytes_{kDefaultMaxMemoryBytes};
+  std::atomic<size_t> memory_check_interval_tasks_{kDefaultMemoryCheckIntervalTasks};
+  std::atomic<uint64_t> memory_recycle_count_{0};
   std::string log_level_ = "info";
   bool log_console_ = false;
   bool log_sync_ = false;

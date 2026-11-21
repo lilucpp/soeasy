@@ -420,6 +420,78 @@ int main(int argc, char *argv[]) {
             << ", 拼装后 100% 一致!\n";
   std::cout << "[+] Cap'n Proto 流式分片传输验证成功!\n\n";
 
+  // -------------------------------------------------------------
+  // Test 12: Task-Boundary Memory Recycling Verification
+  // -------------------------------------------------------------
+  std::cout << "[Step 13] 验证 Worker 任务完成点内存水位检测与持续高压下即时回收...\n";
+  {
+    const std::string mem_doc_path = (std::filesystem::temp_directory_path() / "soeasy_test_mem_recycle.txt").string();
+    const std::string mem_token = "Step13MemoryRecycleVerificationToken";
+    WriteFile(mem_doc_path, mem_token + "\n");
+
+    soeasy::service::WorkerGuard mem_guard;
+    if (!mem_guard.Init(worker_bin, /*worker_count=*/1, /*timeout_ms=*/5000)) {
+      std::cerr << "[-] mem_guard Init failed!\n";
+      std::remove(mem_doc_path.c_str());
+      return 1;
+    }
+
+    // Case A: Back-to-back tasks under continuous load with tight threshold (1 MiB) and interval=1.
+    mem_guard.set_idle_evict_ms(60000);
+    mem_guard.set_max_memory_bytes(1 * 1024 * 1024);
+    mem_guard.set_memory_check_interval_tasks(1);
+
+    for (uint64_t i = 1; i <= 3; ++i) {
+      soeasy::service::ParseTask mtask{9950 + static_cast<int64_t>(i), mem_doc_path, "txt", 1};
+      soeasy::service::ParseTaskResult mres;
+      bool ok = mem_guard.ExecuteTask(mtask, &mres);
+      if (!ok || mres.status != soeasy::service::TaskStatus::kSuccess ||
+          mres.extracted_text.find(mem_token) == std::string::npos || mem_guard.memory_recycle_count() != i ||
+          mem_guard.active_worker_count() != 0) {
+        std::cerr << "[-] Case A failed at iter " << i << ": ok=" << ok
+                  << " status=" << static_cast<int>(mres.status)
+                  << " recycles=" << mem_guard.memory_recycle_count()
+                  << " active=" << mem_guard.active_worker_count() << "\n";
+        mem_guard.Shutdown();
+        std::remove(mem_doc_path.c_str());
+        return 1;
+      }
+    }
+    std::cout << "    • Case A (高压连续任务阈值触发): 3 次连续执行均在任务交接点即时回收, recycle_count="
+              << mem_guard.memory_recycle_count() << "\n";
+
+    // Case B: Healthy worker under default 256 MiB threshold is reused without spurious recycling.
+    mem_guard.set_max_memory_bytes(soeasy::service::WorkerGuard::kDefaultMaxMemoryBytes);
+    mem_guard.set_memory_check_interval_tasks(2);
+    const uint64_t before_recycles = mem_guard.memory_recycle_count();
+    for (int i = 0; i < 4; ++i) {
+      soeasy::service::ParseTask mtask{9960 + i, mem_doc_path, "txt", 1};
+      soeasy::service::ParseTaskResult mres;
+      bool ok = mem_guard.ExecuteTask(mtask, &mres);
+      if (!ok || mres.status != soeasy::service::TaskStatus::kSuccess ||
+          mres.extracted_text.find(mem_token) == std::string::npos) {
+        std::cerr << "[-] Case B task failed at iter " << i << "\n";
+        mem_guard.Shutdown();
+        std::remove(mem_doc_path.c_str());
+        return 1;
+      }
+    }
+    if (mem_guard.memory_recycle_count() != before_recycles || mem_guard.active_worker_count() != 1) {
+      std::cerr << "[-] Case B spurious recycle check failed: before=" << before_recycles
+                << " after=" << mem_guard.memory_recycle_count()
+                << " active=" << mem_guard.active_worker_count() << "\n";
+      mem_guard.Shutdown();
+      std::remove(mem_doc_path.c_str());
+      return 1;
+    }
+    std::cout << "    • Case B (正常 256 MiB 水位复用): 4 次连续执行无误回收, active_workers="
+              << mem_guard.active_worker_count() << "\n";
+
+    mem_guard.Shutdown();
+    std::remove(mem_doc_path.c_str());
+    std::cout << "[+] Worker 任务完成点水位回收与安全复用验证通过!\n\n";
+  }
+
   // Cleanup temporary files
   std::remove(large_doc_path.c_str());
   std::remove(html_doc_path.c_str());

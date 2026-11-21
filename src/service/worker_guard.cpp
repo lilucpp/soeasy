@@ -59,6 +59,7 @@ DetachedWorkerResources WorkerInstance::Detach(WorkerState next_state) noexcept 
   res.process = std::move(process);
   res.stdio_drain_thread = std::move(stdio_drain_thread);
   pid = 0;
+  tasks_since_mem_check = 0;
   state = next_state;
   return res;
 }
@@ -326,10 +327,16 @@ void WorkerGuard::WatchdogLoop() {
             continue;
           }
 
-          if (GetProcessRssBytes(inst.pid) > kDefaultMaxMemoryBytes) {
-            LOG_WARN("[WorkerGuard] Worker {} exceeded memory limit; recycling", i);
-            to_cleanup.push_back(inst.Detach(WorkerState::kIdle));
-            notify_available = true;
+          const size_t max_mem = max_memory_bytes_.load(std::memory_order_relaxed);
+          if (max_mem > 0) {
+            const size_t rss = GetProcessRssBytes(inst.pid);
+            if (rss > max_mem) {
+              LOG_WARN("[WorkerGuard] Worker {} (pid {}) exceeded memory limit while idle ({:.1f} MiB > {:.1f} MiB); recycling",
+                       i, inst.pid, rss / (1024.0 * 1024.0), max_mem / (1024.0 * 1024.0));
+              memory_recycle_count_.fetch_add(1, std::memory_order_relaxed);
+              to_cleanup.push_back(inst.Detach(WorkerState::kIdle));
+              notify_available = true;
+            }
           }
         }
       }
@@ -492,8 +499,29 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       worker.idle_start_time = finish_time;
     } else {
       *out_result = std::move(rpc_res);
-      worker.state = WorkerState::kIdle;
       worker.idle_start_time = finish_time;
+      ++worker.tasks_since_mem_check;
+
+      const size_t max_mem = max_memory_bytes_.load(std::memory_order_relaxed);
+      const size_t check_interval = memory_check_interval_tasks_.load(std::memory_order_relaxed);
+      const bool heavy_task = (out_result->extracted_bytes >= 64 * 1024 || elapsed_ms >= 50.0);
+      bool recycled = false;
+      if (max_mem > 0 && worker.pid > 0 && (heavy_task || worker.tasks_since_mem_check >= check_interval)) {
+        worker.tasks_since_mem_check = 0;
+        const size_t rss = GetProcessRssBytes(worker.pid);
+        if (rss > max_mem) {
+          LOG_WARN(
+              "[WorkerGuard] Worker {} (pid {}) exceeded memory limit at task boundary ({:.1f} MiB > {:.1f} MiB); "
+              "recycling",
+              assigned_worker_idx, worker.pid, rss / (1024.0 * 1024.0), max_mem / (1024.0 * 1024.0));
+          memory_recycle_count_.fetch_add(1, std::memory_order_relaxed);
+          to_cleanup = worker.Detach(WorkerState::kIdle);
+          recycled = true;
+        }
+      }
+      if (!recycled) {
+        worker.state = WorkerState::kIdle;
+      }
     }
     out_result->elapsed_ms = elapsed_ms;
     worker_available_cv_.notify_all();
