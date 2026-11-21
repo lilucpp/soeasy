@@ -138,6 +138,7 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
   }
 
   kj::Promise<void> ping(PingContext context) override {
+    registry_.CheckIdleUnload(60.0);
     auto results = context.getResults();
     results.setRssBytes(0);
     results.setIsBusy(false);
@@ -165,16 +166,14 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
   }
 
   void MaybeTrimHeap(size_t extracted_bytes, double cost_ms) {
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
     ++tasks_since_trim_;
     if (extracted_bytes >= 64 * 1024 || cost_ms >= 15.0 || tasks_since_trim_ >= 32) {
       tasks_since_trim_ = 0;
+      registry_.CheckIdleUnload(60.0);
+#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
       malloc_trim(0);
-    }
-#else
-    (void)extracted_bytes;
-    (void)cost_ms;
 #endif
+    }
   }
 
   ParserRegistry &registry_;

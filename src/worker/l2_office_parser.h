@@ -26,6 +26,7 @@ class L2OfficeParser : public IDocumentParser {
   // IDocumentParser implementation
   bool CanHandle(const ParseContext &ctx) const override { return IsSupported(ctx.ext); }
   bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  void CheckIdleUnload(double idle_seconds = 60.0) override;
   int Priority() const override { return 20; }
   std::string Name() const override { return "L2OfficeParser"; }
 

@@ -16,6 +16,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -28,6 +29,10 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
+#include <malloc.h>
+#endif
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
@@ -56,6 +61,9 @@ static std::string g_dt_log_path = "";
 static std::unique_ptr<std::ofstream> g_dt_file_stream;
 static std::atomic<bool> s_embedded_image_ocr{false};
 static std::atomic<uint64_t> g_dt_tmp_seq{0};
+static std::mutex s_ocr_mutex;
+static std::unique_ptr<ocr::IOcrEngine> s_ocr_engine;
+static auto s_last_embedded_ocr_active_time = std::chrono::steady_clock::now();
 
 /// Convert an ASCII extension string to lowercase safely without unsigned char UB.
 std::string ToLowerAscii(const std::string &s) {
@@ -134,14 +142,13 @@ std::string DocToTextImageParserCallback(const std::string &image_name, const ch
       return "";
     }
 
-    static std::mutex s_ocr_mutex;
-    static std::unique_ptr<ocr::IOcrEngine> s_ocr_engine;
     std::lock_guard<std::mutex> lock(s_ocr_mutex);
     if (!s_ocr_engine) {
       // Use max limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
       s_ocr_engine = ocr::OcrEngineFactory::CreateDefaultEngine("", ocr::OcrMode::kNormal, 640);
     }
     if (!s_ocr_engine) return "";
+    s_last_embedded_ocr_active_time = std::chrono::steady_clock::now();
 
     auto ocr_res = s_ocr_engine->Recognize(img);
     if (ocr_res.success &&
@@ -331,6 +338,22 @@ L2OfficeParser::L2OfficeParser()
     : supported_exts_{"docx", "xlsx",  "pptx",    "pdf", "doc",     "xls",  "ppt",  "rtf",
                       "odt",  "ods",   "odp",     "odg", "fodt",    "fods", "fodp", "xlsb",
                       "eml",  "pages", "numbers", "key", "keynote", "wps",  "et",   "dps"} {}
+
+void L2OfficeParser::CheckIdleUnload(double idle_seconds) {
+  std::lock_guard<std::mutex> lock(s_ocr_mutex);
+  if (!s_ocr_engine) {
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  const double elapsed = std::chrono::duration<double>(now - s_last_embedded_ocr_active_time).count();
+  if (elapsed >= idle_seconds) {
+    s_ocr_engine.reset();
+    LOG_INFO("[OfficeParser] Embedded OCR engine idle for {:.1f}s. Unloaded from memory to reclaim RAM.", elapsed);
+#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
+    malloc_trim(0);
+#endif
+  }
+}
 
 bool L2OfficeParser::IsSupported(const std::string &ext) const {
   return supported_exts_.find(ToLowerAscii(ext)) != supported_exts_.end();

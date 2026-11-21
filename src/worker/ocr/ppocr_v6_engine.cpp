@@ -17,6 +17,9 @@
 #if __has_include(<opencv2/geometry.hpp>)
 #include <opencv2/geometry.hpp>
 #endif
+#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
+#include <malloc.h>
+#endif
 
 #include "common/logger.h"
 #include "worker/ocr/image_filter.h"
@@ -24,6 +27,18 @@
 namespace soeasy {
 namespace worker {
 namespace ocr {
+
+namespace {
+
+struct ScopedHeapTrim {
+  ~ScopedHeapTrim() {
+#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
+    malloc_trim(0);
+#endif
+  }
+};
+
+}  // namespace
 
 PPOCRv6Engine::PPOCRv6Engine()
     : env_(std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "PPOCRv6Engine")),
@@ -259,8 +274,15 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
   OcrResult result;
   if (!initialized_ || bgr_image.empty()) return result;
 
+  // Trim glibc heap after all temporary cv::Mat and Ort::Value buffers leave scope.
+  ScopedHeapTrim heap_trim_guard;
+
   try {
     auto t0 = std::chrono::high_resolution_clock::now();
+
+    Ort::RunOptions default_run_opts{nullptr};
+    Ort::RunOptions shrink_run_opts;
+    shrink_run_opts.AddConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0");
 
     // 1. Detection preprocessing (normalize input once and reuse across detection & crop)
     cv::Mat norm_bgr = ImageFilter::NormalizeToBgr(bgr_image);
@@ -279,8 +301,8 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
     Ort::Value in_tensor =
         Ort::Value::CreateTensor<float>(*mem_info_, det_in.data(), det_in.size(), det_shape.data(), det_shape.size());
 
-    // 2. Run detection session
-    auto det_out = det_session_->Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, 1);
+    // 2. Run detection session and shrink CPU arena immediately after detection completes.
+    auto det_out = det_session_->Run(shrink_run_opts, in_names, &in_tensor, 1, out_names, 1);
     const float *pred = det_out[0].GetTensorData<float>();
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -384,6 +406,11 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
       boxes.push_back(obox);
     }
 
+    // Release detection tensors and input buffer before recognition allocations begin.
+    det_out.clear();
+    det_in.clear();
+    det_in.shrink_to_fit();
+
     // Sort boxes top-to-bottom
     std::sort(boxes.begin(), boxes.end(), [](const OcrBox &a, const OcrBox &b) {
       float ay = (std::min)(a.points[0].y, a.points[1].y);
@@ -415,7 +442,8 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
 
     // 4. Recognition pipeline
     auto tr0 = std::chrono::high_resolution_clock::now();
-    for (const auto &b : boxes) {
+    for (size_t bi = 0; bi < boxes.size(); ++bi) {
+      const auto &b = boxes[bi];
       cv::Mat crop = GetRotateCrop(norm_bgr, b.points);
       if (crop.empty()) continue;
       if (crop.rows > crop.cols * 1.5f) {
@@ -431,7 +459,9 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
       Ort::Value rec_tensor =
           Ort::Value::CreateTensor<float>(*mem_info_, rec_in.data(), rec_in.size(), rec_shape.data(), rec_shape.size());
 
-      auto r_out = rec_session_->Run(Ort::RunOptions{nullptr}, in_names, &rec_tensor, 1, out_names, 1);
+      const bool is_last_box = (bi + 1 == boxes.size());
+      auto r_out = rec_session_->Run(is_last_box ? shrink_run_opts : default_run_opts, in_names, &rec_tensor, 1,
+                                     out_names, 1);
       auto type_info = r_out[0].GetTensorTypeAndShapeInfo();
       auto shape = type_info.GetShape();
       int T = static_cast<int>(shape[1]);
