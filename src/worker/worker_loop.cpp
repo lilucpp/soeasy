@@ -3,9 +3,6 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-#if defined(__GLIBC__) || defined(__linux__)
-#include <malloc.h>
-#endif
 #include <sys/prctl.h>
 #include <unistd.h>
 #endif
@@ -19,6 +16,7 @@
 #include <string>
 
 #include "common/logger.h"
+#include "common/system_env.h"
 #include "soeasy_ipc.capnp.h"
 #include "worker/parser_registry.h"
 
@@ -126,19 +124,17 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     textShared.reset();
 
     return streamPromise.then([this, receiver, is_scanned, text_bytes, cost_ms]() mutable {
+      MaybeTrimHeap(text_bytes, cost_ms);
       auto finishReq = receiver.finishRequest();
       finishReq.setTotalBytes(text_bytes);
       finishReq.setIsScannedPdf(is_scanned);
       finishReq.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
       finishReq.setErrorMsg("Success");
-      return finishReq.send().then([this, text_bytes, cost_ms](auto &&) {
-        MaybeTrimHeap(text_bytes, cost_ms);
-      });
+      return finishReq.send().then([](auto &&) {});
     });
   }
 
   kj::Promise<void> ping(PingContext context) override {
-    registry_.CheckIdleUnload(60.0);
     auto results = context.getResults();
     results.setRssBytes(0);
     results.setIsBusy(false);
@@ -170,9 +166,7 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     if (extracted_bytes >= 64 * 1024 || cost_ms >= 15.0 || tasks_since_trim_ >= 32) {
       tasks_since_trim_ = 0;
       registry_.CheckIdleUnload(60.0);
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-      malloc_trim(0);
-#endif
+      common::SystemEnv::TrimHeap();
     }
   }
 

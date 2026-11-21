@@ -4,7 +4,10 @@
 #ifndef SOEASY_SRC_WORKER_L2_OFFICE_PARSER_H_
 #define SOEASY_SRC_WORKER_L2_OFFICE_PARSER_H_
 
+#include <chrono>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -14,10 +17,14 @@
 namespace soeasy {
 namespace worker {
 
+namespace ocr {
+class IOcrEngine;
+}  // namespace ocr
+
 class L2OfficeParser : public IDocumentParser {
  public:
   L2OfficeParser();
-  ~L2OfficeParser() override = default;
+  ~L2OfficeParser() override;
 
   // Disallow copy and assign
   L2OfficeParser(const L2OfficeParser &) = delete;
@@ -86,7 +93,16 @@ class L2OfficeParser : public IDocumentParser {
   static std::string UnescapeXmlEntities(const std::string &text);
 
  private:
+  std::string RunEmbeddedImageOcr(const std::string &image_name, const char *image_buffer, size_t image_size);
+  void ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext,
+                            std::string *out_utf8_text);
+  static const char *DocToTextImageParserCallbackC(const char *image_name, const char *image_buffer,
+                                                   size_t image_size, void *user_data);
+
   std::unordered_set<std::string> supported_exts_;
+  std::mutex ocr_mutex_;
+  std::unique_ptr<ocr::IOcrEngine> ocr_engine_;
+  std::chrono::steady_clock::time_point last_embedded_ocr_active_time_;
 };
 
 }  // namespace worker

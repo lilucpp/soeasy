@@ -9,6 +9,9 @@
 #include <iostream>
 
 #if defined(__linux__)
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 #include <sys/resource.h>
 #include <unistd.h>
 #elif defined(_WIN32)
@@ -121,6 +124,22 @@ std::string SystemEnv::GetInotifyTuningGuide(int current_watches) {
   guide += "  echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.d/99-inotify.conf && sudo sysctl -p /etc/sysctl.d/99-inotify.conf\n\n";
   guide += "================================================================================";
   return guide;
+}
+
+void SystemEnv::ConfigureAllocator(int max_arenas) noexcept {
+#if defined(__linux__) && defined(__GLIBC__) && defined(M_ARENA_MAX)
+  if (max_arenas > 0) {
+    mallopt(M_ARENA_MAX, max_arenas);
+  }
+#else
+  (void)max_arenas;
+#endif
+}
+
+void SystemEnv::TrimHeap() noexcept {
+#if defined(__linux__) && defined(__GLIBC__)
+  malloc_trim(0);
+#endif
 }
 
 }  // namespace common

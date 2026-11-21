@@ -30,6 +30,13 @@ class SystemEnv {
 
   // Generates user-friendly tuning guide with copy-paste shell command.
   static std::string GetInotifyTuningGuide(int current_watches);
+
+  // Cap glibc malloc arenas early before spawning runtime threads to reduce
+  // multi-arena RSS fragmentation (no-op on non-glibc platforms).
+  static void ConfigureAllocator(int max_arenas = 2) noexcept;
+
+  // Release free heap pages back to the OS on glibc platforms (no-op elsewhere).
+  static void TrimHeap() noexcept;
 };
 
 }  // namespace common

@@ -3,10 +3,6 @@
 #include <iostream>
 #include <string>
 
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-#include <malloc.h>
-#endif
-
 #include "common/logger.h"
 #include "common/system_env.h"
 #include "worker/l2_office_parser.h"
@@ -23,10 +19,7 @@ void RedirectStdinToNull(const char *null_device) {
 }  // namespace
 
 int main(int argc, char *argv[]) {
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-  // Constrain glibc multi-arena memory fragmentation from multi-threaded runtimes (OpenCV / ONNX Runtime)
-  mallopt(M_ARENA_MAX, 2);
-#endif
+  soeasy::common::SystemEnv::ConfigureAllocator(2);
   std::string rpc_addr;
   std::string log_file = "logs/soeasy_worker.log";
   std::string log_level_str = "info";

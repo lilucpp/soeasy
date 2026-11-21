@@ -17,11 +17,9 @@
 #if __has_include(<opencv2/geometry.hpp>)
 #include <opencv2/geometry.hpp>
 #endif
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-#include <malloc.h>
-#endif
 
 #include "common/logger.h"
+#include "common/system_env.h"
 #include "worker/ocr/image_filter.h"
 
 namespace soeasy {
@@ -31,11 +29,7 @@ namespace ocr {
 namespace {
 
 struct ScopedHeapTrim {
-  ~ScopedHeapTrim() {
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-    malloc_trim(0);
-#endif
-  }
+  ~ScopedHeapTrim() { common::SystemEnv::TrimHeap(); }
 };
 
 }  // namespace
@@ -269,6 +263,132 @@ OcrResult PPOCRv6Engine::RecognizeFile(const std::string &file_path) {
   return Recognize(img);
 }
 
+std::vector<OcrBox> PPOCRv6Engine::DetectTextBoxes(const cv::Mat &norm_bgr, const Ort::RunOptions &shrink_run_opts,
+                                                   double *out_det_ms) {
+  auto t0 = std::chrono::high_resolution_clock::now();
+
+  cv::Mat det_img = norm_bgr.clone();
+  cv::Size orig_size = DetResize(det_img, config_.limit_side_len, config_.max_side_limit, 32, config_.det_limit_type);
+  int det_h = det_img.rows, det_w = det_img.cols;
+
+  std::vector<float> det_in = DetPreprocess(det_img);
+  std::vector<int64_t> det_shape = {1, 3, det_h, det_w};
+
+  const char *in_names[] = {"x"};
+  const char *out_names[] = {"fetch_name_0"};
+
+  Ort::Value in_tensor =
+      Ort::Value::CreateTensor<float>(*mem_info_, det_in.data(), det_in.size(), det_shape.data(), det_shape.size());
+
+  // Run detection session and shrink CPU arena immediately after detection completes.
+  auto det_out = det_session_->Run(shrink_run_opts, in_names, &in_tensor, 1, out_names, 1);
+  const float *pred = det_out[0].GetTensorData<float>();
+
+  auto t1 = std::chrono::high_resolution_clock::now();
+  if (out_det_ms) {
+    *out_det_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+  }
+
+  // Postprocess detection map to boxes
+  cv::Mat bin_map(det_h, det_w, CV_8U);
+  for (int i = 0; i < det_h * det_w; ++i) bin_map.data[i] = (pred[i] > config_.det_db_thresh) ? 255 : 0;
+
+  std::vector<std::vector<cv::Point>> contours;
+  cv::findContours(bin_map, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+  float scale_w = float(orig_size.width) / float(det_w);
+  float scale_h = float(orig_size.height) / float(det_h);
+
+  std::vector<OcrBox> boxes;
+  for (const auto &cnt : contours) {
+    if (cnt.size() < 4) continue;
+    cv::RotatedRect min_rect = cv::minAreaRect(cnt);
+    if ((std::min)(min_rect.size.width, min_rect.size.height) < 3.0f) continue;
+
+    float score = 0.f;
+    {
+      cv::Rect bbox = cv::boundingRect(cnt);
+      bbox &= cv::Rect(0, 0, det_w, det_h);
+      if (bbox.area() <= 0) continue;
+      cv::Mat crop_mask = cv::Mat::zeros(bbox.size(), CV_8U);
+      std::vector<cv::Point> shifted = cnt;
+      for (auto &p : shifted) p -= bbox.tl();
+      cv::drawContours(crop_mask, std::vector<std::vector<cv::Point>>{shifted}, 0, cv::Scalar(255), cv::FILLED);
+      float sum = 0.f;
+      int count = 0;
+      for (int y = 0; y < bbox.height; ++y) {
+        for (int x = 0; x < bbox.width; ++x) {
+          if (crop_mask.at<uchar>(y, x) == 255) {
+            sum += pred[(bbox.y + y) * det_w + (bbox.x + x)];
+            count++;
+          }
+        }
+      }
+      if (count > 0) score = sum / count;
+    }
+    if (score < config_.det_box_thresh) continue;
+
+    double peri = cv::arcLength(cnt, true);
+    std::vector<cv::Point> approx;
+    cv::approxPolyDP(cnt, approx, 0.002 * peri, true);
+    if (approx.size() < 4) continue;
+
+    double area = cv::contourArea(approx);
+    double perimeter = cv::arcLength(approx, true);
+    double distance = (perimeter > 1e-4) ? (area * config_.unclip_ratio / perimeter) : 0;
+
+    int ksize = (std::max)(1, (int)std::ceil(distance));
+    // Dilate only within padded bounding ROI to avoid allocating a full det_h x det_w mask per box.
+    const int pad = ksize + 2;
+    cv::Rect roi = cv::boundingRect(approx);
+    const int rx = (std::max)(0, roi.x - pad);
+    const int ry = (std::max)(0, roi.y - pad);
+    const int rw = (std::min)(det_w - rx, roi.width + (roi.x - rx) + pad);
+    const int rh = (std::min)(det_h - ry, roi.height + (roi.y - ry) + pad);
+    cv::Rect exp_roi(rx, ry, rw, rh);
+    if (exp_roi.area() <= 0) continue;
+
+    cv::Mat poly_mask = cv::Mat::zeros(exp_roi.size(), CV_8U);
+    std::vector<cv::Point> local_approx = approx;
+    for (auto &p : local_approx) p -= exp_roi.tl();
+    cv::drawContours(poly_mask, std::vector<std::vector<cv::Point>>{local_approx}, 0, cv::Scalar(255), cv::FILLED);
+
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(ksize, ksize));
+    cv::dilate(poly_mask, poly_mask, kernel);
+
+    std::vector<std::vector<cv::Point>> dilated;
+    cv::findContours(poly_mask, dilated, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (dilated.empty()) continue;
+
+    auto &unclipped = *std::max_element(dilated.begin(), dilated.end(), [](const auto &a, const auto &b) {
+      return cv::contourArea(a) < cv::contourArea(b);
+    });
+
+    cv::RotatedRect rrect = cv::minAreaRect(unclipped);
+    std::vector<cv::Point2f> pts(4);
+    rrect.points(pts.data());
+    for (auto &p : pts) {
+      p += cv::Point2f(static_cast<float>(exp_roi.x), static_cast<float>(exp_roi.y));
+    }
+
+    std::sort(pts.begin(), pts.end(), [](const cv::Point2f &a, const cv::Point2f &b) {
+      if (a.y < b.y - 1e-3f) return true;
+      if (a.y > b.y + 1e-3f) return false;
+      return a.x < b.x;
+    });
+    if (pts[0].x > pts[1].x) std::swap(pts[0], pts[1]);
+    if (pts[2].x > pts[3].x) std::swap(pts[2], pts[3]);
+
+    OcrBox obox;
+    obox.score = score;
+    for (const auto &p : pts) {
+      obox.points.push_back({p.x * scale_w, p.y * scale_h});
+    }
+    boxes.push_back(obox);
+  }
+  return boxes;
+}
+
 OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
   std::lock_guard<std::mutex> lock(mutex_);
   OcrResult result;
@@ -278,138 +398,16 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
   ScopedHeapTrim heap_trim_guard;
 
   try {
-    auto t0 = std::chrono::high_resolution_clock::now();
-
     Ort::RunOptions default_run_opts{nullptr};
     Ort::RunOptions shrink_run_opts;
     shrink_run_opts.AddConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0");
 
-    // 1. Detection preprocessing (normalize input once and reuse across detection & crop)
+    // 1. Detection preprocessing & execution in an isolated RAII scope so all detection buffers release before rec.
     cv::Mat norm_bgr = ImageFilter::NormalizeToBgr(bgr_image);
     if (norm_bgr.empty()) return result;
-    cv::Mat det_img = norm_bgr.clone();
-    cv::Size orig_size =
-        DetResize(det_img, config_.limit_side_len, config_.max_side_limit, 32, config_.det_limit_type);
-    int det_h = det_img.rows, det_w = det_img.cols;
-
-    std::vector<float> det_in = DetPreprocess(det_img);
-    std::vector<int64_t> det_shape = {1, 3, det_h, det_w};
-
-    const char *in_names[] = {"x"};
-    const char *out_names[] = {"fetch_name_0"};
-
-    Ort::Value in_tensor =
-        Ort::Value::CreateTensor<float>(*mem_info_, det_in.data(), det_in.size(), det_shape.data(), det_shape.size());
-
-    // 2. Run detection session and shrink CPU arena immediately after detection completes.
-    auto det_out = det_session_->Run(shrink_run_opts, in_names, &in_tensor, 1, out_names, 1);
-    const float *pred = det_out[0].GetTensorData<float>();
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    result.det_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-    // 3. Postprocess detection map to boxes
-    cv::Mat bin_map(det_h, det_w, CV_8U);
-    for (int i = 0; i < det_h * det_w; ++i) bin_map.data[i] = (pred[i] > config_.det_db_thresh) ? 255 : 0;
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(bin_map, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-
-    float scale_w = float(orig_size.width) / float(det_w);
-    float scale_h = float(orig_size.height) / float(det_h);
-
-    std::vector<OcrBox> boxes;
-    for (const auto &cnt : contours) {
-      if (cnt.size() < 4) continue;
-      cv::RotatedRect min_rect = cv::minAreaRect(cnt);
-      if ((std::min)(min_rect.size.width, min_rect.size.height) < 3.0f) continue;
-
-      float score = 0.f;
-      {
-        cv::Rect bbox = cv::boundingRect(cnt);
-        bbox &= cv::Rect(0, 0, det_w, det_h);
-        if (bbox.area() <= 0) continue;
-        cv::Mat crop_mask = cv::Mat::zeros(bbox.size(), CV_8U);
-        std::vector<cv::Point> shifted = cnt;
-        for (auto &p : shifted) p -= bbox.tl();
-        cv::drawContours(crop_mask, std::vector<std::vector<cv::Point>>{shifted}, 0, cv::Scalar(255), cv::FILLED);
-        float sum = 0.f;
-        int count = 0;
-        for (int y = 0; y < bbox.height; ++y) {
-          for (int x = 0; x < bbox.width; ++x) {
-            if (crop_mask.at<uchar>(y, x) == 255) {
-              sum += pred[(bbox.y + y) * det_w + (bbox.x + x)];
-              count++;
-            }
-          }
-        }
-        if (count > 0) score = sum / count;
-      }
-      if (score < config_.det_box_thresh) continue;
-
-      double peri = cv::arcLength(cnt, true);
-      std::vector<cv::Point> approx;
-      cv::approxPolyDP(cnt, approx, 0.002 * peri, true);
-      if (approx.size() < 4) continue;
-
-      double area = cv::contourArea(approx);
-      double perimeter = cv::arcLength(approx, true);
-      double distance = (perimeter > 1e-4) ? (area * config_.unclip_ratio / perimeter) : 0;
-
-      int ksize = (std::max)(1, (int)std::ceil(distance));
-      // Dilate only within padded bounding ROI to avoid allocating a full det_h x det_w mask per box.
-      const int pad = ksize + 2;
-      cv::Rect roi = cv::boundingRect(approx);
-      const int rx = (std::max)(0, roi.x - pad);
-      const int ry = (std::max)(0, roi.y - pad);
-      const int rw = (std::min)(det_w - rx, roi.width + (roi.x - rx) + pad);
-      const int rh = (std::min)(det_h - ry, roi.height + (roi.y - ry) + pad);
-      cv::Rect exp_roi(rx, ry, rw, rh);
-      if (exp_roi.area() <= 0) continue;
-
-      cv::Mat poly_mask = cv::Mat::zeros(exp_roi.size(), CV_8U);
-      std::vector<cv::Point> local_approx = approx;
-      for (auto &p : local_approx) p -= exp_roi.tl();
-      cv::drawContours(poly_mask, std::vector<std::vector<cv::Point>>{local_approx}, 0, cv::Scalar(255), cv::FILLED);
-
-      cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(ksize, ksize));
-      cv::dilate(poly_mask, poly_mask, kernel);
-
-      std::vector<std::vector<cv::Point>> dilated;
-      cv::findContours(poly_mask, dilated, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-      if (dilated.empty()) continue;
-
-      auto &unclipped = *std::max_element(dilated.begin(), dilated.end(), [](const auto &a, const auto &b) {
-        return cv::contourArea(a) < cv::contourArea(b);
-      });
-
-      cv::RotatedRect rrect = cv::minAreaRect(unclipped);
-      std::vector<cv::Point2f> pts(4);
-      rrect.points(pts.data());
-      for (auto &p : pts) {
-        p += cv::Point2f(static_cast<float>(exp_roi.x), static_cast<float>(exp_roi.y));
-      }
-
-      std::sort(pts.begin(), pts.end(), [](const cv::Point2f &a, const cv::Point2f &b) {
-        if (a.y < b.y - 1e-3f) return true;
-        if (a.y > b.y + 1e-3f) return false;
-        return a.x < b.x;
-      });
-      if (pts[0].x > pts[1].x) std::swap(pts[0], pts[1]);
-      if (pts[2].x > pts[3].x) std::swap(pts[2], pts[3]);
-
-      OcrBox obox;
-      obox.score = score;
-      for (const auto &p : pts) {
-        obox.points.push_back({p.x * scale_w, p.y * scale_h});
-      }
-      boxes.push_back(obox);
-    }
-
-    // Release detection tensors and input buffer before recognition allocations begin.
-    det_out.clear();
-    det_in.clear();
-    det_in.shrink_to_fit();
+    std::vector<OcrBox> boxes = DetectTextBoxes(norm_bgr, shrink_run_opts, &result.det_ms);
+    boxes.erase(std::remove_if(boxes.begin(), boxes.end(), [](const OcrBox &b) { return b.points.size() < 4; }),
+                boxes.end());
 
     // Sort boxes top-to-bottom
     std::sort(boxes.begin(), boxes.end(), [](const OcrBox &a, const OcrBox &b) {
@@ -440,7 +438,9 @@ OcrResult PPOCRv6Engine::Recognize(const cv::Mat &bgr_image) {
       }
     }
 
-    // 4. Recognition pipeline
+    // 2. Recognition pipeline
+    const char *in_names[] = {"x"};
+    const char *out_names[] = {"fetch_name_0"};
     auto tr0 = std::chrono::high_resolution_clock::now();
     for (size_t bi = 0; bi < boxes.size(); ++bi) {
       const auto &b = boxes[bi];

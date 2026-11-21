@@ -54,6 +54,8 @@ class PPOCRv6Engine : public IOcrEngine {
   bool initialized_ = false;
 
   void ApplySessionThreads(Ort::SessionOptions &opts, OcrMode mode);
+  std::vector<OcrBox> DetectTextBoxes(const cv::Mat &norm_bgr, const Ort::RunOptions &shrink_run_opts,
+                                      double *out_det_ms);
 };
 
 }  // namespace ocr

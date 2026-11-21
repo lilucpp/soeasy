@@ -488,6 +488,22 @@ int main(int argc, char *argv[]) {
               << mem_guard.active_worker_count() << "\n";
 
     mem_guard.Shutdown();
+
+    // Case C: Re-initializing WorkerGuard resets memory_recycle_count_ to 0.
+    if (!mem_guard.Init(worker_bin, /*worker_count=*/1, /*timeout_ms=*/5000)) {
+      std::cerr << "[-] Case C re-Init failed!\n";
+      std::remove(mem_doc_path.c_str());
+      return 1;
+    }
+    if (mem_guard.memory_recycle_count() != 0) {
+      std::cerr << "[-] Case C Init did not reset memory_recycle_count_: " << mem_guard.memory_recycle_count() << "\n";
+      mem_guard.Shutdown();
+      std::remove(mem_doc_path.c_str());
+      return 1;
+    }
+    std::cout << "    • Case C (Init 重置统计计数器): recycle_count=" << mem_guard.memory_recycle_count() << "\n";
+
+    mem_guard.Shutdown();
     std::remove(mem_doc_path.c_str());
     std::cout << "[+] Worker 任务完成点水位回收与安全复用验证通过!\n\n";
   }

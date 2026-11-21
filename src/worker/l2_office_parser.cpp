@@ -30,12 +30,9 @@
 #include <unordered_map>
 #include <vector>
 
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-#include <malloc.h>
-#endif
-
 #include "common/encoding_utils.h"
 #include "common/logger.h"
+#include "common/system_env.h"
 #include "doctotext_c_api.h"
 #include "miniz.h"
 #include "utf8.h"
@@ -61,9 +58,6 @@ static std::string g_dt_log_path = "";
 static std::unique_ptr<std::ofstream> g_dt_file_stream;
 static std::atomic<bool> s_embedded_image_ocr{false};
 static std::atomic<uint64_t> g_dt_tmp_seq{0};
-static std::mutex s_ocr_mutex;
-static std::unique_ptr<ocr::IOcrEngine> s_ocr_engine;
-static auto s_last_embedded_ocr_active_time = std::chrono::steady_clock::now();
 
 /// Convert an ASCII extension string to lowercase safely without unsigned char UB.
 std::string ToLowerAscii(const std::string &s) {
@@ -118,56 +112,6 @@ uint64_t GetFileSize(const std::string &path) {
     return size;
   }
   return 0;
-}
-
-std::string DocToTextImageParserCallback(const std::string &image_name, const char *image_buffer, size_t image_size,
-                                         void *user_data) {
-  if (!image_buffer || image_size < 128 || image_size > 30ULL * 1024ULL * 1024ULL) return "";
-
-  const ocr::ImageFilter filter;
-  // 1. Fast zero-copy header probe before decoding (< 1 microsecond, 0 memory allocation)
-  auto dim = ocr::ImageFilter::ProbeBufferDimensions(reinterpret_cast<const uint8_t *>(image_buffer), image_size);
-  if (dim.valid && filter.CheckDimensions(dim.width, dim.height) != ocr::FilterDecision::kPass) {
-    return "";  // Drop icons, bullets, extreme strips, and pixel bombs without decoding
-  }
-
-  try {
-    std::vector<uint8_t> buf(reinterpret_cast<const uint8_t *>(image_buffer),
-                             reinterpret_cast<const uint8_t *>(image_buffer) + image_size);
-    cv::Mat raw_img = cv::imdecode(buf, cv::IMREAD_UNCHANGED);
-    cv::Mat img = ocr::ImageFilter::NormalizeToBgr(raw_img);
-    if (img.empty()) return "";
-
-    if (filter.CheckDecodedImage(img) != ocr::FilterDecision::kPass) {
-      return "";
-    }
-
-    std::lock_guard<std::mutex> lock(s_ocr_mutex);
-    if (!s_ocr_engine) {
-      // Use max limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
-      s_ocr_engine = ocr::OcrEngineFactory::CreateDefaultEngine("", ocr::OcrMode::kNormal, 640);
-    }
-    if (!s_ocr_engine) return "";
-    s_last_embedded_ocr_active_time = std::chrono::steady_clock::now();
-
-    auto ocr_res = s_ocr_engine->Recognize(img);
-    if (ocr_res.success &&
-        ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text) >= filter.options().min_effective_chars) {
-      return ocr_res.full_text;
-    }
-  } catch (const std::exception &e) {
-    LOG_WARN("[OfficeParser] Embedded image OCR failed for {}: {}", image_name, e.what());
-  } catch (...) {
-    LOG_WARN("[OfficeParser] Embedded image OCR failed for {} with unknown exception", image_name);
-  }
-  return "";
-}
-
-const char *DocToTextImageParserCallbackC(const char *image_name, const char *image_buffer, size_t image_size,
-                                          void *user_data) {
-  static thread_local std::string tls_ocr_result;
-  tls_ocr_result = DocToTextImageParserCallback(image_name ? image_name : "", image_buffer, image_size, user_data);
-  return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
 }
 
 /// RAII guard for miniz zip archive handles opened via UTF-8 safe FILE*.
@@ -229,8 +173,93 @@ struct TempFileCleaner {
   }
 };
 
-/// Extract text via DocToText using RAII resource guards and unique per-call temp logs.
-void ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext, std::string *out_utf8_text) {
+/// Dispatch secondary extractors when DocToText yields empty or whitespace-only text.
+bool ApplyFallbackExtractor(const std::string &file_path, const std::string &lower_ext, std::string *out_utf8_text,
+                            bool *is_scanned_pdf) {
+  out_utf8_text->clear();
+  bool ok = false;
+  if (lower_ext == "docx") {
+    ok = L2OfficeParser::ParseDocx(file_path, out_utf8_text);
+  } else if (lower_ext == "xlsx") {
+    ok = L2OfficeParser::ParseXlsx(file_path, out_utf8_text);
+  } else if (lower_ext == "pptx") {
+    ok = L2OfficeParser::ParsePptx(file_path, out_utf8_text);
+  } else if (lower_ext == "pdf") {
+    ok = L2OfficeParser::ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
+  } else if (lower_ext == "doc" || lower_ext == "xls" || lower_ext == "ppt" || lower_ext == "wps" ||
+             lower_ext == "et" || lower_ext == "dps" || lower_ext == "rtf") {
+    ok = L2OfficeParser::ParseLegacyOffice(file_path, lower_ext, out_utf8_text);
+  }
+  if (!ok) {
+    out_utf8_text->clear();
+  }
+  return ok;
+}
+
+}  // namespace
+
+L2OfficeParser::L2OfficeParser()
+    : supported_exts_{"docx", "xlsx",  "pptx",    "pdf", "doc",     "xls",  "ppt",  "rtf",
+                      "odt",  "ods",   "odp",     "odg", "fodt",    "fods", "fodp", "xlsb",
+                      "eml",  "pages", "numbers", "key", "keynote", "wps",  "et",   "dps"},
+      last_embedded_ocr_active_time_(std::chrono::steady_clock::now()) {}
+
+L2OfficeParser::~L2OfficeParser() = default;
+
+std::string L2OfficeParser::RunEmbeddedImageOcr(const std::string &image_name, const char *image_buffer,
+                                                size_t image_size) {
+  if (!image_buffer || image_size < 128 || image_size > 30ULL * 1024ULL * 1024ULL) return "";
+
+  const ocr::ImageFilter filter;
+  // 1. Fast zero-copy header probe before decoding (< 1 microsecond, 0 memory allocation)
+  auto dim = ocr::ImageFilter::ProbeBufferDimensions(reinterpret_cast<const uint8_t *>(image_buffer), image_size);
+  if (dim.valid && filter.CheckDimensions(dim.width, dim.height) != ocr::FilterDecision::kPass) {
+    return "";  // Drop icons, bullets, extreme strips, and pixel bombs without decoding
+  }
+
+  try {
+    std::vector<uint8_t> buf(reinterpret_cast<const uint8_t *>(image_buffer),
+                             reinterpret_cast<const uint8_t *>(image_buffer) + image_size);
+    cv::Mat raw_img = cv::imdecode(buf, cv::IMREAD_UNCHANGED);
+    cv::Mat img = ocr::ImageFilter::NormalizeToBgr(raw_img);
+    if (img.empty()) return "";
+
+    if (filter.CheckDecodedImage(img) != ocr::FilterDecision::kPass) {
+      return "";
+    }
+
+    std::lock_guard<std::mutex> lock(ocr_mutex_);
+    if (!ocr_engine_) {
+      // Use max limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
+      ocr_engine_ = ocr::OcrEngineFactory::CreateDefaultEngine("", ocr::OcrMode::kNormal, 640);
+    }
+    if (!ocr_engine_) return "";
+    last_embedded_ocr_active_time_ = std::chrono::steady_clock::now();
+
+    auto ocr_res = ocr_engine_->Recognize(img);
+    if (ocr_res.success &&
+        ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text) >= filter.options().min_effective_chars) {
+      return ocr_res.full_text;
+    }
+  } catch (const std::exception &e) {
+    LOG_WARN("[OfficeParser] Embedded image OCR failed for {}: {}", image_name, e.what());
+  } catch (...) {
+    LOG_WARN("[OfficeParser] Embedded image OCR failed for {} with unknown exception", image_name);
+  }
+  return "";
+}
+
+const char *L2OfficeParser::DocToTextImageParserCallbackC(const char *image_name, const char *image_buffer,
+                                                         size_t image_size, void *user_data) {
+  if (!user_data) return nullptr;
+  auto *self = static_cast<L2OfficeParser *>(user_data);
+  static thread_local std::string tls_ocr_result;
+  tls_ocr_result = self->RunEmbeddedImageOcr(image_name ? image_name : "", image_buffer, image_size);
+  return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
+}
+
+void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext,
+                                          std::string *out_utf8_text) {
   TempFileCleaner temp_cleaner;
   bool enable_logging = false;
   try {
@@ -260,7 +289,8 @@ void ExtractWithDocToText(const std::string &file_path, const std::string &lower
     }
     doctotext_extractor_params_set_parser_type(params.get(), ResolveDocToTextParserType(lower_ext));
     if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {
-      doctotext_extractor_params_set_image_parser_callback(params.get(), &DocToTextImageParserCallbackC, nullptr);
+      doctotext_extractor_params_set_image_parser_callback(params.get(), &L2OfficeParser::DocToTextImageParserCallbackC,
+                                                           this);
     } else {
       doctotext_extractor_params_set_image_parser_callback(params.get(), nullptr, nullptr);
     }
@@ -309,49 +339,17 @@ void ExtractWithDocToText(const std::string &file_path, const std::string &lower
   }
 }
 
-/// Dispatch secondary extractors when DocToText yields empty or whitespace-only text.
-bool ApplyFallbackExtractor(const std::string &file_path, const std::string &lower_ext, std::string *out_utf8_text,
-                            bool *is_scanned_pdf) {
-  out_utf8_text->clear();
-  bool ok = false;
-  if (lower_ext == "docx") {
-    ok = L2OfficeParser::ParseDocx(file_path, out_utf8_text);
-  } else if (lower_ext == "xlsx") {
-    ok = L2OfficeParser::ParseXlsx(file_path, out_utf8_text);
-  } else if (lower_ext == "pptx") {
-    ok = L2OfficeParser::ParsePptx(file_path, out_utf8_text);
-  } else if (lower_ext == "pdf") {
-    ok = L2OfficeParser::ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
-  } else if (lower_ext == "doc" || lower_ext == "xls" || lower_ext == "ppt" || lower_ext == "wps" ||
-             lower_ext == "et" || lower_ext == "dps" || lower_ext == "rtf") {
-    ok = L2OfficeParser::ParseLegacyOffice(file_path, lower_ext, out_utf8_text);
-  }
-  if (!ok) {
-    out_utf8_text->clear();
-  }
-  return ok;
-}
-
-}  // namespace
-
-L2OfficeParser::L2OfficeParser()
-    : supported_exts_{"docx", "xlsx",  "pptx",    "pdf", "doc",     "xls",  "ppt",  "rtf",
-                      "odt",  "ods",   "odp",     "odg", "fodt",    "fods", "fodp", "xlsb",
-                      "eml",  "pages", "numbers", "key", "keynote", "wps",  "et",   "dps"} {}
-
 void L2OfficeParser::CheckIdleUnload(double idle_seconds) {
-  std::lock_guard<std::mutex> lock(s_ocr_mutex);
-  if (!s_ocr_engine) {
+  std::lock_guard<std::mutex> lock(ocr_mutex_);
+  if (!ocr_engine_) {
     return;
   }
   const auto now = std::chrono::steady_clock::now();
-  const double elapsed = std::chrono::duration<double>(now - s_last_embedded_ocr_active_time).count();
+  const double elapsed = std::chrono::duration<double>(now - last_embedded_ocr_active_time_).count();
   if (elapsed >= idle_seconds) {
-    s_ocr_engine.reset();
+    ocr_engine_.reset();
     LOG_INFO("[OfficeParser] Embedded OCR engine idle for {:.1f}s. Unloaded from memory to reclaim RAM.", elapsed);
-#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
-    malloc_trim(0);
-#endif
+    common::SystemEnv::TrimHeap();
   }
 }
 

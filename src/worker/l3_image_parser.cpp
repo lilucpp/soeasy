@@ -10,12 +10,9 @@
 #include <regex>
 #include <vector>
 
-#if defined(__GLIBC__) || defined(__linux__)
-#include <malloc.h>
-#endif
-
 #include "common/encoding_utils.h"
 #include "common/logger.h"
+#include "common/system_env.h"
 #include "worker/ocr/ocr_engine_factory.h"
 
 namespace soeasy {
@@ -49,9 +46,7 @@ void L3ImageParser::CheckIdleUnload(double idle_seconds) {
   if (elapsed >= idle_seconds) {
     ocr_engine_.reset();
     LOG_INFO("[L3ImageParser] OCR engine idle for {:.1f}s. Unloaded from memory to reclaim RAM.", elapsed);
-#if defined(__GLIBC__) || defined(__linux__)
-    malloc_trim(0);
-#endif
+    common::SystemEnv::TrimHeap();
   }
 }
 

@@ -50,7 +50,7 @@ struct ParseTaskResult {
   double elapsed_ms = 0.0;
 };
 
-enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2, kCrashed = 3 };
+enum class WorkerState { kIdle = 0, kBusy = 1, kKilledByWatchdog = 2, kCrashed = 3, kRecycling = 4 };
 
 struct DetachedWorkerResources {
   SubprocessHandle process;
@@ -173,6 +173,7 @@ class WorkerGuard {
   void RecordWorkerStdio(size_t index, const std::string &line);
   std::string GetRecentWorkerStdio(size_t index) const;
   std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param, size_t index) const;
+  void ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation);
   void WatchdogLoop();
 
   std::string worker_bin_path_;
