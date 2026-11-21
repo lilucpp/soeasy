@@ -123,38 +123,65 @@ bool IsCjkBoundaryPunct3(const char *p) {
   return false;
 }
 
-size_t FindChunkEnd(const char *data, size_t len, size_t start) {
+bool IsTier1Boundary(char c) { return c == '\n' || c == '\r'; }
+
+bool IsTier2AsciiBoundary(char c) { return c == ' ' || c == '\t' || c == ',' || c == ';'; }
+
+size_t FindBoundaryBackward(const char *data, size_t begin_exclusive, size_t end_inclusive) {
+  // Tier 1: Line / paragraph boundary (\n or \r)
+  for (size_t i = end_inclusive; i > begin_exclusive; --i) {
+    if (IsTier1Boundary(data[i - 1])) {
+      return i;
+    }
+  }
+
+  // Tier 2: Whitespace or ASCII / CJK clause punctuation boundary
+  for (size_t i = end_inclusive; i > begin_exclusive; --i) {
+    if (IsTier2AsciiBoundary(data[i - 1])) {
+      return i;
+    }
+    if (i >= begin_exclusive + 3 && IsCjkBoundaryPunct3(data + i - 3)) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+size_t FindChunkEnd(const char *data, size_t len, size_t start, bool *out_discard) {
+  *out_discard = false;
   if (len - start <= kTargetChunkBytes) {
     return len;
   }
   const size_t target = start + kTargetChunkBytes;
   const size_t min_pos = start + kMinChunkBytes;
 
-  // Tier 1: Line / paragraph boundary (\n or \r)
-  for (size_t i = target; i > min_pos; --i) {
-    const char c = data[i - 1];
-    if (c == '\n' || c == '\r') {
-      return i;
-    }
+  // Prefer splitting within the [16KB, 32KB] window
+  const size_t split = FindBoundaryBackward(data, min_pos, target);
+  if (split != 0) {
+    return split;
   }
 
-  // Tier 2: Whitespace or ASCII / CJK punctuation boundary
-  for (size_t i = target; i > min_pos; --i) {
-    const char c = data[i - 1];
-    if (c == ' ' || c == '\t' || c == ',' || c == ';' || c == '.') {
-      return i;
-    }
-    if (i >= start + 3 && IsCjkBoundaryPunct3(data + i - 3)) {
-      return i;
-    }
+  // No boundary in (16KB, 32KB]: an abnormal >16KB delimiter-free run crosses [min_pos, target].
+  // If valid text precedes this abnormal run in (start, min_pos], flush the valid prefix first.
+  const size_t prefix_split = FindBoundaryBackward(data, start, min_pos);
+  if (prefix_split != 0) {
+    return prefix_split;
   }
 
-  // Tier 3: Fallback to a valid UTF-8 codepoint leading byte so we never split a multibyte character
+  // [start, target] contains no boundary at all: discard this entire delimiter-free run.
+  *out_discard = true;
   size_t end = target;
-  while (end > start && (static_cast<unsigned char>(data[end]) & 0xC0) == 0x80) {
-    --end;
+  while (end < len) {
+    const char c = data[end];
+    if (IsTier1Boundary(c) || IsTier2AsciiBoundary(c)) {
+      return end + 1;
+    }
+    if (end + 3 <= len && IsCjkBoundaryPunct3(data + end)) {
+      return end + 3;
+    }
+    ++end;
   }
-  return (end > start) ? end : target;
+  return len;
 }
 
 int EmitWordsForChunk(const std::vector<cppjieba::Word> &words, size_t chunk_base_offset, int flags, void *ctx,
@@ -261,29 +288,23 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
 
   struct Scratch {
     std::string sentence;
-    std::string cleaned;
     std::vector<cppjieba::Word> words;
     std::string lower_token;
   };
   thread_local Scratch tls;
 
-  const size_t total_len = static_cast<size_t>(text_len);
-  const char *src_data = text;
-  size_t src_len = total_len;
-  std::string repaired_utf8;
-
-  if (!utf8::is_valid(text, text + total_len)) {
-    repaired_utf8.reserve(total_len);
-    utf8::replace_invalid(text, text + total_len, std::back_inserter(repaired_utf8));
-    src_data = repaired_utf8.data();
-    src_len = repaired_utf8.size();
-  }
-
+  const size_t src_len = static_cast<size_t>(text_len);
   int rc = SQLITE_OK;
   size_t pos = 0;
   while (pos < src_len) {
-    const size_t end = FindChunkEnd(src_data, src_len, pos);
-    tls.sentence.assign(src_data + pos, end - pos);
+    bool discard = false;
+    const size_t end = FindChunkEnd(text, src_len, pos, &discard);
+    if (discard || !utf8::is_valid(text + pos, text + end)) {
+      pos = end;
+      continue;
+    }
+
+    tls.sentence.assign(text + pos, end - pos);
     tls.words.clear();
 
     // Use precise Cut mode for both query and indexing to maintain accurate token positions and phrase distances
@@ -297,7 +318,6 @@ int xTokenize(Fts5Tokenizer *tokenizer, void *ctx, int flags, const char *text, 
   }
 
   if (tls.sentence.capacity() > 128 * 1024) std::string().swap(tls.sentence);
-  if (tls.cleaned.capacity() > 128 * 1024) std::string().swap(tls.cleaned);
   if (tls.words.capacity() > 16384) std::vector<cppjieba::Word>().swap(tls.words);
   return rc;
 }

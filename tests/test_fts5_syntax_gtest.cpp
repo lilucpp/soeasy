@@ -434,15 +434,15 @@ TEST_F(Fts5SyntaxTest, LargeDocumentChunkedTokenizationPreservesOffsetsAndPhrase
   EXPECT_EQ(hits_char[0].doc_id, 101);
 }
 
-TEST_F(Fts5SyntaxTest, LargeDocumentWithoutNewlinesUtf8BoundarySafety) {
-  // Construct > 80 KB continuous Chinese text with NO newlines and NO spaces (exercises Tier 3 UTF-8 fallback)
-  std::string body;
-  body.reserve(90 * 1024);
+TEST_F(Fts5SyntaxTest, AbnormalDelimiterFreeChunkIsDiscardedWhileSurroundingTextIsIndexed) {
+  // Valid text before and after an abnormal > 40 KB delimiter-free blob (e.g. Base64 / hex dump)
+  std::string body = "异常块前导正常文本天文学家\n";
   const std::string unit = "人工智能神经网络分布式检索";
-  while (body.size() < 80 * 1024) {
+  while (body.size() < 42 * 1024) {
     body += unit;
   }
-  body += "超长无换行尾部词条星际穿越";
+  body += "超长无分隔符异常块内部词条星际穿越";
+  body += "\n异常块后续正常文本量子力学\n";
 
   DocumentIndexEntry entry;
   entry.doc_id = 102;
@@ -455,17 +455,32 @@ TEST_F(Fts5SyntaxTest, LargeDocumentWithoutNewlinesUtf8BoundarySafety) {
   entry.utf8_content = body;
   ASSERT_TRUE(engine_->IndexDocument(entry));
 
-  int total = 0;
-  auto hits = engine_->Search("星际穿越", 10, 0, "", &total);
-  EXPECT_EQ(total, 1);
-  ASSERT_EQ(hits.size(), 1u);
-  EXPECT_EQ(hits[0].doc_id, 102);
+  // Surrounding valid lines must be indexed
+  int total_valid = 0;
+  auto hits_valid = engine_->Search("天文学家 AND 量子力学", 10, 0, "", &total_valid);
+  EXPECT_EQ(total_valid, 1);
+  ASSERT_EQ(hits_valid.size(), 1u);
+  EXPECT_EQ(hits_valid[0].doc_id, 102);
+
+  // The > 40 KB delimiter-free abnormal blob must be discarded
+  int total_discarded = 0;
+  auto hits_discarded = engine_->Search("星际穿越", 10, 0, "", &total_discarded);
+  EXPECT_EQ(total_discarded, 0);
+  EXPECT_TRUE(hits_discarded.empty());
 }
 
 TEST_F(Fts5SyntaxTest, Exact32KBBoundaryFastPathAndChunkedPath) {
+  const std::string line = "normal_line_padding_token_for_32kb_boundary_verification_012345\n";  // 64 bytes
+
   // 1. Exactly 32768 bytes (kTargetChunkBytes fast path)
   const std::string tail_exact = "精确边界尾词甲";
-  std::string body_exact(32768 - tail_exact.size(), 'a');
+  std::string body_exact;
+  body_exact.reserve(32768);
+  while (body_exact.size() + line.size() <= 32768 - tail_exact.size() - 1) {
+    body_exact += line;
+  }
+  body_exact.append(32768 - tail_exact.size() - 1 - body_exact.size(), 'a');
+  body_exact += '\n';
   body_exact += tail_exact;
   ASSERT_EQ(body_exact.size(), 32768u);
 
@@ -481,7 +496,13 @@ TEST_F(Fts5SyntaxTest, Exact32KBBoundaryFastPathAndChunkedPath) {
 
   // 2. Exactly 32769 bytes (1 byte over kTargetChunkBytes -> triggers chunked path)
   const std::string tail_over = "精确边界尾词乙";
-  std::string body_over(32769 - tail_over.size(), 'b');
+  std::string body_over;
+  body_over.reserve(32769);
+  while (body_over.size() + line.size() <= 32769 - tail_over.size() - 1) {
+    body_over += line;
+  }
+  body_over.append(32769 - tail_over.size() - 1 - body_over.size(), 'b');
+  body_over += '\n';
   body_over += tail_over;
   ASSERT_EQ(body_over.size(), 32769u);
 
@@ -510,6 +531,7 @@ TEST_F(Fts5SyntaxTest, Exact32KBBoundaryFastPathAndChunkedPath) {
 
 TEST_F(Fts5SyntaxTest, Tier2CjkPunctuationBoundaryNoNewlines) {
   // > 40 KB Chinese text with NO newlines and NO spaces, only separated by Chinese punctuation (。；！)
+  // Also embeds decimal/version tokens with '.' across the 32KB window to verify '.' is not a split delimiter.
   std::string body;
   body.reserve(48 * 1024);
   const std::string sentence = "搜索引擎采用双数组字典树实现高效中文分词与全文检索。";
@@ -517,6 +539,9 @@ TEST_F(Fts5SyntaxTest, Tier2CjkPunctuationBoundaryNoNewlines) {
     body += sentence;
   }
   body += "标点前词条玄武岩。标点后词条黑曜石；";
+  while (body.size() < 32760) {
+    body += "圆周率3.14159265358979323846版本；";
+  }
   while (body.size() < 44 * 1024) {
     body += sentence;
   }
@@ -536,6 +561,10 @@ TEST_F(Fts5SyntaxTest, Tier2CjkPunctuationBoundaryNoNewlines) {
   EXPECT_EQ(total_near, 1);
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits[0].doc_id, 105);
+
+  int total_pi = 0;
+  auto hits_pi = engine_->Search("\"3.14159265358979323846\"", 10, 0, "", &total_pi);
+  EXPECT_EQ(total_pi, 1);
 }
 
 TEST_F(Fts5SyntaxTest, Tier2AsciiCommaBoundarySingleLineCsv) {
@@ -575,17 +604,16 @@ TEST_F(Fts5SyntaxTest, Tier2AsciiCommaBoundarySingleLineCsv) {
   EXPECT_EQ(h_tail[0].doc_id, 106);
 }
 
-TEST_F(Fts5SyntaxTest, Tier3FourByteUtf8AtExact32KBBoundary) {
-  // Force a 4-byte UTF-8 character (𠀀 = F0 A0 80 80) to straddle byte offset 32768 with no spaces/newlines/punct
-  std::string body(32766, 'x');  // bytes [0..32765]
-  body += "\xF0\xA0\x80\x80";    // bytes [32766..32769] -> byte 32768 is continuation byte 0x80
-  body += "四字节边界词条凤凰涅槃";
+TEST_F(Fts5SyntaxTest, PureDelimiterFreeLargeDocumentIsDiscardedSafely) {
+  // Entire > 40 KB document has no spaces, newlines, or punctuation in [16KB, 32KB] -> discarded safely
+  std::string body(32766, 'x');
+  body += "无分隔符异常块词条凤凰涅槃";
   body.append(8000, 'y');
 
   DocumentIndexEntry entry;
   entry.doc_id = 107;
-  entry.file_path = "/large/utf8_4byte_boundary.txt";
-  entry.file_name = "utf8_4byte_boundary.txt";
+  entry.file_path = "/large/pure_delimiter_free.txt";
+  entry.file_name = "pure_delimiter_free.txt";
   entry.ext = "txt";
   entry.file_size = body.size();
   entry.mtime = 1700000107;
@@ -594,20 +622,28 @@ TEST_F(Fts5SyntaxTest, Tier3FourByteUtf8AtExact32KBBoundary) {
 
   int total = 0;
   auto hits = engine_->Search("凤凰涅槃", 10, 0, "", &total);
-  EXPECT_EQ(total, 1);
-  ASSERT_EQ(hits.size(), 1u);
-  EXPECT_EQ(hits[0].doc_id, 107);
+  EXPECT_EQ(total, 0);
+  EXPECT_TRUE(hits.empty());
 }
 
-TEST_F(Fts5SyntaxTest, LargeDocumentWithInvalidUtf8AndCrlfBoundary) {
-  // Mix invalid UTF-8 bytes and CRLF (\r\n) right across the 32KB boundary
+TEST_F(Fts5SyntaxTest, InvalidUtf8ChunkIsDiscardedWhileValidChunksAreIndexed) {
+  // First chunk (~30 KB) contains invalid UTF-8 bytes -> discarded;
+  // Second chunk (~15 KB after CRLF split boundary) is valid UTF-8 -> indexed normally.
   std::string body;
   body.reserve(45 * 1024);
   const std::string line = "Windows CRLF line content 混合测试行\r\n";
-  while (body.size() < 32767 - 20) {
+  while (body.size() < 28 * 1024) {
     body += line;
   }
-  body += "损坏前词条鲲鹏\xFF\xFE\x80\r\n损坏后词条鸿蒙\r\n";
+  body += "损坏分片内词条鲲鹏\xFF\xFE\x80\r\n";
+  while (body.size() < 32 * 1024) {
+    body += line;
+  }
+  // All bytes in [0, 32KB] belong to the first chunk (which contains invalid UTF-8);
+  // tokens appended after 32KB belong to the second chunk (which is pure valid UTF-8).
+  ASSERT_GE(body.size(), 32 * 1024u);
+
+  body += "合法分片词条鸿蒙\r\n";
   while (body.size() < 42 * 1024) {
     body += line;
   }
@@ -623,11 +659,18 @@ TEST_F(Fts5SyntaxTest, LargeDocumentWithInvalidUtf8AndCrlfBoundary) {
   entry.utf8_content = body;
   ASSERT_TRUE(engine_->IndexDocument(entry));
 
-  int t1 = 0;
-  auto h1 = engine_->Search("鲲鹏 AND 鸿蒙 AND 盘古", 10, 0, "", &t1);
-  EXPECT_EQ(t1, 1);
-  ASSERT_EQ(h1.size(), 1u);
-  EXPECT_EQ(h1[0].doc_id, 108);
+  // The first chunk containing invalid UTF-8 bytes was discarded
+  int t_bad = 0;
+  auto h_bad = engine_->Search("鲲鹏", 10, 0, "", &t_bad);
+  EXPECT_EQ(t_bad, 0);
+  EXPECT_TRUE(h_bad.empty());
+
+  // The second chunk containing valid UTF-8 was indexed normally
+  int t_good = 0;
+  auto h_good = engine_->Search("鸿蒙 AND 盘古", 10, 0, "", &t_good);
+  EXPECT_EQ(t_good, 1);
+  ASSERT_EQ(h_good.size(), 1u);
+  EXPECT_EQ(h_good[0].doc_id, 108);
 }
 
 }  // namespace test
