@@ -3,6 +3,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#if defined(__GLIBC__) || defined(__linux__)
+#include <malloc.h>
+#endif
 #include <sys/prctl.h>
 #include <unistd.h>
 #endif
@@ -65,6 +68,9 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
       result.setMessage("Success");
       result.setExtractedText(doc.utf8_text);
     }
+    const size_t extracted_bytes = doc.utf8_text.size();
+    std::string().swap(doc.utf8_text);
+    MaybeTrimHeap(extracted_bytes, cost_ms);
     return kj::READY_NOW;
   }
 
@@ -83,9 +89,14 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     ctx.ext = ext;
 
     ExtractedDocument doc;
+    auto parse_start = std::chrono::high_resolution_clock::now();
     bool parse_ok = registry_.ParseDocument(ctx, &doc);
+    auto parse_end = std::chrono::high_resolution_clock::now();
+    double cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
     if (!parse_ok) {
+      std::string().swap(doc.utf8_text);
+      MaybeTrimHeap(0, cost_ms);
       auto finishReq = receiver.finishRequest();
       finishReq.setTotalBytes(0);
       finishReq.setIsScannedPdf(false);
@@ -108,17 +119,21 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
         auto req = receiver.sendChunkRequest();
         req.setChunk(kj::ArrayPtr<const kj::byte>(
             reinterpret_cast<const kj::byte *>(textShared->data() + offset), len));
+        textShared.reset();
         return req.send().then([](auto &&) {});
       });
     }
+    textShared.reset();
 
-    return streamPromise.then([receiver, is_scanned, text_bytes]() mutable {
+    return streamPromise.then([this, receiver, is_scanned, text_bytes, cost_ms]() mutable {
       auto finishReq = receiver.finishRequest();
       finishReq.setTotalBytes(text_bytes);
       finishReq.setIsScannedPdf(is_scanned);
       finishReq.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
       finishReq.setErrorMsg("Success");
-      return finishReq.send().then([](auto &&) {});
+      return finishReq.send().then([this, text_bytes, cost_ms](auto &&) {
+        MaybeTrimHeap(text_bytes, cost_ms);
+      });
     });
   }
 
@@ -149,7 +164,21 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     }
   }
 
+  void MaybeTrimHeap(size_t extracted_bytes, double cost_ms) {
+#if !defined(_WIN32) && (defined(__GLIBC__) || defined(__linux__))
+    ++tasks_since_trim_;
+    if (extracted_bytes >= 64 * 1024 || cost_ms >= 15.0 || tasks_since_trim_ >= 32) {
+      tasks_since_trim_ = 0;
+      malloc_trim(0);
+    }
+#else
+    (void)extracted_bytes;
+    (void)cost_ms;
+#endif
+  }
+
   ParserRegistry &registry_;
+  size_t tasks_since_trim_ = 0;
 };
 
 int RunWorkerLoop(const std::string &rpc_addr, ParserRegistry *custom_registry) {
