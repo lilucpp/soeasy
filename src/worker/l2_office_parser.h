@@ -34,6 +34,7 @@ class L2OfficeParser : public IDocumentParser {
   bool CanHandle(const ParseContext &ctx) const override { return IsSupported(ctx.ext); }
   bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
   void CheckIdleUnload(double idle_seconds = 60.0) override;
+  bool is_embedded_ocr_loaded() const;
   int Priority() const override { return 20; }
   std::string Name() const override { return "L2OfficeParser"; }
 
@@ -100,7 +101,7 @@ class L2OfficeParser : public IDocumentParser {
                                                    size_t image_size, void *user_data);
 
   std::unordered_set<std::string> supported_exts_;
-  std::mutex ocr_mutex_;
+  mutable std::mutex ocr_mutex_;
   std::unique_ptr<ocr::IOcrEngine> ocr_engine_;
   std::chrono::steady_clock::time_point last_embedded_ocr_active_time_;
 };

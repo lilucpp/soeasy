@@ -272,7 +272,8 @@ bool WorkerGuard::SpawnWorkerProcess(size_t index, DetachedWorkerResources *out_
   return true;
 }
 
-void WorkerGuard::ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation) {
+void WorkerGuard::ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation,
+                                       bool clear_watchdog_pending) {
   if (!indices || count == 0) {
     return;
   }
@@ -281,14 +282,24 @@ void WorkerGuard::ReleaseRecycledSlots(const size_t *indices, size_t count, uint
     return;
   }
   const auto idle_now = std::chrono::steady_clock::now();
+  bool released_any = false;
   for (size_t k = 0; k < count; ++k) {
     const size_t idx = indices[k];
-    if (idx < workers_.size() && workers_[idx]->state == WorkerState::kRecycling) {
+    if (idx >= workers_.size()) {
+      continue;
+    }
+    if (clear_watchdog_pending) {
+      workers_[idx]->watchdog_cleanup_pending = false;
+    }
+    if (workers_[idx]->state == WorkerState::kRecycling && !workers_[idx]->watchdog_cleanup_pending) {
       workers_[idx]->state = WorkerState::kIdle;
       workers_[idx]->idle_start_time = idle_now;
+      released_any = true;
     }
   }
-  worker_available_cv_.notify_all();
+  if (released_any) {
+    worker_available_cv_.notify_all();
+  }
 }
 
 void WorkerGuard::WatchdogLoop() {
@@ -331,10 +342,11 @@ void WorkerGuard::WatchdogLoop() {
           subprocess_join(inst.process.get(), &exit_code);
           LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
           const bool was_busy = inst.is_busy();
-          to_cleanup.push_back(inst.Detach(was_busy ? WorkerState::kCrashed : WorkerState::kRecycling));
-          if (!was_busy) {
-            recycled_indices.push_back(i);
+          if (was_busy) {
+            inst.watchdog_cleanup_pending = true;
           }
+          to_cleanup.push_back(inst.Detach(was_busy ? WorkerState::kCrashed : WorkerState::kRecycling));
+          recycled_indices.push_back(i);
           continue;
         }
 
@@ -344,7 +356,9 @@ void WorkerGuard::WatchdogLoop() {
           if (elapsed > static_cast<int64_t>(inst.current_timeout_ms) + 1000) {
             LOG_WARN("[WorkerGuard] Watchdog killing worker {}: elapsed={}ms, timeout={}ms", i, elapsed,
                      inst.current_timeout_ms);
+            inst.watchdog_cleanup_pending = true;
             to_cleanup.push_back(inst.Detach(WorkerState::kKilledByWatchdog));
+            recycled_indices.push_back(i);
             continue;
           }
         }
@@ -375,7 +389,7 @@ void WorkerGuard::WatchdogLoop() {
     }
     // Join detached worker processes and drain threads outside pool_mutex_ before unlocking slots.
     to_cleanup.clear();
-    ReleaseRecycledSlots(recycled_indices.data(), recycled_indices.size(), generation);
+    ReleaseRecycledSlots(recycled_indices.data(), recycled_indices.size(), generation, /*clear_watchdog_pending=*/true);
   }
 }
 
@@ -497,6 +511,7 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
   double elapsed_ms = std::chrono::duration<double, std::milli>(finish_time - exec_start_time).count();
 
   DetachedWorkerResources to_cleanup;
+  bool slot_held_for_cleanup = false;
   bool need_release_slot = false;
   {
     std::lock_guard<std::mutex> lock(pool_mutex_);
@@ -514,7 +529,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       out_result->error_message =
           rpc_res.error_message.empty() ? "Task timed out or stalled (killed by watchdog)" : rpc_res.error_message;
       to_cleanup = worker.Detach(WorkerState::kRecycling);
-      need_release_slot = true;
+      slot_held_for_cleanup = true;
+      need_release_slot = !worker.watchdog_cleanup_pending;
     } else if (!rpc_success || rpc_res.status == TaskStatus::kCrashed) {
       out_result->status = TaskStatus::kCrashed;
       std::string diag = GetRecentWorkerStdio(assigned_worker_idx);
@@ -527,7 +543,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
                                        : rpc_res.error_message;
       }
       to_cleanup = worker.Detach(WorkerState::kRecycling);
-      need_release_slot = true;
+      slot_held_for_cleanup = true;
+      need_release_slot = !worker.watchdog_cleanup_pending;
     } else {
       *out_result = std::move(rpc_res);
       worker.idle_start_time = finish_time;
@@ -548,15 +565,21 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
           memory_recycle_count_.fetch_add(1, std::memory_order_relaxed);
           to_cleanup = worker.Detach(WorkerState::kRecycling);
           recycled = true;
+          slot_held_for_cleanup = true;
           need_release_slot = true;
         }
       }
       if (!recycled) {
-        worker.state = WorkerState::kIdle;
+        if (worker.watchdog_cleanup_pending) {
+          worker.state = WorkerState::kRecycling;
+          slot_held_for_cleanup = true;
+        } else {
+          worker.state = WorkerState::kIdle;
+        }
       }
     }
     out_result->elapsed_ms = elapsed_ms;
-    if (!need_release_slot) {
+    if (!slot_held_for_cleanup) {
       worker_available_cv_.notify_all();
     }
   }
@@ -684,14 +707,17 @@ void WorkerGuard::SetWorkerCount(size_t new_count) {
       }
 
       std::vector<DetachedWorkerResources> idle_cleanup;
+      std::vector<size_t> idle_recycled_indices;
       for (size_t i = new_count; i < workers_.size(); ++i) {
         if (workers_[i]->state == WorkerState::kIdle && workers_[i]->HasResources()) {
-          idle_cleanup.push_back(workers_[i]->Detach(WorkerState::kIdle));
+          idle_cleanup.push_back(workers_[i]->Detach(WorkerState::kRecycling));
+          idle_recycled_indices.push_back(i);
         }
       }
       if (!idle_cleanup.empty()) {
         lock.unlock();
         idle_cleanup.clear();
+        ReleaseRecycledSlots(idle_recycled_indices.data(), idle_recycled_indices.size(), generation);
         lock.lock();
       }
 

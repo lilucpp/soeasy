@@ -73,6 +73,7 @@ struct WorkerInstance {
   WorkerPid pid = 0;
   std::shared_ptr<WorkerRpcChannel> rpc_channel;
   WorkerState state = WorkerState::kIdle;
+  bool watchdog_cleanup_pending = false;
   uint32_t current_timeout_ms = 60000;
   size_t tasks_since_mem_check = 0;
   std::chrono::steady_clock::time_point task_start_time;
@@ -173,7 +174,8 @@ class WorkerGuard {
   void RecordWorkerStdio(size_t index, const std::string &line);
   std::string GetRecentWorkerStdio(size_t index) const;
   std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param, size_t index) const;
-  void ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation);
+  void ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation,
+                            bool clear_watchdog_pending = false);
   void WatchdogLoop();
 
   std::string worker_bin_path_;

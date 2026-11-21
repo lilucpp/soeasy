@@ -25,11 +25,8 @@
 #include "common/encoding_utils.h"
 #include "common/logger.h"
 #include "common/resource_profile.h"
+#include "common/system_env.h"
 #include "service/doc_prechecker.h"
-
-#if defined(__linux__) && defined(__GLIBC__)
-#include <malloc.h>
-#endif
 
 namespace soeasy {
 namespace service {
@@ -565,7 +562,6 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
       th.join();
     }
   }
-  // Release scan path list immediately so malloc_trim(0) below can reclaim those heap pages.
   std::vector<std::string>().swap(files_to_index);
 
   if (cancel_scan_.load(std::memory_order_acquire)) {
@@ -591,9 +587,7 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
     SetPersistedIndexState(PersistedIndexState::kReady);
   }
 
-#if defined(__linux__) && defined(__GLIBC__)
-  malloc_trim(0);
-#endif
+  common::SystemEnv::TrimHeap();
   LOG_INFO("[IndexOrchestrator] Initial scan completed. Indexed {}/{} files (concurrency={}).", final_indexed,
            total_files, num_threads);
   return final_indexed;

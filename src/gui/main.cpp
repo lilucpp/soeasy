@@ -16,10 +16,6 @@
 #include <memory>
 #include <string>
 
-#if defined(__linux__) && defined(__GLIBC__)
-#include <malloc.h>
-#endif
-
 #include "common/logger.h"
 #include "common/machine_key_provider.h"
 #include "common/system_env.h"
@@ -33,11 +29,9 @@
 #include "storage/storage_engine.h"
 
 int main(int argc, char *argv[]) {
-#if defined(__linux__) && defined(__GLIBC__)
   // Cap glibc malloc arenas early before spawning Qt/worker/SQLite threads
   // to avoid multi-64MB arena slab retention after bulk indexing.
-  mallopt(M_ARENA_MAX, 2);
-#endif
+  soeasy::common::SystemEnv::ConfigureAllocator(2);
 #ifdef _WIN32
   // Enable Per-Monitor DPI Awareness V2 on Windows 10/11
   // This completely disables blurry OS bitmap scaling (DPI virtualization)

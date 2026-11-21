@@ -15,13 +15,10 @@
 
 #include "common/logger.h"
 #include "common/resource_profile.h"
+#include "common/system_env.h"
 #include "storage/fts5_jieba_tokenizer.h"
 #include "utf8.h"
 #include "zstd.h"
-
-#if defined(__linux__) && defined(__GLIBC__)
-#include <malloc.h>
-#endif
 
 namespace soeasy {
 namespace storage {
@@ -452,9 +449,7 @@ void StorageEngine::ShrinkIdleMemoryUnlocked() {
     sqlite3_db_release_memory(writer_db_);
   }
   reader_pool_.ShrinkMemory();
-#if defined(__linux__) && defined(__GLIBC__)
-  malloc_trim(0);
-#endif
+  common::SystemEnv::TrimHeap();
 }
 
 bool StorageEngine::DoSetBulkMode(bool enable) {

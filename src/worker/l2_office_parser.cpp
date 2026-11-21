@@ -237,6 +237,7 @@ std::string L2OfficeParser::RunEmbeddedImageOcr(const std::string &image_name, c
     last_embedded_ocr_active_time_ = std::chrono::steady_clock::now();
 
     auto ocr_res = ocr_engine_->Recognize(img);
+    last_embedded_ocr_active_time_ = std::chrono::steady_clock::now();
     if (ocr_res.success &&
         ocr::ImageFilter::CountEffectiveChars(ocr_res.full_text) >= filter.options().min_effective_chars) {
       return ocr_res.full_text;
@@ -351,6 +352,11 @@ void L2OfficeParser::CheckIdleUnload(double idle_seconds) {
     LOG_INFO("[OfficeParser] Embedded OCR engine idle for {:.1f}s. Unloaded from memory to reclaim RAM.", elapsed);
     common::SystemEnv::TrimHeap();
   }
+}
+
+bool L2OfficeParser::is_embedded_ocr_loaded() const {
+  std::lock_guard<std::mutex> lock(ocr_mutex_);
+  return ocr_engine_ != nullptr;
 }
 
 bool L2OfficeParser::IsSupported(const std::string &ext) const {

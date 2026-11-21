@@ -12,6 +12,9 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -575,6 +578,101 @@ int main(int argc, char *argv[]) {
   CHECK(!parser.Parse(bad_xlsx, "xlsx", &bad_xlsx_text));
   CHECK(bad_xlsx_text.empty());
   std::cout << "  [+] 异常 XLSX (缺 workbook.xml / 无内容 / 损坏文件) 兜底与失败语义验证通过\n";
+
+  // -------------------------------------------------------------
+  // Test 10: Embedded Image OCR End-to-End, Instance Isolation & CheckIdleUnload
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 10] 验证 DOCX 内嵌图片 OCR 链路、解析器实例隔离与空闲卸载...\n";
+  {
+    struct EmbeddedOcrFlagGuard {
+      ~EmbeddedOcrFlagGuard() { soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(false); }
+    } ocr_flag_guard;
+
+    cv::Mat ocr_img(600, 800, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::putText(ocr_img, "SoEasy Embedded OCR 2026", cv::Point(50, 140), cv::FONT_HERSHEY_SIMPLEX, 1.1,
+                cv::Scalar(0, 0, 0), 2);
+    cv::putText(ocr_img, "Office Pipeline Verification", cv::Point(50, 260), cv::FONT_HERSHEY_SIMPLEX, 1.1,
+                cv::Scalar(0, 0, 0), 2);
+    std::vector<uchar> png_bytes;
+    CHECK(cv::imencode(".png", ocr_img, png_bytes));
+    CHECK(png_bytes.size() >= 128);
+
+    const std::string embedded_docx = test_dir + "/embedded_ocr.docx";
+    {
+      mz_zip_archive zip;
+      std::memset(&zip, 0, sizeof(zip));
+      CHECK(mz_zip_writer_init_file(&zip, embedded_docx.c_str(), 0));
+
+      const std::string content_types =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+          "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n"
+          "  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n"
+          "  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\n"
+          "  <Default Extension=\"png\" ContentType=\"image/png\"/>\n"
+          "  <Override PartName=\"/word/document.xml\""
+          " ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\n"
+          "</Types>";
+      mz_zip_writer_add_mem(&zip, "[Content_Types].xml", content_types.data(), content_types.size(),
+                            MZ_BEST_COMPRESSION);
+
+      const std::string root_rels =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+          "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+          "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>\n"
+          "</Relationships>";
+      mz_zip_writer_add_mem(&zip, "_rels/.rels", root_rels.data(), root_rels.size(), MZ_BEST_COMPRESSION);
+
+      const std::string doc_rels =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+          "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n"
+          "  <Relationship Id=\"rIdImg1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image1.png\"/>\n"
+          "</Relationships>";
+      mz_zip_writer_add_mem(&zip, "word/_rels/document.xml.rels", doc_rels.data(), doc_rels.size(),
+                            MZ_BEST_COMPRESSION);
+      mz_zip_writer_add_mem(&zip, "word/media/image1.png", png_bytes.data(), png_bytes.size(), MZ_BEST_COMPRESSION);
+
+      const std::string doc_xml =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+          "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\""
+          " xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\""
+          " xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n"
+          "  <w:body>\n"
+          "    <w:p><w:r><w:t>EmbeddedAnchorText</w:t></w:r></w:p>\n"
+          "    <w:p><w:r><w:drawing><a:blip r:embed=\"rIdImg1\"/></w:drawing></w:r></w:p>\n"
+          "  </w:body>\n"
+          "</w:document>";
+      mz_zip_writer_add_mem(&zip, "word/document.xml", doc_xml.data(), doc_xml.size(), MZ_BEST_COMPRESSION);
+
+      CHECK(mz_zip_writer_finalize_archive(&zip));
+      CHECK(mz_zip_writer_end(&zip));
+    }
+
+    soeasy::worker::L2OfficeParser embedded_parser;
+    soeasy::worker::L2OfficeParser isolated_parser;
+
+    soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(false);
+    std::string text_disabled;
+    CHECK(embedded_parser.Parse(embedded_docx, "docx", &text_disabled));
+    CHECK(text_disabled.find("EmbeddedAnchorText") != std::string::npos);
+    CHECK(!embedded_parser.is_embedded_ocr_loaded());
+
+    soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(true);
+    std::string text_enabled;
+    CHECK(embedded_parser.Parse(embedded_docx, "docx", &text_enabled));
+    CHECK(text_enabled.find("EmbeddedAnchorText") != std::string::npos);
+
+    std::string lower_ocr = text_enabled;
+    std::transform(lower_ocr.begin(), lower_ocr.end(), lower_ocr.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    CHECK(lower_ocr.find("soeasy") != std::string::npos || lower_ocr.find("2026") != std::string::npos ||
+          lower_ocr.find("office") != std::string::npos);
+    CHECK(embedded_parser.is_embedded_ocr_loaded());
+    CHECK(!isolated_parser.is_embedded_ocr_loaded());
+
+    embedded_parser.CheckIdleUnload(0.0);
+    CHECK(!embedded_parser.is_embedded_ocr_loaded());
+    std::cout << "  [+] DOCX 内嵌图片 OCR 回调 (user_data 透传)、实例隔离及 CheckIdleUnload(0.0) 卸载验证通过\n";
+  }
 
   // Cleanup
   worker_guard.reset();
