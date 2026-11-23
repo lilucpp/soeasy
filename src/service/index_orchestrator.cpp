@@ -157,11 +157,45 @@ IndexOrchestrator::~IndexOrchestrator() {
   IndexOrchestrator::DoStopLiveWatch();
 }
 
-std::mutex &IndexOrchestrator::LockBucketForPath(const std::string &file_path) const {
+class IndexOrchestrator::ScopedPathLock {
+ public:
+  ScopedPathLock(const IndexOrchestrator *owner, const std::string &file_path)
+      : owner_(owner), norm_path_(NormalizeLockPath(file_path)) {
+    if (owner_) {
+      owner_->AcquirePathLock(norm_path_);
+    }
+  }
+  ~ScopedPathLock() {
+    if (owner_) {
+      owner_->ReleasePathLock(norm_path_);
+    }
+  }
+  ScopedPathLock(const ScopedPathLock &) = delete;
+  ScopedPathLock &operator=(const ScopedPathLock &) = delete;
+
+ private:
+  const IndexOrchestrator *owner_;
+  std::string norm_path_;
+};
+
+std::string IndexOrchestrator::NormalizeLockPath(const std::string &file_path) {
   std::string norm = file_path;
   std::replace(norm.begin(), norm.end(), '\\', '/');
-  const size_t bucket = std::hash<std::string>{}(norm) % path_locks_.size();
-  return path_locks_[bucket];
+  return norm;
+}
+
+void IndexOrchestrator::AcquirePathLock(const std::string &norm_path) const {
+  std::unique_lock<std::mutex> lock(in_flight_mutex_);
+  in_flight_cv_.wait(lock, [this, &norm_path]() { return in_flight_paths_.find(norm_path) == in_flight_paths_.end(); });
+  in_flight_paths_.insert(norm_path);
+}
+
+void IndexOrchestrator::ReleasePathLock(const std::string &norm_path) const {
+  {
+    std::lock_guard<std::mutex> lock(in_flight_mutex_);
+    in_flight_paths_.erase(norm_path);
+  }
+  in_flight_cv_.notify_all();
 }
 
 void IndexOrchestrator::StopAndJoinReclaim() {
@@ -530,57 +564,160 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
   const size_t guard_capacity = worker_guard_ ? worker_guard_->worker_count() : 0;
   const size_t worker_concurrency =
       guard_capacity > 0 ? std::min(configured_concurrency, guard_capacity) : configured_concurrency;
-  const size_t num_threads = std::min<size_t>(worker_concurrency, total_files > 0 ? total_files : 1);
+  const size_t num_threads = total_files > 0 ? std::min<size_t>(worker_concurrency, total_files) : 0;
   std::atomic<size_t> file_idx{0};
-  std::atomic<size_t> indexed_count{0};
-  std::atomic<size_t> processed_count{0};
-  std::mutex progress_mutex;
+  std::mutex progress_report_mutex;
+  size_t max_reported_indexed = 0;
   auto last_progress_report = std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
+  size_t finished_workers = 0;
 
-  std::vector<std::thread> workers;
-  workers.reserve(num_threads);
-  for (size_t t = 0; t < num_threads; ++t) {
-    workers.emplace_back([&]() {
-      while (!cancel_scan_.load(std::memory_order_acquire)) {
-        const size_t idx = file_idx.fetch_add(1, std::memory_order_relaxed);
-        if (idx >= total_files) {
+  IndexTaskKind scan_kind = IndexTaskKind::kInitial;
+  {
+    std::lock_guard<std::mutex> task_lock(bg_task_mutex_);
+    if (bg_task_running_) {
+      scan_kind = active_kind_;
+    } else if (phase_.load(std::memory_order_acquire) == OrchestratorPhase::kRebuilding) {
+      scan_kind = IndexTaskKind::kRebuild;
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(active_scan_mutex_);
+    active_scan_running_ = (num_threads > 0);
+    active_scan_kind_ = scan_kind;
+    active_scan_indexed_ = 0;
+    active_scan_processed_ = 0;
+    active_scan_total_ = total_files;
+    if (num_threads > 0) {
+      active_scan_started_at_ = std::chrono::steady_clock::now();
+      active_scan_slots_.assign(num_threads, ActiveScanSlotState{});
+    } else {
+      active_scan_slots_.clear();
+    }
+  }
+
+  if (num_threads > 0) {
+    struct ActiveScanResetGuard {
+      IndexOrchestrator *self;
+      ~ActiveScanResetGuard() {
+        std::lock_guard<std::mutex> lock(self->active_scan_mutex_);
+        self->active_scan_running_ = false;
+        self->active_scan_slots_.clear();
+      }
+    } active_scan_guard{this};
+
+    std::vector<std::thread> workers;
+    workers.reserve(num_threads);
+    for (size_t t = 0; t < num_threads; ++t) {
+      workers.emplace_back([&, t]() {
+        while (!cancel_scan_.load(std::memory_order_acquire)) {
+          const size_t idx = file_idx.fetch_add(1, std::memory_order_relaxed);
+          if (idx >= total_files) {
+            break;
+          }
+          const auto &file_path = files_to_index[idx];
+          {
+            std::lock_guard<std::mutex> lock(active_scan_mutex_);
+            active_scan_slots_[t].active = true;
+            active_scan_slots_[t].file_path = file_path;
+            active_scan_slots_[t].started_at = std::chrono::steady_clock::now();
+          }
+          const bool force_file =
+              force_ocr_reindex && IsEmbeddedOcrCandidateExt(ExtractExtension(ExtractFileName(file_path)));
+          const bool file_ok = IndexSingleFile(file_path, force_file);
+
+          size_t report_indexed = 0;
+          bool should_report = false;
+          {
+            std::lock_guard<std::mutex> lock(active_scan_mutex_);
+            active_scan_slots_[t].active = false;
+            active_scan_slots_[t].file_path.clear();
+            if (file_ok) {
+              ++active_scan_indexed_;
+            }
+            const size_t processed = ++active_scan_processed_;
+            report_indexed = active_scan_indexed_;
+            if (progress_cb) {
+              const auto now = std::chrono::steady_clock::now();
+              if (processed == total_files ||
+                  std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 80) {
+                last_progress_report = now;
+                should_report = true;
+              }
+            }
+          }
+          if (should_report) {
+            std::lock_guard<std::mutex> report_lock(progress_report_mutex);
+            max_reported_indexed = std::max(max_reported_indexed, report_indexed);
+            progress_cb(max_reported_indexed, total_files, file_path);
+          }
+        }
+        {
+          std::lock_guard<std::mutex> lock(active_scan_mutex_);
+          ++finished_workers;
+        }
+        active_scan_cv_.notify_one();
+      });
+    }
+
+    if (progress_cb) {
+      std::unique_lock<std::mutex> lock(active_scan_mutex_);
+      while (finished_workers < num_threads) {
+        active_scan_cv_.wait_for(lock, std::chrono::milliseconds(250),
+                                 [&]() { return finished_workers >= num_threads; });
+        if (finished_workers >= num_threads) {
           break;
         }
-        const auto &file_path = files_to_index[idx];
-        const bool force_file =
-            force_ocr_reindex && IsEmbeddedOcrCandidateExt(ExtractExtension(ExtractFileName(file_path)));
-        if (IndexSingleFile(file_path, force_file)) {
-          indexed_count.fetch_add(1, std::memory_order_relaxed);
-        }
-        const size_t processed = processed_count.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (progress_cb) {
-          std::lock_guard<std::mutex> lock(progress_mutex);
-          const auto now = std::chrono::steady_clock::now();
-          if (processed == total_files ||
-              std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 80) {
+        const auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 250) {
+          std::string oldest_active_path;
+          std::chrono::steady_clock::time_point oldest_start;
+          for (const auto &slot : active_scan_slots_) {
+            if (slot.active && !slot.file_path.empty() &&
+                (oldest_active_path.empty() || slot.started_at < oldest_start)) {
+              oldest_active_path = slot.file_path;
+              oldest_start = slot.started_at;
+            }
+          }
+          if (!oldest_active_path.empty()) {
+            const size_t report_indexed = active_scan_indexed_;
             last_progress_report = now;
-            progress_cb(indexed_count.load(std::memory_order_relaxed), total_files, file_path);
+            lock.unlock();
+            {
+              std::lock_guard<std::mutex> report_lock(progress_report_mutex);
+              max_reported_indexed = std::max(max_reported_indexed, report_indexed);
+              progress_cb(max_reported_indexed, total_files, oldest_active_path);
+            }
+            lock.lock();
           }
         }
       }
-    });
-  }
+    }
 
-  for (auto &th : workers) {
-    if (th.joinable()) {
-      th.join();
+    for (auto &th : workers) {
+      if (th.joinable()) {
+        th.join();
+      }
     }
   }
   std::vector<std::string>().swap(files_to_index);
 
-  if (cancel_scan_.load(std::memory_order_acquire)) {
-    LOG_INFO("[IndexOrchestrator] Initial scan cancelled by user at {}/{} files.",
-             processed_count.load(std::memory_order_relaxed), total_files);
+  size_t final_indexed = 0;
+  size_t final_processed = 0;
+  {
+    std::lock_guard<std::mutex> lock(active_scan_mutex_);
+    final_indexed = active_scan_indexed_;
+    final_processed = active_scan_processed_;
   }
 
-  const size_t final_indexed = indexed_count.load(std::memory_order_relaxed);
+  if (cancel_scan_.load(std::memory_order_acquire)) {
+    LOG_INFO("[IndexOrchestrator] Initial scan cancelled by user at {}/{} files.", final_processed, total_files);
+  }
+
   if (progress_cb) {
-    progress_cb(final_indexed, total_files, "");
+    std::lock_guard<std::mutex> report_lock(progress_report_mutex);
+    max_reported_indexed = std::max(max_reported_indexed, final_indexed);
+    progress_cb(max_reported_indexed, total_files, "");
   }
 
   DoFlushWriteQueue();
@@ -707,7 +844,7 @@ void IndexOrchestrator::ScanDirectoryRecursive(const std::string &dir_path, bool
 }
 
 bool IndexOrchestrator::IndexSingleFile(const std::string &file_path, bool force_reindex) {
-  std::lock_guard<std::mutex> path_lock(LockBucketForPath(file_path));
+  ScopedPathLock path_lock(this, file_path);
   return IndexSingleFileLocked(file_path, force_reindex);
 }
 
@@ -762,7 +899,8 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   auto parse_end = std::chrono::high_resolution_clock::now();
   double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
-  if (!ok || res.status != TaskStatus::kSuccess) {
+  const bool content_extracted = ok && (res.status == TaskStatus::kSuccess || res.status == TaskStatus::kPartialOcr);
+  if (!content_extracted) {
     common::ParseStatus issue_stat = common::ParseStatus::kFailed;
     std::string reason = res.error_message;
     {
@@ -822,8 +960,11 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     failed_files_.erase(file_path);
   }
 
-  PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text),
-                     static_cast<int>(common::ParseStatus::kOk), "");
+  const bool is_partial_ocr = (res.status == TaskStatus::kPartialOcr);
+  const int parse_stat =
+      static_cast<int>(is_partial_ocr ? common::ParseStatus::kPartialOcr : common::ParseStatus::kOk);
+  PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text), parse_stat,
+                     is_partial_ocr ? res.error_message : "");
 
   auto total_end = std::chrono::high_resolution_clock::now();
   double total_cost_ms = std::chrono::duration<double, std::milli>(total_end - start_time).count();
@@ -832,12 +973,22 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     std::lock_guard<std::mutex> lock(stats_mutex_);
     stats_.total_files_indexed++;
     stats_.total_bytes_indexed += extracted_bytes;
+    if (is_partial_ocr) {
+      stats_.total_partial_ocr_files++;
+    }
   }
 
-  LOG_INFO(
-      "[IndexOrchestrator] SUCCESS parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
-      "parse: {:.2f} ms, total: {:.2f} ms",
-      file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms);
+  if (is_partial_ocr) {
+    LOG_WARN(
+        "[IndexOrchestrator] PARTIAL_OCR parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
+        "parse: {:.2f} ms, total: {:.2f} ms | {}",
+        file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms, res.error_message);
+  } else {
+    LOG_INFO(
+        "[IndexOrchestrator] SUCCESS parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
+        "parse: {:.2f} ms, total: {:.2f} ms",
+        file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms);
+  }
 
   return true;
 }
@@ -888,7 +1039,7 @@ bool IndexOrchestrator::ApplyLiveFileChange(const DebouncedEvent &event, bool fr
   auto delete_path_or_subtree = [&](const std::string &target_path) {
     bool handled_as_single_file = false;
     {
-      std::lock_guard<std::mutex> path_lock(LockBucketForPath(target_path));
+      ScopedPathLock path_lock(this, target_path);
       const int64_t doc_id = GenerateDocId(target_path);
       uint64_t dummy_size = 0;
       int64_t dummy_mtime = 0;
@@ -961,7 +1112,7 @@ bool IndexOrchestrator::ApplyLiveFileChange(const DebouncedEvent &event, bool fr
       return true;
     }
     LOG_INFO("[IndexOrchestrator] File {} event: '{}' | triggering index", label, target_path);
-    std::lock_guard<std::mutex> path_lock(LockBucketForPath(target_path));
+    ScopedPathLock path_lock(this, target_path);
     return IndexSingleFileLocked(target_path, /*force_reindex=*/from_reconcile);
   };
 
@@ -1004,6 +1155,36 @@ void IndexOrchestrator::DoFlushWriteQueue() {
 PipelineStats IndexOrchestrator::DoGetStats() const {
   std::lock_guard<std::mutex> lock(stats_mutex_);
   return stats_;
+}
+
+ActiveScanSnapshot IndexOrchestrator::DoGetActiveScanSnapshot() const {
+  std::lock_guard<std::mutex> lock(active_scan_mutex_);
+  ActiveScanSnapshot snap;
+  snap.active = active_scan_running_;
+  snap.task_kind = active_scan_kind_;
+  snap.indexed_count = active_scan_indexed_;
+  snap.processed_count = active_scan_processed_;
+  snap.total_files = active_scan_total_;
+  if (!active_scan_running_) {
+    return snap;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  snap.scan_elapsed_ms = static_cast<uint64_t>(
+      std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::milliseconds>(now - active_scan_started_at_).count()));
+  snap.workers.reserve(active_scan_slots_.size());
+  for (size_t i = 0; i < active_scan_slots_.size(); ++i) {
+    const auto &slot = active_scan_slots_[i];
+    ActiveWorkerStatus ws;
+    ws.worker_index = i;
+    ws.active = slot.active;
+    if (slot.active) {
+      ws.file_path = slot.file_path;
+      ws.elapsed_ms = static_cast<uint64_t>(
+          std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::milliseconds>(now - slot.started_at).count()));
+    }
+    snap.workers.push_back(std::move(ws));
+  }
+  return snap;
 }
 
 void IndexOrchestrator::DoCancelScan() {

@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "service/event_debouncer.h"
 #include "service/index_config.h"
@@ -24,6 +25,7 @@ struct PipelineStats {
   uint64_t total_encrypted_files = 0;
   uint64_t total_parse_timeouts = 0;
   uint64_t total_parse_crashes = 0;
+  uint64_t total_partial_ocr_files = 0;
 };
 
 enum class IndexTaskKind {
@@ -65,6 +67,23 @@ struct BackgroundIndexCallbacks {
   IndexTaskStartedCallback on_started;
   IndexTaskProgressCallback on_progress;
   IndexTaskFinishedCallback on_finished;
+};
+
+struct ActiveWorkerStatus {
+  size_t worker_index = 0;
+  bool active = false;
+  std::string file_path;
+  uint64_t elapsed_ms = 0;
+};
+
+struct ActiveScanSnapshot {
+  bool active = false;
+  IndexTaskKind task_kind = IndexTaskKind::kInitial;
+  size_t indexed_count = 0;
+  size_t processed_count = 0;
+  size_t total_files = 0;
+  uint64_t scan_elapsed_ms = 0;
+  std::vector<ActiveWorkerStatus> workers;
 };
 
 /**
@@ -122,6 +141,7 @@ class IIndexOrchestrator {
   [[nodiscard]] bool is_scan_cancelled() const { return DoIsScanCancelled(); }
 
   [[nodiscard]] PipelineStats GetStats() const { return DoGetStats(); }
+  [[nodiscard]] ActiveScanSnapshot GetActiveScanSnapshot() const { return DoGetActiveScanSnapshot(); }
 
  protected:
   virtual bool DoInit() = 0;
@@ -161,6 +181,7 @@ class IIndexOrchestrator {
   [[nodiscard]] virtual bool DoIsScanCancelled() const = 0;
 
   [[nodiscard]] virtual PipelineStats DoGetStats() const = 0;
+  [[nodiscard]] virtual ActiveScanSnapshot DoGetActiveScanSnapshot() const { return {}; }
 };
 
 }  // namespace service

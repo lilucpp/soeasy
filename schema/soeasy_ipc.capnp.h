@@ -37,6 +37,7 @@ enum class ParseStatusCode_a6dec0bc62f9cc8e: uint16_t {
   UNSUPPORTED,
   CRASHED,
   ENCRYPTED,
+  PARTIAL_OCR,
 };
 CAPNP_DECLARE_ENUM(ParseStatusCode, a6dec0bc62f9cc8e);
 CAPNP_DECLARE_SCHEMA(92a5148d5bfad478);
@@ -957,6 +958,8 @@ public:
 
   inline  ::soeasy::ipc::ParseLevel getLevel() const;
 
+  inline  ::uint32_t getTimeoutMs() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1004,6 +1007,9 @@ public:
 
   inline  ::soeasy::ipc::ParseLevel getLevel();
   inline void setLevel( ::soeasy::ipc::ParseLevel value);
+
+  inline  ::uint32_t getTimeoutMs();
+  inline void setTimeoutMs( ::uint32_t value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -1145,6 +1151,8 @@ public:
   inline  ::soeasy::ipc::TextStreamReceiver::Client getReceiver() const;
 #endif  // !CAPNP_LITE
 
+  inline  ::uint32_t getTimeoutMs() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1201,6 +1209,9 @@ public:
   inline void adoptReceiver(::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver>&& value);
   inline ::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver> disownReceiver();
 #endif  // !CAPNP_LITE
+
+  inline  ::uint32_t getTimeoutMs();
+  inline void setTimeoutMs( ::uint32_t value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -1874,6 +1885,20 @@ inline void WorkerAgent::ParseFileParams::Builder::setLevel( ::soeasy::ipc::Pars
       ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
 }
 
+inline  ::uint32_t WorkerAgent::ParseFileParams::Reader::getTimeoutMs() const {
+  return _reader.getDataField< ::uint32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint32_t WorkerAgent::ParseFileParams::Builder::getTimeoutMs() {
+  return _builder.getDataField< ::uint32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void WorkerAgent::ParseFileParams::Builder::setTimeoutMs( ::uint32_t value) {
+  _builder.setDataField< ::uint32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
 inline bool WorkerAgent::ParseFileResults::Reader::hasResult() const {
   return !_reader.getPointerField(
       ::capnp::bounded<0>() * ::capnp::POINTERS).isNull();
@@ -2047,6 +2072,20 @@ inline ::capnp::Orphan< ::soeasy::ipc::TextStreamReceiver> WorkerAgent::ParseFil
       ::capnp::bounded<2>() * ::capnp::POINTERS));
 }
 #endif  // !CAPNP_LITE
+
+inline  ::uint32_t WorkerAgent::ParseFileStreamParams::Reader::getTimeoutMs() const {
+  return _reader.getDataField< ::uint32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline  ::uint32_t WorkerAgent::ParseFileStreamParams::Builder::getTimeoutMs() {
+  return _builder.getDataField< ::uint32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void WorkerAgent::ParseFileStreamParams::Builder::setTimeoutMs( ::uint32_t value) {
+  _builder.setDataField< ::uint32_t>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
 
 inline  ::uint64_t WorkerAgent::PingResults::Reader::getRssBytes() const {
   return _reader.getDataField< ::uint64_t>(

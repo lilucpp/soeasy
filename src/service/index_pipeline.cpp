@@ -175,6 +175,10 @@ PipelineStats IndexPipeline::GetStats() const {
   return orchestrator_ ? orchestrator_->GetStats() : PipelineStats{};
 }
 
+ActiveScanSnapshot IndexPipeline::GetActiveScanSnapshot() const {
+  return orchestrator_ ? orchestrator_->GetActiveScanSnapshot() : ActiveScanSnapshot{};
+}
+
 common::ParseStatusSummary IndexPipeline::GetParseStatusSummary() const {
   return search_coordinator_ ? search_coordinator_->GetParseStatusSummary() : common::ParseStatusSummary{};
 }

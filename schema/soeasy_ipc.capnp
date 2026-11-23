@@ -17,6 +17,7 @@ enum ParseStatusCode {
   unsupported @3;
   crashed     @4;
   encrypted   @5;
+  partialOcr  @6;
 }
 
 struct ParseResult {
@@ -40,9 +41,9 @@ interface TextStreamReceiver {
 }
 
 interface WorkerAgent {
-  parseFile       @0 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel)
+  parseFile       @0 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, timeoutMs :UInt32)
                   -> (result :ParseResult);
-  parseFileStream @1 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, receiver :TextStreamReceiver)
+  parseFileStream @1 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, receiver :TextStreamReceiver, timeoutMs :UInt32)
                   -> ();
   ping            @2 () -> (rssBytes :UInt64, isBusy :Bool);
 }

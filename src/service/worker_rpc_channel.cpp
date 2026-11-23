@@ -38,6 +38,9 @@ class TextStreamReceiverImpl final : public soeasy::ipc::TextStreamReceiver::Ser
         case soeasy::ipc::ParseStatusCode::OK:
           out_->status = TaskStatus::kSuccess;
           break;
+        case soeasy::ipc::ParseStatusCode::PARTIAL_OCR:
+          out_->status = TaskStatus::kPartialOcr;
+          break;
         case soeasy::ipc::ParseStatusCode::ENCRYPTED:
           out_->status = TaskStatus::kEncrypted;
           break;
@@ -205,6 +208,7 @@ void WorkerRpcChannel::Loop() {
           rpcReq.setExt(req->task.ext);
           rpcReq.setLevel(static_cast<soeasy::ipc::ParseLevel>(req->task.parse_level));
           rpcReq.setReceiver(kj::heap<TextStreamReceiverImpl>(result));
+          rpcReq.setTimeoutMs(req->timeout_ms);
 
           auto sendPromise = rpcReq.send().ignoreResult();
           auto cancelTask = taskCancelPaf.promise.then([]() { KJ_FAIL_REQUIRE("Worker RPC call cancelled"); });

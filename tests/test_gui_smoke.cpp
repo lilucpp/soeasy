@@ -27,6 +27,7 @@
 #include "gui/content_preview_dialog.h"
 #include "gui/hover_preview_popup.h"
 #include "gui/i18n.h"
+#include "gui/index_progress_dialog.h"
 #include "gui/main_window.h"
 #include "gui/parse_issues_dialog.h"
 #include "gui/result_view.h"
@@ -908,6 +909,100 @@ int main(int argc, char *argv[]) {
     CHECK(blank_preview.content.empty());
     const QString blank_html = soeasy::gui::DocumentViewerWidget::BuildStatusNoticeHtml(blank_preview);
     CHECK(!blank_html.contains("%PDF-"));
+
+    // Partial OCR documents must still allow full text preview + appear in ParseIssuesDialog
+    const QString partial_odt_path = QString::fromStdString(preview_dir) + "/partial_ocr_preview.odt";
+    WriteFile(partial_odt_path.toStdString(), "dummy odt zip placeholder");
+    CHECK(storage->IndexDocument(990005, partial_odt_path.toStdString(), "partial_ocr_preview.odt", "odt", 2048,
+                                 1700000204, 1, "PartialOcrExtractedBodyText",
+                                 static_cast<int>(soeasy::common::ParseStatus::kPartialOcr),
+                                 "OCR budget reached"));
+    auto partial_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(
+        990005, partial_odt_path, pipeline->search_coordinator());
+    CHECK(partial_preview.has_content);
+    CHECK(partial_preview.parse_status == soeasy::common::ParseStatus::kPartialOcr);
+    CHECK(partial_preview.content.find("PartialOcrExtractedBodyText") != std::string::npos);
+
+    {
+      soeasy::gui::ParseIssuesDialog issues_dlg(pipeline->search_coordinator());
+      issues_dlg.Reload();
+      auto *tbl = issues_dlg.findChild<QTableWidget *>();
+      auto *combo = issues_dlg.findChild<QComboBox *>();
+      CHECK(tbl != nullptr && combo != nullptr);
+      CHECK(tbl->rowCount() >= 1);
+      const int partial_idx = combo->findData(static_cast<int>(soeasy::common::ParseStatus::kPartialOcr));
+      CHECK(partial_idx >= 0);
+      combo->setCurrentIndex(partial_idx);
+      app.processEvents();
+      CHECK(tbl->rowCount() == 1);
+      CHECK(tbl->item(0, 1)->text() == "partial_ocr_preview.odt");
+    }
+
+    // Status bar badge + [Details] button & IndexProgressDialog lifecycle (cancel sync, RetranslateUi, has_followup, auto-close)
+    {
+      pipeline->PerformInitialScan();  // Reset any prior CancelScan state from earlier MainWindow teardown
+      soeasy::gui::MainWindow detail_win(pipeline);
+      detail_win.show();
+      app.processEvents();
+      auto *parse_btn = detail_win.findChild<QPushButton *>("statusParseBtn");
+      CHECK(parse_btn != nullptr && parse_btn->text().contains("部分OCR"));
+      auto *detail_btn = detail_win.findChild<QPushButton *>("statusDetailBtn");
+      auto *cancel_btn = detail_win.findChild<QPushButton *>("statusCancelBtn");
+      CHECK(detail_btn != nullptr && !detail_btn->isVisible());
+      CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexTaskStarted", Qt::DirectConnection, Q_ARG(int, 1),
+                                      Q_ARG(quint64, 42)));
+      app.processEvents();
+      CHECK(detail_btn->isVisible());
+      detail_btn->click();
+      app.processEvents();
+      auto *progress_dlg = detail_win.findChild<soeasy::gui::IndexProgressDialog *>();
+      CHECK(progress_dlg != nullptr && progress_dlg->isVisible());
+      progress_dlg->Refresh();
+      // has_followup = true must keep detail dialog & button active
+      CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexFinished", Qt::DirectConnection, Q_ARG(int, 1),
+                                      Q_ARG(int, 5), Q_ARG(bool, false), Q_ARG(double, 0.5),
+                                      Q_ARG(bool, true), Q_ARG(quint64, 42)));
+      app.processEvents();
+      CHECK(progress_dlg->isVisible());
+
+      // Cancel inside IndexProgressDialog must use plain-text cancelling label and disable statusCancelBtn
+      auto dlg_btns = progress_dlg->findChildren<QPushButton *>();
+      CHECK(dlg_btns.size() >= 2);
+      dlg_btns.front()->click();
+      app.processEvents();
+      CHECK(!dlg_btns.front()->isEnabled());
+      CHECK(!dlg_btns.front()->text().contains("<span"));
+      CHECK(!cancel_btn->isEnabled());
+      progress_dlg->RetranslateUi();
+      CHECK(!dlg_btns.front()->text().contains("<span"));
+
+      // has_followup = false must hide [Details] button and auto-close IndexProgressDialog
+      CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexFinished", Qt::DirectConnection, Q_ARG(int, 1),
+                                      Q_ARG(int, 10), Q_ARG(bool, true), Q_ARG(double, 1.5),
+                                      Q_ARG(bool, false), Q_ARG(quint64, 42)));
+      app.processEvents();
+      CHECK(!detail_btn->isVisible());
+      CHECK(!progress_dlg->isVisible());
+
+      // Reverse sync: clicking statusCancelBtn must disable IndexProgressDialog cancel button as well
+      pipeline->PerformInitialScan();
+      CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexTaskStarted", Qt::DirectConnection, Q_ARG(int, 1),
+                                      Q_ARG(quint64, 43)));
+      app.processEvents();
+      detail_btn->click();
+      app.processEvents();
+      CHECK(cancel_btn->isEnabled() && dlg_btns.front()->isEnabled());
+      cancel_btn->click();
+      app.processEvents();
+      CHECK(!cancel_btn->isEnabled());
+      CHECK(!dlg_btns.front()->isEnabled());
+      CHECK(!dlg_btns.front()->text().contains("<span"));
+      CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexFinished", Qt::DirectConnection, Q_ARG(int, 1),
+                                      Q_ARG(int, 0), Q_ARG(bool, true), Q_ARG(double, 0.2),
+                                      Q_ARG(bool, false), Q_ARG(quint64, 43)));
+      app.processEvents();
+      CHECK(!progress_dlg->isVisible());
+    }
 
     auto unindexed_pdf_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(
         0, locked_pdf_path, pipeline->search_coordinator());

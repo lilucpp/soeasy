@@ -618,6 +618,137 @@ TEST_F(IndexStateMachineTest, SmallPdfIndexedAndFailureReasonsSurviveColdRestart
   EXPECT_EQ(rebooted->GetParseIssues(std::nullopt).size(), 2u);
 }
 
+TEST_F(IndexStateMachineTest, CollidingHashPathsDoNotBlockAndHeartbeatReportsSlowInFlight) {
+  InitPipeline();
+
+  // Construct two completely distinct file paths whose normalized hashes collide mod 64 (the old bucket count).
+  const std::filesystem::path slow_path = dir_a_ / "slow_colliding_TEST_TRIGGER_HANG.txt";
+  auto norm_path = [](std::string s) {
+    std::replace(s.begin(), s.end(), '\\', '/');
+    return s;
+  };
+  const size_t slow_bucket = std::hash<std::string>{}(norm_path(slow_path.string())) % 64;
+
+  std::filesystem::path fast_path;
+  for (int i = 0; i < 1000; ++i) {
+    const auto cand = dir_a_ / ("fast_colliding_" + std::to_string(i) + ".txt");
+    if (std::hash<std::string>{}(norm_path(cand.string())) % 64 == slow_bucket) {
+      fast_path = cand;
+      break;
+    }
+  }
+  ASSERT_FALSE(fast_path.empty());
+
+  WriteFile(slow_path, "hangs inside worker RPC");
+  WriteFile(fast_path, "FastCollidingToken2026");
+
+  config_->SetIndexedDirectories({dir_a_.string()});
+  config_->SetSupportedExtensions({"txt"});
+
+  std::mutex cb_mutex;
+  bool fast_finished_while_slow_active = false;
+  bool heartbeat_reported_slow = false;
+  ActiveScanSnapshot observed_snapshot;
+  std::condition_variable cb_cv;
+
+  std::thread scan_thread([&]() {
+    pipeline_->PerformInitialScan([&](size_t indexed, size_t total, const std::string &path) {
+      std::lock_guard<std::mutex> lock(cb_mutex);
+      if (indexed >= 1 && path.find("slow_colliding_TEST_TRIGGER_HANG") != std::string::npos) {
+        heartbeat_reported_slow = true;
+      }
+      if (indexed >= 1) {
+        fast_finished_while_slow_active = true;
+      }
+      cb_cv.notify_all();
+    });
+  });
+
+  // 1. Even though slow_path and fast_path collide mod 64, fast_path MUST complete quickly on Worker 2,
+  //    AND the 250ms stall heartbeat must report the active slow_path, AND GetActiveScanSnapshot must expose it.
+  {
+    std::unique_lock<std::mutex> lock(cb_mutex);
+    ASSERT_TRUE(cb_cv.wait_for(lock, std::chrono::seconds(5),
+                               [&]() { return fast_finished_while_slow_active && heartbeat_reported_slow; }));
+  }
+
+  observed_snapshot = pipeline_->GetActiveScanSnapshot();
+  EXPECT_TRUE(observed_snapshot.active);
+  EXPECT_EQ(observed_snapshot.total_files, 2u);
+  EXPECT_EQ(observed_snapshot.indexed_count, 1u);
+  EXPECT_EQ(observed_snapshot.workers.size(), 2u);
+  bool found_slow_worker = false;
+  for (const auto &ws : observed_snapshot.workers) {
+    if (ws.active && ws.file_path == slow_path.string()) {
+      found_slow_worker = true;
+    }
+  }
+  EXPECT_TRUE(found_slow_worker);
+
+  // Stop scan & hung worker cleanly without waiting 60s timeout
+  pipeline_->CancelScan();
+  if (worker_guard_) {
+    worker_guard_->Shutdown();
+  }
+  scan_thread.join();
+
+  // After scan exits, GetActiveScanSnapshot must revert to inactive
+  EXPECT_FALSE(pipeline_->GetActiveScanSnapshot().active);
+
+  // fast_colliding file must already be searchable in storage
+  const auto hits = pipeline_->SearchFulltext("FastCollidingToken2026", 10);
+  ASSERT_EQ(hits.size(), 1u);
+  EXPECT_EQ(hits[0].file_path, fast_path.string());
+}
+
+TEST_F(IndexStateMachineTest, EmptyScanLeavesSnapshotInactiveAndSamePathSerializes) {
+  InitPipeline();
+
+  // 1. Empty directory scan (total_files == 0) completes cleanly without hanging or leaving active snapshot
+  config_->SetIndexedDirectories({dir_b_.string()});
+  config_->SetSupportedExtensions({"txt"});
+  EXPECT_EQ(pipeline_->PerformInitialScan(), 0u);
+  EXPECT_FALSE(pipeline_->GetActiveScanSnapshot().active);
+
+  // 2. Concurrent initial scan + live watch event on the exact same normalized path must serialize cleanly
+  const std::filesystem::path target = dir_b_ / "same_path_target.txt";
+  WriteFile(target, "InitialVersionAlpha");
+  EXPECT_EQ(pipeline_->PerformInitialScan(), 1u);
+
+  WriteFile(target, "UpdatedVersionBeta");
+  DebouncedEvent ev;
+#ifdef _WIN32
+  std::string win_variant = target.string();
+  std::replace(win_variant.begin(), win_variant.end(), '/', '\\');
+  ev.file_path = win_variant;
+#else
+  ev.file_path = target.string();
+#endif
+  ev.action = FileChangeAction::kModified;
+
+  std::thread t_live([&]() { pipeline_->HandleFileChange(ev); });
+  std::thread t_scan([&]() { pipeline_->PerformInitialScan(); });
+  t_live.join();
+  t_scan.join();
+
+  pipeline_->FlushWriteQueue();
+  const auto updated_hits = pipeline_->SearchFulltext("UpdatedVersionBeta", 10);
+  EXPECT_EQ(updated_hits.size(), 1u);
+
+  // 3. Empty scan AFTER a non-empty scan must return 0 (no stale active_scan_indexed_ carry-over)
+  config_->SetIndexedDirectories({outside_dir_.string()});
+  size_t empty_cb_indexed = 999;
+  size_t empty_cb_total = 999;
+  EXPECT_EQ(pipeline_->PerformInitialScan([&](size_t indexed, size_t total, const std::string &) {
+    empty_cb_indexed = indexed;
+    empty_cb_total = total;
+  }),
+            0u);
+  EXPECT_EQ(empty_cb_indexed, 0u);
+  EXPECT_EQ(empty_cb_total, 0u);
+  EXPECT_FALSE(pipeline_->GetActiveScanSnapshot().active);
+}
+
 }  // namespace
 }  // namespace service
 }  // namespace soeasy

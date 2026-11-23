@@ -39,6 +39,7 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     ctx.doc_id = doc_id;
     ctx.file_path = file_path;
     ctx.ext = ext;
+    ctx.timeout_ms = params.getTimeoutMs() > 0 ? params.getTimeoutMs() : 60000;
 
     ExtractedDocument doc;
     auto parse_start = std::chrono::high_resolution_clock::now();
@@ -57,13 +58,20 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
       result.setPageCount(0);
       result.setMessage(failure.second);
     } else {
-      LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path, ext,
-               doc.utf8_text.size(), cost_ms);
-      result.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
+      const bool partial_ocr = (doc.outcome == ParseOutcome::kPartialOcr);
+      if (partial_ocr) {
+        LOG_WARN("[Worker] Parse PARTIAL_OCR | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms | {}",
+                 file_path, ext, doc.utf8_text.size(), cost_ms, doc.error_message);
+      } else {
+        LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path,
+                 ext, doc.utf8_text.size(), cost_ms);
+      }
+      result.setStatusCode(partial_ocr ? soeasy::ipc::ParseStatusCode::PARTIAL_OCR
+                                       : soeasy::ipc::ParseStatusCode::OK);
       result.setExtractedBytes(doc.utf8_text.size());
       result.setPageCount(doc.page_count > 0 ? doc.page_count : 1);
       result.setIsScannedPdf(doc.is_scanned_pdf);
-      result.setMessage("Success");
+      result.setMessage((partial_ocr && !doc.error_message.empty()) ? doc.error_message : "Success");
       result.setExtractedText(doc.utf8_text);
     }
     const size_t extracted_bytes = doc.utf8_text.size();
@@ -85,6 +93,7 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     ctx.doc_id = doc_id;
     ctx.file_path = file_path;
     ctx.ext = ext;
+    ctx.timeout_ms = params.getTimeoutMs() > 0 ? params.getTimeoutMs() : 60000;
 
     ExtractedDocument doc;
     auto parse_start = std::chrono::high_resolution_clock::now();
@@ -109,6 +118,12 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     size_t num_chunks = (text_bytes + kChunkSize - 1) / kChunkSize;
     auto textShared = std::make_shared<std::string>(std::move(doc.utf8_text));
     const bool is_scanned = doc.is_scanned_pdf;
+    const bool partial_ocr = (doc.outcome == ParseOutcome::kPartialOcr);
+    const std::string finish_msg = (partial_ocr && !doc.error_message.empty()) ? doc.error_message : "Success";
+    if (partial_ocr) {
+      LOG_WARN("[Worker] Parse PARTIAL_OCR (stream) | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms | {}",
+               file_path, ext, text_bytes, cost_ms, finish_msg);
+    }
 
     kj::Promise<void> streamPromise = kj::READY_NOW;
     for (size_t i = 0; i < num_chunks; ++i) {
@@ -124,13 +139,14 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     }
     textShared.reset();
 
-    return streamPromise.then([this, receiver, is_scanned, text_bytes, cost_ms]() mutable {
+    return streamPromise.then([this, receiver, is_scanned, text_bytes, cost_ms, partial_ocr, finish_msg]() mutable {
       MaybeTrimHeap(text_bytes, cost_ms);
       auto finishReq = receiver.finishRequest();
       finishReq.setTotalBytes(text_bytes);
       finishReq.setIsScannedPdf(is_scanned);
-      finishReq.setStatusCode(soeasy::ipc::ParseStatusCode::OK);
-      finishReq.setErrorMsg("Success");
+      finishReq.setStatusCode(partial_ocr ? soeasy::ipc::ParseStatusCode::PARTIAL_OCR
+                                          : soeasy::ipc::ParseStatusCode::OK);
+      finishReq.setErrorMsg(finish_msg);
       return finishReq.send().then([](auto &&) {});
     });
   }

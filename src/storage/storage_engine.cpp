@@ -1715,6 +1715,9 @@ common::ParseStatusSummary StorageEngine::DoGetParseStatusSummary() {
           case common::ParseStatus::kFailed:
             summary.failed_count += cnt;
             break;
+          case common::ParseStatus::kPartialOcr:
+            summary.partial_ocr_count += cnt;
+            break;
           default:
             break;
         }

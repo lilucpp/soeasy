@@ -494,7 +494,8 @@ DocumentPreviewResult DocumentViewerWidget::LoadPreviewDocument(
   try {
     if (coordinator && doc_id > 0) {
       coordinator->GetDocumentParseInfo(doc_id, &result.parse_status, &result.issue_reason);
-      if (common::IsIssueParseStatus(result.parse_status)) {
+      if (common::IsIssueParseStatus(result.parse_status) &&
+          result.parse_status != common::ParseStatus::kPartialOcr) {
         return result;
       }
       if (coordinator->GetDocumentContent(doc_id, &result.content) && HasVisibleText(result.content)) {
@@ -565,6 +566,8 @@ QString DocumentViewerWidget::BuildStatusNoticeHtml(const DocumentPreviewResult 
       return format_notice("#FEF2F2", "#FECACA", "#991B1B", Tr("preview_crashed_title"), reason_line);
     case common::ParseStatus::kFailed:
       return format_notice("#FEF2F2", "#FECACA", "#991B1B", Tr("preview_failed_title"), reason_line);
+    case common::ParseStatus::kPartialOcr:
+      return format_notice("#F0F9FF", "#BAE6FD", "#0369A1", Tr("preview_partial_ocr_title"), reason_line);
     case common::ParseStatus::kOk:
       return QString("<p style='color:#64748B; font-style:italic;'>%1</p>")
           .arg(Tr("preview_empty_parsed_doc").toHtmlEscaped());

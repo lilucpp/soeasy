@@ -93,6 +93,7 @@ class IndexPipeline {
   std::shared_ptr<IIndexOrchestrator> orchestrator() { return orchestrator_; }
 
   [[nodiscard]] PipelineStats GetStats() const;
+  [[nodiscard]] ActiveScanSnapshot GetActiveScanSnapshot() const;
   [[nodiscard]] common::ParseStatusSummary GetParseStatusSummary() const;
   [[nodiscard]] std::vector<common::ParseIssueRecord> GetParseIssues(
       std::optional<common::ParseStatus> filter_status = std::nullopt, size_t limit = 500, size_t offset = 0) const;

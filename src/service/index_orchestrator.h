@@ -4,9 +4,9 @@
 #ifndef SOEASY_SRC_SERVICE_INDEX_ORCHESTRATOR_H_
 #define SOEASY_SRC_SERVICE_INDEX_ORCHESTRATOR_H_
 
-#include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -85,13 +85,17 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   [[nodiscard]] bool DoIsScanCancelled() const override { return cancel_scan_.load(); }
 
   [[nodiscard]] PipelineStats DoGetStats() const override;
+  [[nodiscard]] ActiveScanSnapshot DoGetActiveScanSnapshot() const override;
 
  private:
   enum class PendingTask { kNone = 0, kIncremental = 1, kConfigSync = 2, kRebuild = 3 };
 
-  static constexpr size_t kPathLockBuckets = 64;
+  class ScopedPathLock;
+  friend class ScopedPathLock;
 
-  std::mutex &LockBucketForPath(const std::string &file_path) const;
+  static std::string NormalizeLockPath(const std::string &file_path);
+  void AcquirePathLock(const std::string &norm_path) const;
+  void ReleasePathLock(const std::string &norm_path) const;
   size_t PerformScanInternal(ScanProgressCallback progress_cb, bool manage_buffering = true, bool manage_phase = true,
                              bool force_ocr_reindex = false);
   void CollectScanCandidates(const std::vector<std::string> &watched_dirs, std::vector<std::string> *files_to_index,
@@ -147,8 +151,25 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   std::mutex failed_files_mutex_;
   std::unordered_map<std::string, FailedFileInfo> failed_files_;
 
-  mutable std::array<std::mutex, kPathLockBuckets> path_locks_;
+  mutable std::mutex in_flight_mutex_;
+  mutable std::condition_variable in_flight_cv_;
+  mutable std::unordered_set<std::string> in_flight_paths_;
   std::mutex scan_mutex_;
+
+  struct ActiveScanSlotState {
+    bool active = false;
+    std::string file_path;
+    std::chrono::steady_clock::time_point started_at{};
+  };
+  mutable std::mutex active_scan_mutex_;
+  std::condition_variable active_scan_cv_;
+  bool active_scan_running_{false};
+  IndexTaskKind active_scan_kind_{IndexTaskKind::kInitial};
+  size_t active_scan_indexed_{0};
+  size_t active_scan_processed_{0};
+  size_t active_scan_total_{0};
+  std::chrono::steady_clock::time_point active_scan_started_at_{};
+  std::vector<ActiveScanSlotState> active_scan_slots_;
 
   SpaceReclaimer space_reclaimer_;
 

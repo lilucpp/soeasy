@@ -97,12 +97,14 @@ void ParseIssuesDialog::SetupUi() {
 
   kpi_ok_label_ = make_kpi("#DCFCE7", "#15803D", "#BBF7D0");
   kpi_encrypted_label_ = make_kpi("#FEF3C7", "#B45309", "#FDE68A");
+  kpi_partial_ocr_label_ = make_kpi("#E0F2FE", "#0369A1", "#BAE6FD");
   kpi_timeout_label_ = make_kpi("#FFEDD5", "#C2410C", "#FED7AA");
   kpi_crashed_label_ = make_kpi("#FEE2E2", "#B91C1C", "#FECACA");
   kpi_failed_label_ = make_kpi("#FEE2E2", "#DC2626", "#FCA5A5");
 
   summary_row->addWidget(kpi_ok_label_);
   summary_row->addWidget(kpi_encrypted_label_);
+  summary_row->addWidget(kpi_partial_ocr_label_);
   summary_row->addWidget(kpi_timeout_label_);
   summary_row->addWidget(kpi_crashed_label_);
   summary_row->addWidget(kpi_failed_label_);
@@ -121,6 +123,7 @@ void ParseIssuesDialog::SetupUi() {
   status_filter_combo_ = new QComboBox(this);
   status_filter_combo_->addItem(Tr("issues_filter_all"), -1);
   status_filter_combo_->addItem(Tr("issues_status_encrypted"), static_cast<int>(common::ParseStatus::kEncrypted));
+  status_filter_combo_->addItem(Tr("issues_status_partial_ocr"), static_cast<int>(common::ParseStatus::kPartialOcr));
   status_filter_combo_->addItem(Tr("issues_status_failed"), static_cast<int>(common::ParseStatus::kFailed));
   status_filter_combo_->addItem(Tr("issues_status_timeout"), static_cast<int>(common::ParseStatus::kTimeout));
   status_filter_combo_->addItem(Tr("issues_status_crashed"), static_cast<int>(common::ParseStatus::kCrashed));
@@ -188,6 +191,8 @@ QString ParseIssuesDialog::StatusDisplayText(common::ParseStatus status) const {
   switch (status) {
     case common::ParseStatus::kEncrypted:
       return Tr("issues_status_encrypted");
+    case common::ParseStatus::kPartialOcr:
+      return Tr("issues_status_partial_ocr");
     case common::ParseStatus::kTimeout:
       return Tr("issues_status_timeout");
     case common::ParseStatus::kCrashed:
@@ -209,6 +214,7 @@ void ParseIssuesDialog::Reload() {
 
   kpi_ok_label_->setText(Tr("issues_kpi_ok").arg(summary_.ok_count));
   kpi_encrypted_label_->setText(Tr("issues_kpi_encrypted").arg(summary_.encrypted_count));
+  kpi_partial_ocr_label_->setText(Tr("issues_kpi_partial_ocr").arg(summary_.partial_ocr_count));
   kpi_timeout_label_->setText(Tr("issues_kpi_timeout").arg(summary_.timeout_count));
   kpi_crashed_label_->setText(Tr("issues_kpi_crashed").arg(summary_.crashed_count));
   kpi_failed_label_->setText(Tr("issues_kpi_failed").arg(summary_.failed_count));
@@ -252,6 +258,8 @@ void ParseIssuesDialog::PopulateTable() {
     status_item->setTextAlignment(Qt::AlignCenter);
     if (rec.status == common::ParseStatus::kEncrypted) {
       status_item->setForeground(QColor("#B45309"));
+    } else if (rec.status == common::ParseStatus::kPartialOcr) {
+      status_item->setForeground(QColor("#0369A1"));
     } else if (rec.status == common::ParseStatus::kTimeout) {
       status_item->setForeground(QColor("#C2410C"));
     } else {

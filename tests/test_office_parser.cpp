@@ -876,6 +876,241 @@ int main(int argc, char *argv[]) {
     std::cout << "  [+] <1KB PDF (" << pdf_size << " B)、空白页 PDF、损坏 PDF、空 PPT 防乱码、加密文档 (TaskStatus::kEncrypted) 与精确错误原因透传验证通过\n";
   }
 
+  // -------------------------------------------------------------
+  // Test 9: Embedded OCR 3/4 Timeout Budget & ParseOutcome::kPartialOcr
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 9] 测试内嵌图片 OCR 3/4 总超时预算控制与 ParseOutcome::kPartialOcr 降级...\n";
+  {
+    const std::string ocr_docx = test_dir + "/embedded_budget.docx";
+    cv::Mat img(180, 520, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::putText(img, "OCR_BUDGET_TOKEN", cv::Point(20, 105), cv::FONT_HERSHEY_SIMPLEX, 1.3, cv::Scalar(0, 0, 0), 3);
+    std::vector<uchar> png_bytes;
+    CHECK(cv::imencode(".png", img, png_bytes));
+
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+    CHECK(mz_zip_writer_init_file(&zip, ocr_docx.c_str(), 0) == MZ_TRUE);
+    auto add_zip_str = [&zip](const char *name, const std::string &content) {
+      CHECK(mz_zip_writer_add_mem(&zip, name, content.data(), content.size(), MZ_BEST_SPEED) == MZ_TRUE);
+    };
+    add_zip_str("[Content_Types].xml",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+                "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+                "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+                "<Default Extension=\"png\" ContentType=\"image/png\"/>"
+                "<Override PartName=\"/word/document.xml\" "
+                "ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+                "</Types>");
+    add_zip_str("_rels/.rels",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                "<Relationship Id=\"rId1\" "
+                "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+                "Target=\"word/document.xml\"/>"
+                "</Relationships>");
+    add_zip_str("word/_rels/document.xml.rels",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                "<Relationship Id=\"rImg1\" "
+                "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" "
+                "Target=\"media/image1.png\"/>"
+                "<Relationship Id=\"rImg2\" "
+                "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" "
+                "Target=\"media/image2.png\"/>"
+                "</Relationships>");
+    add_zip_str("word/document.xml",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+                "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+                "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">"
+                "<w:body>"
+                "<w:p><w:r><w:t>BudgetNativeAnchor2026</w:t></w:r></w:p>"
+                "<w:p><w:r><w:drawing><a:blip r:embed=\"rImg1\"/></w:drawing></w:r></w:p>"
+                "<w:p><w:r><w:drawing><a:blip r:embed=\"rImg2\"/></w:drawing></w:r></w:p>"
+                "</w:body></w:document>");
+    CHECK(mz_zip_writer_add_mem(&zip, "word/media/image1.png", png_bytes.data(), png_bytes.size(), MZ_BEST_SPEED) ==
+          MZ_TRUE);
+    CHECK(mz_zip_writer_add_mem(&zip, "word/media/image2.png", png_bytes.data(), png_bytes.size(), MZ_BEST_SPEED) ==
+          MZ_TRUE);
+    CHECK(mz_zip_writer_finalize_archive(&zip) == MZ_TRUE);
+    CHECK(mz_zip_writer_end(&zip) == MZ_TRUE);
+
+    const bool prev_embedded_ocr = soeasy::worker::L2OfficeParser::embedded_image_ocr();
+    soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(true);
+
+    // Tight timeout (1 ms -> 3/4 budget = 1 ms) must skip OCR on expiry yet return true with kPartialOcr & native text
+    soeasy::worker::ParseContext budget_ctx;
+    budget_ctx.file_path = ocr_docx;
+    budget_ctx.ext = "docx";
+    budget_ctx.timeout_ms = 1;
+    soeasy::worker::ExtractedDocument budget_doc;
+    CHECK(parser.Parse(budget_ctx, &budget_doc));
+    CHECK(budget_doc.outcome == soeasy::worker::ParseOutcome::kPartialOcr);
+    CHECK(budget_doc.utf8_text.find("BudgetNativeAnchor2026") != std::string::npos);
+    CHECK(!budget_doc.error_message.empty());
+
+    // Image-only DOCX: image1 has geometric edges (no readable text, burns >1ms Det time),
+    // image2 has readable text -> expires budget before image2, must fail with OCR-budget reason.
+    cv::Mat noise_img(240, 320, CV_8UC3, cv::Scalar(240, 240, 240));
+    for (int k = 0; k < 12; ++k) {
+      cv::line(noise_img, cv::Point(10, 15 + k * 18), cv::Point(300, 25 + k * 18), cv::Scalar(30, 30, 30), 2);
+    }
+    std::vector<uchar> noise_png_bytes;
+    CHECK(cv::imencode(".png", noise_img, noise_png_bytes));
+
+    const std::string img_only_docx = test_dir + "/image_only_budget.docx";
+    {
+      mz_zip_archive z;
+      std::memset(&z, 0, sizeof(z));
+      CHECK(mz_zip_writer_init_file(&z, img_only_docx.c_str(), 0) == MZ_TRUE);
+      auto add_s = [&z](const char *n, const std::string &c) {
+        CHECK(mz_zip_writer_add_mem(&z, n, c.data(), c.size(), MZ_BEST_SPEED) == MZ_TRUE);
+      };
+      add_s("[Content_Types].xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+            "<Default Extension=\"png\" ContentType=\"image/png\"/>"
+            "<Override PartName=\"/word/document.xml\" "
+            "ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+            "</Types>");
+      add_s("_rels/.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" "
+            "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+            "Target=\"word/document.xml\"/>"
+            "</Relationships>");
+      add_s("word/_rels/document.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rImg1\" "
+            "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" "
+            "Target=\"media/image1.png\"/>"
+            "<Relationship Id=\"rImg2\" "
+            "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" "
+            "Target=\"media/image2.png\"/>"
+            "</Relationships>");
+      add_s("word/document.xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+            "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+            "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">"
+            "<w:body>"
+            "<w:p><w:r><w:drawing><a:blip r:embed=\"rImg1\"/></w:drawing></w:r></w:p>"
+            "<w:p><w:r><w:drawing><a:blip r:embed=\"rImg2\"/></w:drawing></w:r></w:p>"
+            "</w:body></w:document>");
+      CHECK(mz_zip_writer_add_mem(&z, "word/media/image1.png", noise_png_bytes.data(), noise_png_bytes.size(),
+                                  MZ_BEST_SPEED) == MZ_TRUE);
+      CHECK(mz_zip_writer_add_mem(&z, "word/media/image2.png", png_bytes.data(), png_bytes.size(), MZ_BEST_SPEED) ==
+            MZ_TRUE);
+      CHECK(mz_zip_writer_finalize_archive(&z) == MZ_TRUE);
+      CHECK(mz_zip_writer_end(&z) == MZ_TRUE);
+    }
+    soeasy::worker::ParseContext img_only_ctx;
+    img_only_ctx.file_path = img_only_docx;
+    img_only_ctx.ext = "docx";
+    img_only_ctx.timeout_ms = 1;
+    soeasy::worker::ExtractedDocument img_only_doc;
+    CHECK(!parser.Parse(img_only_ctx, &img_only_doc));
+    CHECK(img_only_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
+    CHECK(img_only_doc.error_message.find("OCR budget") != std::string::npos);
+
+    // Generous timeout (60 s -> 45 s OCR budget) completes cleanly with kOk
+    soeasy::worker::ParseContext full_ctx;
+    full_ctx.file_path = ocr_docx;
+    full_ctx.ext = "docx";
+    full_ctx.timeout_ms = 60000;
+    soeasy::worker::ExtractedDocument full_doc;
+    CHECK(parser.Parse(full_ctx, &full_doc));
+    CHECK(full_doc.outcome == soeasy::worker::ParseOutcome::kOk);
+    CHECK(full_doc.utf8_text.find("BudgetNativeAnchor2026") != std::string::npos);
+
+    // End-to-end IPC verification: WorkerGuard -> Cap'n Proto timeoutMs -> TaskStatus::kPartialOcr
+    {
+      cv::Mat dense_img(600, 800, CV_8UC3, cv::Scalar(255, 255, 255));
+      for (int row = 0; row < 10; ++row) {
+        cv::putText(dense_img, "SoEasy Budget Line " + std::to_string(row) + " Verification",
+                    cv::Point(30, 55 + row * 54), cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0), 2);
+      }
+      std::vector<uchar> dense_png_bytes;
+      CHECK(cv::imencode(".png", dense_img, dense_png_bytes));
+
+      const std::string ipc_many_docx = test_dir + "/embedded_ipc_budget.docx";
+      mz_zip_archive z;
+      std::memset(&z, 0, sizeof(z));
+      CHECK(mz_zip_writer_init_file(&z, ipc_many_docx.c_str(), 0) == MZ_TRUE);
+      auto add_s = [&z](const char *n, const std::string &c) {
+        CHECK(mz_zip_writer_add_mem(&z, n, c.data(), c.size(), MZ_BEST_SPEED) == MZ_TRUE);
+      };
+      add_s("[Content_Types].xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+            "<Default Extension=\"png\" ContentType=\"image/png\"/>"
+            "<Override PartName=\"/word/document.xml\" "
+            "ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+            "</Types>");
+      add_s("_rels/.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" "
+            "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+            "Target=\"word/document.xml\"/>"
+            "</Relationships>");
+      std::string rels =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+          "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">";
+      std::string body =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+          "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+          "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+          "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><w:body>"
+          "<w:p><w:r><w:t>BudgetNativeAnchor2026</w:t></w:r></w:p>";
+      for (int idx = 1; idx <= 40; ++idx) {
+        const std::string rid = "rImg" + std::to_string(idx);
+        const std::string target = "media/image" + std::to_string(idx) + ".png";
+        rels += "<Relationship Id=\"" + rid +
+                "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"" +
+                target + "\"/>";
+        body += "<w:p><w:r><w:drawing><a:blip r:embed=\"" + rid + "\"/></w:drawing></w:r></w:p>";
+        CHECK(mz_zip_writer_add_mem(&z, ("word/" + target).c_str(), dense_png_bytes.data(), dense_png_bytes.size(),
+                                    MZ_BEST_SPEED) == MZ_TRUE);
+      }
+      rels += "</Relationships>";
+      body += "</w:body></w:document>";
+      add_s("word/_rels/document.xml.rels", rels);
+      add_s("word/document.xml", body);
+      CHECK(mz_zip_writer_finalize_archive(&z) == MZ_TRUE);
+      CHECK(mz_zip_writer_end(&z) == MZ_TRUE);
+
+      auto ocr_guard = std::make_shared<soeasy::service::WorkerGuard>();
+      ocr_guard->SetLoggingOptions("warn", false, false, false, "", /*embedded_image_ocr=*/true, "");
+      CHECK(ocr_guard->Init(soeasy::test::FindWorkerBin(), 1, 5000));
+
+      // Warm up worker ONNX engine with small ocr_docx first
+      soeasy::service::ParseTask warm_task{9010, ocr_docx, "docx", 1, 10000};
+      soeasy::service::ParseTaskResult warm_res;
+      CHECK(ocr_guard->ExecuteTask(warm_task, &warm_res));
+      CHECK(warm_res.status == soeasy::service::TaskStatus::kSuccess);
+
+      // 1600 ms total timeout -> 1200 ms OCR budget (400 ms slack); 40 dense images exceed 1200 ms yet finish well under 1600 ms
+      soeasy::service::ParseTask budget_task{9011, ipc_many_docx, "docx", 1, 1600};
+      soeasy::service::ParseTaskResult budget_rpc_res;
+      CHECK(ocr_guard->ExecuteTask(budget_task, &budget_rpc_res));
+      CHECK(budget_rpc_res.status == soeasy::service::TaskStatus::kPartialOcr);
+      CHECK(budget_rpc_res.extracted_text.find("BudgetNativeAnchor2026") != std::string::npos);
+      CHECK(!budget_rpc_res.error_message.empty());
+      ocr_guard->Shutdown();
+    }
+
+    soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(prev_embedded_ocr);
+    std::cout << "  [+] 3/4 OCR 预算超限返回 ParseOutcome::kPartialOcr / IPC TaskStatus::kPartialOcr 与正常 kOk 验证通过\n";
+  }
+
   // Cleanup
   worker_guard.reset();
   storage->Close();

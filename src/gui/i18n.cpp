@@ -146,6 +146,7 @@ void I18n::InitDictionary() {
       {"status_stats", "在索引文件: %1 个 | 匹配结果: %2 条"},
       {"status_latency", "<span style=\"color: #16A34A; font-size: 13px;\">●</span> 检索耗时: %1 ms"},
       {"btn_cancel_index", "✕ 取消"},
+      {"btn_cancelling_index", "正在取消..."},
       {"tip_cancel_index", "取消当前正在进行的索引任务"},
       {"status_cancelling", "<span style=\"color:#D97706; font-weight:bold;\">! 正在协同取消索引...</span>"},
       {"status_indexing", "正在扫描并建立倒排索引: %1 / %2 (%3%)"},
@@ -405,14 +406,19 @@ void I18n::InitDictionary() {
       {"custom_format_desc", "用户手动添加的专有文件后缀与提取规则"},
 
       // Parse Status & Issues Dialog
-      {"status_parse_healthy", "✓ 正常 %1 · 加密 0 · 失败 0"},
-      {"status_parse_issues", "⚠ 正常 %1 · 加密 %2 · 失败 %3"},
+      {"status_parse_healthy", "✓ 正常 %1 · 加密 0 · 部分OCR 0 · 失败 0"},
+      {"status_parse_issues", "⚠ 正常 %1 · 加密 %2 · 部分OCR %3 · 失败 %4"},
       {"status_parse_tooltip",
-       "文档解析状态统计（点击查看加密或失败文件详情）：\n· 正常解析: %1 个\n· 加密跳过: %2 个\n· 解析失败: %3 个（超时 %4 / 崩溃 %5 / 其他 %6）"},
+       "文档解析状态统计（点击查看加密、部分OCR或失败文件详情）：\n"
+       "· 正常解析: %1 个\n"
+       "· 加密跳过: %2 个\n"
+       "· 部分OCR（超单文档预算跳过余图，正文完整）: %3 个\n"
+       "· 解析失败: %4 个（超时 %5 / 崩溃 %6 / 其他 %7）"},
       {"issues_dlg_title", "文档解析状态与异常详情"},
       {"issues_dlg_title_truncated", "文档解析状态与异常详情（仅显示最新 %1 / 共 %2 条）"},
       {"issues_kpi_ok", "正常解析: %1"},
       {"issues_kpi_encrypted", "加密跳过: %1"},
+      {"issues_kpi_partial_ocr", "部分OCR: %1"},
       {"issues_kpi_timeout", "解析超时: %1"},
       {"issues_kpi_crashed", "Worker 崩溃: %1"},
       {"issues_kpi_failed", "解析失败: %1"},
@@ -421,6 +427,7 @@ void I18n::InitDictionary() {
       {"issues_filter_all", "全部问题"},
       {"issues_filter_ph", "按文件名、路径、后缀或原因关键字过滤..."},
       {"issues_status_encrypted", "加密"},
+      {"issues_status_partial_ocr", "部分OCR"},
       {"issues_status_timeout", "超时"},
       {"issues_status_crashed", "崩溃"},
       {"issues_status_failed", "解析失败"},
@@ -432,6 +439,17 @@ void I18n::InitDictionary() {
       {"issues_col_reason", "原因"},
       {"issues_detail_ph", "选中一条记录以查看完整文件路径与失败原因详情..."},
       {"issues_btn_copy", "复制详情"},
+      {"preview_partial_ocr_title", "该文档部分内嵌图片因超时预算跳过 OCR，正文已完整保留"},
+      {"btn_index_detail", "详情"},
+      {"tip_index_detail", "查看总进度与各 Worker 实时解析文件及耗时"},
+      {"progress_dlg_title", "索引进度与 Worker 详情"},
+      {"progress_dlg_preparing", "正在准备文件清单..."},
+      {"progress_dlg_summary", "已完成 %1（处理 %2 / %3 · %4%）· 总耗时 %5"},
+      {"progress_col_worker", "Worker"},
+      {"progress_col_status", "状态 / 耗时"},
+      {"progress_col_file", "当前处理文件"},
+      {"progress_worker_busy", "解析中 · %1"},
+      {"progress_worker_idle", "空闲"},
   };
 
   // -----------------------------------------------------------
@@ -517,6 +535,7 @@ void I18n::InitDictionary() {
       {"status_stats", "Indexed files: %1 | Matches: %2"},
       {"status_latency", "<span style=\"color: #16A34A; font-size: 13px;\">●</span> Search time: %1 ms"},
       {"btn_cancel_index", "✕ Cancel"},
+      {"btn_cancelling_index", "Cancelling..."},
       {"tip_cancel_index", "Cancel current indexing task"},
       {"status_cancelling", "<span style=\"color:#D97706; font-weight:bold;\">! Cancelling indexing...</span>"},
       {"status_indexing", "Indexing in progress: %1 / %2 (%3%)"},
@@ -885,14 +904,19 @@ void I18n::InitDictionary() {
       {"fmt_desc_xz", "XZ Compressed Archive"},
 
       // Parse Status & Issues Dialog
-      {"status_parse_healthy", "✓ OK %1 · Encrypted 0 · Failed 0"},
-      {"status_parse_issues", "⚠ OK %1 · Encrypted %2 · Failed %3"},
+      {"status_parse_healthy", "✓ OK %1 · Encrypted 0 · Partial OCR 0 · Failed 0"},
+      {"status_parse_issues", "⚠ OK %1 · Encrypted %2 · Partial OCR %3 · Failed %4"},
       {"status_parse_tooltip",
-       "Document Parse Status (click to inspect details):\n· Normal: %1\n· Encrypted: %2\n· Failures: %3 (timeout: %4 / crashed: %5 / failed: %6)"},
+       "Document Parse Status (click to inspect details):\n"
+       "· Normal: %1\n"
+       "· Encrypted: %2\n"
+       "· Partial OCR (budget limit reached, document text intact): %3\n"
+       "· Failures: %4 (timeout: %5 / crashed: %6 / failed: %7)"},
       {"issues_dlg_title", "Document Parse Status & Issues"},
       {"issues_dlg_title_truncated", "Document Parse Status & Issues (showing %1 of %2)"},
       {"issues_kpi_ok", "Normal: %1"},
       {"issues_kpi_encrypted", "Encrypted: %1"},
+      {"issues_kpi_partial_ocr", "Partial OCR: %1"},
       {"issues_kpi_timeout", "Timeout: %1"},
       {"issues_kpi_crashed", "Crashed: %1"},
       {"issues_kpi_failed", "Failed: %1"},
@@ -901,6 +925,7 @@ void I18n::InitDictionary() {
       {"issues_filter_all", "All Issues"},
       {"issues_filter_ph", "Filter by file name, path, extension, or reason..."},
       {"issues_status_encrypted", "Encrypted"},
+      {"issues_status_partial_ocr", "Partial OCR"},
       {"issues_status_timeout", "Timeout"},
       {"issues_status_crashed", "Crashed"},
       {"issues_status_failed", "Failed"},
@@ -912,6 +937,17 @@ void I18n::InitDictionary() {
       {"issues_col_reason", "Reason"},
       {"issues_detail_ph", "Select a row to inspect full file path and failure reason..."},
       {"issues_btn_copy", "Copy Details"},
+      {"preview_partial_ocr_title", "Embedded image OCR reached budget limit; full document text preserved"},
+      {"btn_index_detail", "Details"},
+      {"tip_index_detail", "View overall progress and per-worker active files"},
+      {"progress_dlg_title", "Indexing Progress & Worker Details"},
+      {"progress_dlg_preparing", "Preparing scan manifest..."},
+      {"progress_dlg_summary", "Indexed %1 (processed %2 / %3 · %4%) · Elapsed %5"},
+      {"progress_col_worker", "Worker"},
+      {"progress_col_status", "Status / Elapsed"},
+      {"progress_col_file", "Current File"},
+      {"progress_worker_busy", "Parsing · %1"},
+      {"progress_worker_idle", "Idle"},
   };
 }
 

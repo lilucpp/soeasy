@@ -224,9 +224,33 @@ L2OfficeParser::L2OfficeParser()
 
 L2OfficeParser::~L2OfficeParser() = default;
 
+struct L2OfficeParser::EmbeddedOcrBudget {
+  L2OfficeParser *parser = nullptr;
+  std::chrono::steady_clock::time_point deadline;
+  uint32_t budget_ms = 0;
+  size_t processed_count = 0;
+  size_t skipped_count = 0;
+  bool hit_limit = false;
+
+  bool IsExpired() {
+    if (hit_limit) {
+      return true;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      hit_limit = true;
+      return true;
+    }
+    return false;
+  }
+};
+
 std::string L2OfficeParser::RunEmbeddedImageOcr(const std::string &image_name, const char *image_buffer,
-                                                size_t image_size) {
+                                                size_t image_size, EmbeddedOcrBudget *budget) {
   if (!image_buffer || image_size < 128 || image_size > 30ULL * 1024ULL * 1024ULL) return "";
+  if (budget && budget->IsExpired()) {
+    ++budget->skipped_count;
+    return "";
+  }
 
   const ocr::ImageFilter filter;
   // 1. Fast zero-copy header probe before decoding (< 1 microsecond, 0 memory allocation)
@@ -251,7 +275,14 @@ std::string L2OfficeParser::RunEmbeddedImageOcr(const std::string &image_name, c
       // Use max limit_side_len = 640 for embedded images (optimal balance for speed, memory and accuracy)
       ocr_engine_ = ocr::OcrEngineFactory::CreateDefaultEngine("", ocr::OcrMode::kNormal, 640);
     }
+    if (budget && budget->IsExpired()) {
+      ++budget->skipped_count;
+      return "";
+    }
     if (!ocr_engine_) return "";
+    if (budget) {
+      ++budget->processed_count;
+    }
     last_embedded_ocr_active_time_ = std::chrono::steady_clock::now();
 
     auto ocr_res = ocr_engine_->Recognize(img);
@@ -271,16 +302,31 @@ std::string L2OfficeParser::RunEmbeddedImageOcr(const std::string &image_name, c
 const char *L2OfficeParser::DocToTextImageParserCallbackC(const char *image_name, const char *image_buffer,
                                                          size_t image_size, void *user_data) {
   if (!user_data) return nullptr;
-  auto *self = static_cast<L2OfficeParser *>(user_data);
+  auto *budget = static_cast<EmbeddedOcrBudget *>(user_data);
+  if (!budget->parser) return nullptr;
+  if (budget->IsExpired()) {
+    ++budget->skipped_count;
+    return nullptr;
+  }
   static thread_local std::string tls_ocr_result;
-  tls_ocr_result = self->RunEmbeddedImageOcr(image_name ? image_name : "", image_buffer, image_size);
+  tls_ocr_result =
+      budget->parser->RunEmbeddedImageOcr(image_name ? image_name : "", image_buffer, image_size, budget);
   return tls_ocr_result.empty() ? nullptr : tls_ocr_result.c_str();
 }
 
 void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext,
-                                          std::string *out_utf8_text, int *out_dt_status, std::string *out_dt_error) {
+                                          uint32_t timeout_ms, std::string *out_utf8_text, int *out_dt_status,
+                                          std::string *out_dt_error, EmbeddedOcrBudget *out_budget) {
   if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_OK;
   if (out_dt_error) out_dt_error->clear();
+  const uint32_t effective_timeout_ms = timeout_ms > 0 ? timeout_ms : 60000;
+  const uint32_t ocr_budget_ms =
+      static_cast<uint32_t>(std::max<uint64_t>(1, (static_cast<uint64_t>(effective_timeout_ms) * 3) / 4));
+  EmbeddedOcrBudget local_budget;
+  local_budget.parser = this;
+  local_budget.budget_ms = ocr_budget_ms;
+  local_budget.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ocr_budget_ms);
+
   TempFileCleaner temp_cleaner;
   bool enable_logging = false;
   try {
@@ -315,7 +361,7 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const st
     doctotext_extractor_params_set_parser_type(params.get(), ResolveDocToTextParserType(lower_ext));
     if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {
       doctotext_extractor_params_set_image_parser_callback(params.get(), &L2OfficeParser::DocToTextImageParserCallbackC,
-                                                           this);
+                                                           &local_budget);
     } else {
       doctotext_extractor_params_set_image_parser_callback(params.get(), nullptr, nullptr);
     }
@@ -369,6 +415,12 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const st
         g_dt_file_stream->flush();
       }
     }
+    if (local_budget.hit_limit) {
+      LOG_WARN(
+          "[OfficeParser] Embedded OCR 3/4 budget reached ({} ms) for '{}': processed {} images, skipped {} remaining "
+          "images (document text preserved).",
+          local_budget.budget_ms, file_path, local_budget.processed_count, local_budget.skipped_count);
+    }
   } catch (const std::exception &e) {
     LOG_WARN("[OfficeParser] ExtractDocToText failed for {}: {}", file_path, e.what());
     if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ERROR;
@@ -379,6 +431,9 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const st
     if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ERROR;
     if (out_dt_error && out_dt_error->empty()) *out_dt_error = "DocToText unknown internal exception";
     // Graceful fallback to secondary extractors
+  }
+  if (out_budget) {
+    *out_budget = local_budget;
   }
 }
 
@@ -443,7 +498,8 @@ bool L2OfficeParser::embedded_image_ocr() {
   return s_embedded_image_ocr.load(std::memory_order_relaxed);
 }
 
-bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::string &ext, ExtractedDocument *out_doc) {
+bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::string &ext, uint32_t timeout_ms,
+                                 ExtractedDocument *out_doc) {
   if (!out_doc) return false;
   out_doc->utf8_text.clear();
   out_doc->is_scanned_pdf = false;
@@ -455,7 +511,8 @@ bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::stri
   // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
   int dt_status = DOCTOTEXT_STATUS_OK;
   std::string dt_error;
-  ExtractWithDocToText(file_path, lower, &out_doc->utf8_text, &dt_status, &dt_error);
+  EmbeddedOcrBudget ocr_budget;
+  ExtractWithDocToText(file_path, lower, timeout_ms, &out_doc->utf8_text, &dt_status, &dt_error, &ocr_budget);
 
   // Never fall back to raw stream/ZIP scanners on encrypted documents (avoids scanned-PDF false positives).
   if (dt_status == DOCTOTEXT_STATUS_ENCRYPTED) {
@@ -491,15 +548,32 @@ bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::stri
     }
   }
 
-  if (!out_doc->utf8_text.empty() ||
-      (lower == "pdf" && (out_doc->is_scanned_pdf || dt_status == DOCTOTEXT_STATUS_OK))) {
-    out_doc->outcome = ParseOutcome::kOk;
+  auto build_budget_msg = [&ocr_budget](bool has_text) {
+    return "Embedded image OCR budget (" + std::to_string(ocr_budget.budget_ms) + " ms) reached after " +
+           std::to_string(ocr_budget.processed_count) + " images; skipped " +
+           std::to_string(ocr_budget.skipped_count) + " images (" +
+           (has_text ? "document text preserved)" : "no document text extracted)");
+  };
+
+  const bool has_text = HasMeaningfulText(out_doc->utf8_text);
+  if (has_text || (lower == "pdf" && (out_doc->is_scanned_pdf || dt_status == DOCTOTEXT_STATUS_OK))) {
+    if (ocr_budget.hit_limit) {
+      out_doc->outcome = ParseOutcome::kPartialOcr;
+      out_doc->error_message = build_budget_msg(has_text);
+    } else {
+      out_doc->outcome = ParseOutcome::kOk;
+    }
     return true;
   }
 
   out_doc->outcome = ParseOutcome::kFailed;
-  out_doc->error_message =
-      !dt_error.empty() ? std::move(dt_error) : "Failed to extract text from document (empty or unsupported structure)";
+  if (!dt_error.empty()) {
+    out_doc->error_message = std::move(dt_error);
+  } else if (ocr_budget.hit_limit) {
+    out_doc->error_message = build_budget_msg(false);
+  } else {
+    out_doc->error_message = "Failed to extract text from document (empty or unsupported structure)";
+  }
   return false;
 }
 
@@ -510,7 +584,7 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
   if (is_scanned_pdf) *is_scanned_pdf = false;
 
   ExtractedDocument doc;
-  const bool ok = ParseInternal(file_path, ext, &doc);
+  const bool ok = ParseInternal(file_path, ext, 60000, &doc);
   *out_utf8_text = std::move(doc.utf8_text);
   if (is_scanned_pdf) *is_scanned_pdf = doc.is_scanned_pdf;
   return ok;
@@ -732,7 +806,8 @@ bool L2OfficeParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) 
     return false;
   }
   out_doc->page_count = 1;
-  return ParseInternal(ctx.file_path, ctx.ext, out_doc);
+  const uint32_t effective_timeout_ms = ctx.timeout_ms > 0 ? ctx.timeout_ms : 60000;
+  return ParseInternal(ctx.file_path, ctx.ext, effective_timeout_ms, out_doc);
 }
 
 }  // namespace worker

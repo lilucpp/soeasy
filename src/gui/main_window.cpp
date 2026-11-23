@@ -21,6 +21,7 @@
 #include "common/snippet_highlighter.h"
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
+#include "gui/index_progress_dialog.h"
 #include "gui/parse_issues_dialog.h"
 
 namespace soeasy {
@@ -318,13 +319,27 @@ void MainWindow::SetupUi() {
       "  background-color: #FECACA;"
       "}");
   status_cancel_btn_->setVisible(false);
-  connect(status_cancel_btn_, &QPushButton::clicked, this, [this]() {
-    if (pipeline_) {
-      pipeline_->CancelScan();
-    }
-    status_cancel_btn_->setEnabled(false);
-    status_stats_label_->setText(Tr("status_cancelling"));
-  });
+  connect(status_cancel_btn_, &QPushButton::clicked, this, &MainWindow::CancelActiveIndexing);
+
+  status_detail_btn_ = new QPushButton(Tr("btn_index_detail"), this);
+  status_detail_btn_->setObjectName("statusDetailBtn");
+  status_detail_btn_->setToolTip(Tr("tip_index_detail"));
+  status_detail_btn_->setCursor(Qt::PointingHandCursor);
+  status_detail_btn_->setStyleSheet(
+      "QPushButton#statusDetailBtn {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 3px;"
+      "  background-color: #FFFFFF;"
+      "  color: #0284C7;"
+      "  font-size: 11px;"
+      "  padding: 1px 7px;"
+      "}"
+      "QPushButton#statusDetailBtn:hover {"
+      "  background-color: #E0F2FE;"
+      "  border-color: #7DD3FC;"
+      "}");
+  status_detail_btn_->setVisible(false);
+  connect(status_detail_btn_, &QPushButton::clicked, this, &MainWindow::OnOpenIndexDetails);
 
   status_file_label_ = new QLabel(this);
   status_file_label_->setStyleSheet("color: #64748B; font-size: 11px;");
@@ -366,6 +381,7 @@ void MainWindow::SetupUi() {
   statusBar()->addWidget(status_parse_btn_);
   statusBar()->addWidget(status_progress_bar_);
   statusBar()->addWidget(status_cancel_btn_);
+  statusBar()->addWidget(status_detail_btn_);
   statusBar()->addWidget(status_file_label_, 1);
   statusBar()->addPermanentWidget(status_preview_btn_);
   statusBar()->addPermanentWidget(status_latency_label_);
@@ -537,6 +553,13 @@ void MainWindow::RetranslateUi() {
     status_cancel_btn_->setText(Tr("btn_cancel_index"));
     status_cancel_btn_->setToolTip(Tr("tip_cancel_index"));
   }
+  if (status_detail_btn_) {
+    status_detail_btn_->setText(Tr("btn_index_detail"));
+    status_detail_btn_->setToolTip(Tr("tip_index_detail"));
+  }
+  if (index_progress_dialog_) {
+    index_progress_dialog_->RetranslateUi();
+  }
   if (status_preview_btn_) {
     status_preview_btn_->setText(Tr("btn_preview"));
     status_preview_btn_->setToolTip(Tr("tip_preview"));
@@ -569,8 +592,11 @@ void MainWindow::UpdateParseHealthBadge() {
   const bool has_issues = summary.issue_count() > 0;
 
   if (has_issues) {
-    status_parse_btn_->setText(
-        Tr("status_parse_issues").arg(summary.ok_count).arg(summary.encrypted_count).arg(failures));
+    status_parse_btn_->setText(Tr("status_parse_issues")
+                                   .arg(summary.ok_count)
+                                   .arg(summary.encrypted_count)
+                                   .arg(summary.partial_ocr_count)
+                                   .arg(failures));
     const bool has_failures = (failures > 0);
     status_parse_btn_->setStyleSheet(has_failures ? "QPushButton#statusParseBtn {"
                                                     "  border: 1px solid #FCA5A5;"
@@ -614,6 +640,7 @@ void MainWindow::UpdateParseHealthBadge() {
   status_parse_btn_->setToolTip(Tr("status_parse_tooltip")
                                     .arg(summary.ok_count)
                                     .arg(summary.encrypted_count)
+                                    .arg(summary.partial_ocr_count)
                                     .arg(failures)
                                     .arg(summary.timeout_count)
                                     .arg(summary.crashed_count)
@@ -627,6 +654,36 @@ void MainWindow::OnOpenParseIssues() {
   ParseIssuesDialog dlg(pipeline_->search_coordinator(), this);
   dlg.exec();
   UpdateParseHealthBadge();
+}
+
+void MainWindow::CancelActiveIndexing() {
+  if (pipeline_) {
+    pipeline_->CancelScan();
+  }
+  if (status_cancel_btn_) {
+    status_cancel_btn_->setEnabled(false);
+  }
+  if (status_stats_label_) {
+    status_stats_label_->setText(Tr("status_cancelling"));
+  }
+  if (index_progress_dialog_ && index_progress_dialog_->isVisible()) {
+    index_progress_dialog_->Refresh();
+  }
+}
+
+void MainWindow::OnOpenIndexDetails() {
+  if (!pipeline_) {
+    return;
+  }
+  if (!index_progress_dialog_) {
+    index_progress_dialog_ = new IndexProgressDialog(pipeline_, this);
+    connect(index_progress_dialog_, &IndexProgressDialog::CancelRequested, this,
+            &MainWindow::CancelActiveIndexing);
+  }
+  index_progress_dialog_->StartTracking(active_task_type_);
+  index_progress_dialog_->show();
+  index_progress_dialog_->raise();
+  index_progress_dialog_->activateWindow();
 }
 
 QString MainWindow::BuildStatusTooltip(double cost_ms, bool is_incomplete) const {
@@ -951,6 +1008,7 @@ service::BackgroundIndexCallbacks MainWindow::MakeBackgroundCallbacks() {
 
 void MainWindow::OnIndexTaskStarted(int task_type, quint64 generation) {
   active_generation_ = generation;
+  active_task_type_ = task_type;
   is_task_active_ = true;
   if (finish_banner_timer_) {
     finish_banner_timer_->stop();
@@ -964,6 +1022,12 @@ void MainWindow::OnIndexTaskStarted(int task_type, quint64 generation) {
   status_progress_bar_->setVisible(true);
   status_cancel_btn_->setVisible(true);
   status_cancel_btn_->setEnabled(true);
+  if (status_detail_btn_) {
+    status_detail_btn_->setVisible(true);
+  }
+  if (index_progress_dialog_ && index_progress_dialog_->isVisible()) {
+    index_progress_dialog_->StartTracking(task_type);
+  }
   status_file_label_->setText(Tr("status_init_manifest"));
   status_file_label_->setVisible(true);
 
@@ -1021,6 +1085,12 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
   status_progress_bar_->setVisible(false);
   status_file_label_->setVisible(false);
   status_cancel_btn_->setVisible(false);
+  if (status_detail_btn_) {
+    status_detail_btn_->setVisible(false);
+  }
+  if (index_progress_dialog_) {
+    index_progress_dialog_->HandleTaskFinished();
+  }
 
   has_completed_index_ = true;
   last_index_task_type_ = task_type;

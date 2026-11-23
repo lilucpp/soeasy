@@ -483,6 +483,7 @@ add_library(soeasy_gui STATIC
     src/gui/hover_preview_popup.cpp
     src/gui/document_viewer_widget.cpp
     src/gui/content_preview_dialog.cpp
+    src/gui/index_progress_dialog.cpp
     src/gui/parse_issues_dialog.cpp
     src/gui/preview_panel.cpp
     src/gui/settings/general_tab.cpp

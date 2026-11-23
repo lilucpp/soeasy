@@ -30,6 +30,8 @@
 namespace soeasy {
 namespace gui {
 
+class IndexProgressDialog;
+
 class MainWindow : public QMainWindow {
   Q_OBJECT
 
@@ -65,6 +67,7 @@ class MainWindow : public QMainWindow {
   void OnLoadMoreRequested();
   void OnTogglePreview();
   void OnOpenParseIssues();
+  void OnOpenIndexDetails();
   void OnOpenSettings();
   void OnSettingsAppliedWithDiff(const soeasy::service::ConfigChangeSummary &diff);
   void OnRebuildIndexRequested();
@@ -89,6 +92,7 @@ class MainWindow : public QMainWindow {
   void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
   void UpdateParseHealthBadge();
+  void CancelActiveIndexing();
   [[nodiscard]] QString BuildStatusTooltip(double cost_ms, bool is_incomplete) const;
   void UpdateLatencyLabel(double cost_ms);
   [[nodiscard]] service::BackgroundIndexCallbacks MakeBackgroundCallbacks();
@@ -105,9 +109,11 @@ class MainWindow : public QMainWindow {
   QPushButton *status_parse_btn_ = nullptr;
   QProgressBar *status_progress_bar_ = nullptr;
   QPushButton *status_cancel_btn_ = nullptr;
+  QPushButton *status_detail_btn_ = nullptr;
   QLabel *status_file_label_ = nullptr;
   QPushButton *status_preview_btn_ = nullptr;
   QLabel *status_latency_label_ = nullptr;
+  IndexProgressDialog *index_progress_dialog_ = nullptr;
 
   QString current_query_;
   int current_search_mode_ = 0;
@@ -121,6 +127,7 @@ class MainWindow : public QMainWindow {
 
   std::shared_ptr<CallbackTarget> callback_target_;
   bool is_task_active_{false};
+  int active_task_type_{0};
   quint64 active_generation_{0};
   quint64 banner_generation_{0};
   bool has_completed_index_{false};
