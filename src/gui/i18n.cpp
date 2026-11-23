@@ -14,19 +14,19 @@ I18n::I18n() {
 
 void I18n::SetLanguage(const std::string &lang_code) {
   if (lang_code == "en") {
-    current_lang_ = Language::kEnglish;
+    current_lang_.store(Language::kEnglish, std::memory_order_relaxed);
   } else {
-    current_lang_ = Language::kChinese;
+    current_lang_.store(Language::kChinese, std::memory_order_relaxed);
   }
 }
 
 std::string I18n::GetLanguageCode() const {
-  return current_lang_ == Language::kEnglish ? "en" : "zh";
+  return current_lang_.load(std::memory_order_relaxed) == Language::kEnglish ? "en" : "zh";
 }
 
 QString I18n::Get(const char *key) const {
   if (!key) return QString();
-  const auto &dict = (current_lang_ == Language::kEnglish) ? en_dict_ : zh_dict_;
+  const auto &dict = (current_lang_.load(std::memory_order_relaxed) == Language::kEnglish) ? en_dict_ : zh_dict_;
   auto it = dict.find(key);
   if (it != dict.end()) {
     return QString::fromUtf8(it->second.c_str());
@@ -52,7 +52,7 @@ QString I18n::GetCategoryDesc(size_t cat_index, const QString &default_desc) con
 }
 
 QString I18n::GetFormatDesc(const QString &ext, const QString &default_desc) const {
-  if (current_lang_ == Language::kChinese) {
+  if (current_lang_.load(std::memory_order_relaxed) == Language::kChinese) {
     return default_desc;
   }
   std::string key = "fmt_desc_" + ext.toLower().toStdString();
@@ -360,6 +360,13 @@ void I18n::InitDictionary() {
       {"preview_dlg_title", "文档正文预览 - %1"},
       {"preview_loading_content", "正在加载正文预览..."},
       {"preview_cannot_read", "无法读取文档内容或正文为空。"},
+      {"preview_encrypted_title", "该文档已加密（需要密码）"},
+      {"preview_encrypted_desc", "出于安全保护，加密文档不会提取或预览原始内容。"},
+      {"preview_failed_title", "文档解析失败，无法预览正文"},
+      {"preview_timeout_title", "文档解析超时，未能生成正文预览"},
+      {"preview_crashed_title", "解析进程意外中断，未能生成正文预览"},
+      {"preview_reason_label", "详细信息："},
+      {"preview_empty_parsed_doc", "该文档无可用文本内容（可能是空白页、纯图形或未开启 OCR 的扫描件）。"},
       {"preview_content_truncated", "……（正文过长，预览已截断）"},
       {"btn_open_folder_sys", "打开所在文件夹"},
       {"btn_open_app_sys", "用系统默认程序打开"},
@@ -730,6 +737,13 @@ void I18n::InitDictionary() {
       {"preview_dlg_title", "Content Preview - %1"},
       {"preview_loading_content", "Loading content preview..."},
       {"preview_cannot_read", "Unable to read document content or content is empty."},
+      {"preview_encrypted_title", "This document is encrypted (password required)"},
+      {"preview_encrypted_desc", "Encrypted documents are skipped and their raw content is never previewed."},
+      {"preview_failed_title", "Failed to parse document"},
+      {"preview_timeout_title", "Document parsing timed out"},
+      {"preview_crashed_title", "Parser worker crashed while processing this document"},
+      {"preview_reason_label", "Details: "},
+      {"preview_empty_parsed_doc", "No extractable text found (blank page, graphics-only, or scanned without OCR)."},
       {"preview_content_truncated", "... (content too large, preview truncated)"},
       {"btn_open_folder_sys", "Open Folder"},
       {"btn_open_app_sys", "Open with Default App"},

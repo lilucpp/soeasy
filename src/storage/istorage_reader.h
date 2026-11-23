@@ -106,6 +106,18 @@ class IDocumentSearchReader {
   virtual bool GetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime,
                                int *out_parse_stat = nullptr) = 0;
 
+  virtual bool GetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status, std::string *out_reason) {
+    int parse_stat = 0;
+    if (!GetFileMetadata(doc_id, nullptr, nullptr, &parse_stat)) {
+      if (out_status) *out_status = common::ParseStatus::kUnknown;
+      if (out_reason) out_reason->clear();
+      return false;
+    }
+    if (out_status) *out_status = common::ParseStatusFromInt(parse_stat);
+    if (out_reason) out_reason->clear();
+    return true;
+  }
+
   virtual std::vector<FileMetaRecord> GetAllFilesMetadata() = 0;
 
   virtual bool ForEachFileMetadata(FileMetaCallback callback) = 0;

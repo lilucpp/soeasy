@@ -96,6 +96,13 @@ class ISearchCoordinator {
   }
 
   /**
+   * @brief Retrieve persisted parse status and issue reason (if any) for a document.
+   */
+  bool GetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status, std::string *out_reason) const {
+    return DoGetDocumentParseInfo(doc_id, out_status, out_reason);
+  }
+
+  /**
    * @brief Batch-extract highlighted body snippets for the requested documents via read channel.
    */
   [[nodiscard]] std::vector<DocumentSnippetItem> GenerateDocumentSnippets(const std::vector<int64_t> &doc_ids,
@@ -143,6 +150,12 @@ class ISearchCoordinator {
                                                              const std::string &path_prefix, int *out_total_count) = 0;
 
   virtual bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) const = 0;
+  virtual bool DoGetDocumentParseInfo(int64_t /*doc_id*/, common::ParseStatus *out_status,
+                                      std::string *out_reason) const {
+    if (out_status) *out_status = common::ParseStatus::kUnknown;
+    if (out_reason) out_reason->clear();
+    return false;
+  }
   [[nodiscard]] virtual std::vector<DocumentSnippetItem> DoGenerateDocumentSnippets(const std::vector<int64_t> &doc_ids,
                                                                                     const std::string &query,
                                                                                     size_t max_len) const = 0;

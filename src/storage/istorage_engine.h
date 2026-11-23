@@ -197,6 +197,10 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
     return DoGetFileMetadata(doc_id, out_file_size, out_mtime, out_parse_stat);
   }
 
+  bool GetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status, std::string *out_reason) override {
+    return DoGetDocumentParseInfo(doc_id, out_status, out_reason);
+  }
+
   /**
    * @brief Retrieve all indexed files metadata for rapid cold-restart (Read channel).
    */
@@ -269,6 +273,17 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
                                                  const std::string &path_prefix, int *out_total_count) = 0;
   virtual bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) = 0;
   virtual bool DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) = 0;
+  virtual bool DoGetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status, std::string *out_reason) {
+    int parse_stat = 0;
+    if (!DoGetFileMetadata(doc_id, nullptr, nullptr, &parse_stat)) {
+      if (out_status) *out_status = common::ParseStatus::kUnknown;
+      if (out_reason) out_reason->clear();
+      return false;
+    }
+    if (out_status) *out_status = common::ParseStatusFromInt(parse_stat);
+    if (out_reason) out_reason->clear();
+    return true;
+  }
   virtual std::vector<FileMetaRecord> DoGetAllFilesMetadata() = 0;
   virtual bool DoForEachFileMetadata(FileMetaCallback callback) {
     if (!callback) return false;

@@ -233,6 +233,16 @@ bool SearchCoordinator::DoGetDocumentContent(int64_t doc_id, std::string *out_co
   return storage_engine_->GetDocumentContent(doc_id, out_content);
 }
 
+bool SearchCoordinator::DoGetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status,
+                                               std::string *out_reason) const {
+  if (!storage_engine_) {
+    if (out_status) *out_status = common::ParseStatus::kUnknown;
+    if (out_reason) out_reason->clear();
+    return false;
+  }
+  return storage_engine_->GetDocumentParseInfo(doc_id, out_status, out_reason);
+}
+
 std::vector<DocumentSnippetItem> SearchCoordinator::DoGenerateDocumentSnippets(const std::vector<int64_t> &doc_ids,
                                                                                const std::string &query,
                                                                                size_t max_len) const {

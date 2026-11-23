@@ -191,19 +191,18 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
   viewer_->SetHtml(QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_loading_content")));
 
   QThreadPool::globalInstance()->start([self, token_holder, req_id, doc_id, file_path, keywords, coordinator]() {
-    std::string decompressed_utf8;
-    bool ok = false;
+    DocumentPreviewResult preview;
 
     // Skip the (potentially expensive) read entirely when a newer selection superseded us.
     if (token_holder->load(std::memory_order_relaxed) == req_id) {
       try {
-        ok = DocumentViewerWidget::ReadDocumentContent(doc_id, file_path, coordinator, &decompressed_utf8);
+        preview = DocumentViewerWidget::LoadPreviewDocument(doc_id, file_path, coordinator);
       } catch (const std::exception &e) {
         LOG_WARN("[PreviewPanel] Failed to read preview for '{}': {}", file_path.toStdString(), e.what());
-        ok = false;
+        preview = DocumentPreviewResult{};
       } catch (...) {
         LOG_WARN("[PreviewPanel] Failed to read preview for '{}': unknown error", file_path.toStdString());
-        ok = false;
+        preview = DocumentPreviewResult{};
       }
     }
 
@@ -213,16 +212,15 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
     }
     QMetaObject::invokeMethod(
         app,
-        [self, token_holder, req_id, ok, content = std::move(decompressed_utf8), keywords]() {
+        [self, token_holder, req_id, preview = std::move(preview), keywords]() {
           if (!self || req_id != token_holder->load(std::memory_order_relaxed)) {
             return;
           }
-          if (!ok || content.empty()) {
-            self->viewer_->SetHtml(
-                QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_cannot_read")));
+          if (!preview.has_content || preview.content.empty()) {
+            self->viewer_->SetHtml(DocumentViewerWidget::BuildStatusNoticeHtml(preview));
             return;
           }
-          self->viewer_->LoadContent(QString::fromStdString(content), keywords);
+          self->viewer_->LoadContent(DocumentViewerWidget::FormatPreviewText(preview), keywords);
         },
         Qt::QueuedConnection);
   });

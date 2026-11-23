@@ -13,11 +13,20 @@
 #include <string>
 #include <vector>
 
+#include "common/parse_status.h"
 #include "gui/gui_utils.h"
 #include "service/isearch_coordinator.h"
 
 namespace soeasy {
 namespace gui {
+
+struct DocumentPreviewResult {
+  bool has_content = false;
+  bool truncated = false;
+  std::string content;
+  common::ParseStatus parse_status = common::ParseStatus::kUnknown;
+  std::string issue_reason;
+};
 
 /**
  * @brief Reusable document preview widget with in-document keyword highlighting and navigation.
@@ -40,7 +49,26 @@ class DocumentViewerWidget : public QWidget {
   [[nodiscard]] int match_count() const { return static_cast<int>(match_ranges_.size()); }
 
   /**
-   * @brief Reads document content via CQRS query coordinator, with fallback to direct disk read (up to 1MB).
+   * @brief Load document content and parse-status metadata via CQRS query coordinator,
+   * falling back to direct disk read only for plain-text formats.
+   */
+  static DocumentPreviewResult LoadPreviewDocument(
+      int64_t doc_id, const QString &file_path,
+      const std::shared_ptr<service::ISearchCoordinator> &coordinator);
+
+  /**
+   * @brief Format loaded preview content on the UI thread (appending localized truncation notice if needed).
+   */
+  static QString FormatPreviewText(const DocumentPreviewResult &preview);
+
+  /**
+   * @brief Render user-friendly notice HTML when a document has no previewable text
+   * (encrypted, failed, timed out, crashed, or empty/blank).
+   */
+  static QString BuildStatusNoticeHtml(const DocumentPreviewResult &preview);
+
+  /**
+   * @brief Reads document content via CQRS query coordinator, with plain-text fallback to disk (up to 1MB).
    */
   static bool ReadDocumentContent(int64_t doc_id, const QString &file_path,
                                   const std::shared_ptr<service::ISearchCoordinator> &coordinator,

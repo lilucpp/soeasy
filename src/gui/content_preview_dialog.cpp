@@ -101,15 +101,15 @@ void ContentPreviewDialog::SetupUi() {
 void ContentPreviewDialog::LoadContentAndHighlight() {
   if (!viewer_) return;
 
-  std::string decompressed_utf8;
-  bool ok = DocumentViewerWidget::ReadDocumentContent(doc_id_, file_path_, search_coordinator_, &decompressed_utf8);
+  DocumentPreviewResult preview =
+      DocumentViewerWidget::LoadPreviewDocument(doc_id_, file_path_, search_coordinator_);
 
-  if (!ok || decompressed_utf8.empty()) {
-    viewer_->SetHtml(QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_cannot_read")));
+  if (!preview.has_content || preview.content.empty()) {
+    viewer_->SetHtml(DocumentViewerWidget::BuildStatusNoticeHtml(preview));
     return;
   }
 
-  viewer_->LoadContent(QString::fromStdString(decompressed_utf8), keywords_);
+  viewer_->LoadContent(DocumentViewerWidget::FormatPreviewText(preview), keywords_);
 }
 
 void ContentPreviewDialog::OnOpenFolder() {

@@ -81,7 +81,6 @@ class L2OfficeParser : public IDocumentParser {
   static bool ParseXlsx(const std::string &file_path, std::string *out_utf8);
   static bool ParsePptx(const std::string &file_path, std::string *out_utf8);
   static bool ParsePdf(const std::string &file_path, std::string *out_utf8, bool *is_scanned);
-  static bool ParseLegacyOffice(const std::string &file_path, const std::string &ext, std::string *out_utf8);
 
   /**
    * @brief Extract clean text content from OOXML XML markup.

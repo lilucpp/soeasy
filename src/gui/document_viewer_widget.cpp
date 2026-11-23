@@ -11,7 +11,10 @@
 #include <QTextDocument>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <exception>
+#include <unordered_set>
 
 #include "common/logger.h"
 #include "gui/i18n.h"
@@ -368,6 +371,56 @@ namespace {
 
 constexpr size_t kMaxPreviewContentBytes = size_t{4} * 1024 * 1024;
 
+bool IsPlainTextFallbackAllowed(const QString &file_path) {
+  const QString ext = QFileInfo(file_path).suffix().toLower();
+  if (ext.isEmpty()) {
+    return true;
+  }
+  // Structured documents, images, archives, and native binaries must never fall back to raw disk reads
+  // in plain-text preview (prevents leaking raw %PDF-/OLE/ZIP bytes when indexed content is empty).
+  static const std::unordered_set<std::string> kBlockedBinaryOrParsedExts = {
+      "pdf",  "doc",   "docx", "xls",   "xlsx",   "xlsb", "ppt",  "pptx",    "odt",     "ods",  "odp",
+      "odg",  "fodt",  "fods", "fodp",  "rtf",    "wps",  "et",   "dps",     "pages",   "key",  "keynote",
+      "numbers", "eml", "jpg", "jpeg",  "png",    "webp", "bmp",  "tiff",    "tif",     "jfif", "pnm",
+      "gif",  "ico",   "svg",  "zip",   "tar",    "rar",  "7z",   "gz",      "bz2",     "xz",   "exe",
+      "dll",  "so",    "dylib", "bin",  "obj",    "o",    "a",    "lib",     "db",      "sqlite", "sqlite3",
+      "class", "pyc",  "wasm", "msi",   "cab",    "iso",  "img",  "dmg",     "deb",     "rpm",
+  };
+  return kBlockedBinaryOrParsedExts.find(ext.toStdString()) == kBlockedBinaryOrParsedExts.end();
+}
+
+bool HasVisibleText(const std::string &text) {
+  return std::any_of(text.begin(), text.end(), [](unsigned char c) { return !std::isspace(c); });
+}
+
+bool HasBinaryOrDocumentMagic(const QByteArray &bytes) {
+  if (bytes.size() >= 8 &&
+      std::memcmp(bytes.constData(), "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1", 8) == 0) {
+    return true;
+  }
+  if (bytes.size() >= 4 && std::memcmp(bytes.constData(), "PK\x03\x04", 4) == 0) return true;
+  if (bytes.size() >= 4 && std::memcmp(bytes.constData(), "\x89PNG", 4) == 0) return true;
+  if (bytes.size() >= 3 && std::memcmp(bytes.constData(), "\xFF\xD8\xFF", 3) == 0) return true;
+  if (bytes.size() >= 4 && std::memcmp(bytes.constData(), "GIF8", 4) == 0) return true;
+  if (bytes.size() >= 4 && std::memcmp(bytes.constData(), "Rar!", 4) == 0) return true;
+  if (bytes.size() >= 6 && std::memcmp(bytes.constData(), "7z\xBC\xAF\x27\x1C", 6) == 0) return true;
+  if (bytes.size() >= 2 && std::memcmp(bytes.constData(), "\x1F\x8B", 2) == 0) return true;
+
+  // Skip optional UTF-8 BOM and leading ASCII whitespace (ISO 32000-1 permits leading offset before %PDF-)
+  int off = 0;
+  if (bytes.size() >= 3 && static_cast<unsigned char>(bytes[0]) == 0xEF &&
+      static_cast<unsigned char>(bytes[1]) == 0xBB && static_cast<unsigned char>(bytes[2]) == 0xBF) {
+    off = 3;
+  }
+  const int limit = std::min<int>(bytes.size(), 1024);
+  while (off < limit && std::isspace(static_cast<unsigned char>(bytes[off]))) {
+    ++off;
+  }
+  if (bytes.size() - off >= 5 && std::memcmp(bytes.constData() + off, "%PDF-", 5) == 0) return true;
+  if (bytes.size() - off >= 5 && std::memcmp(bytes.constData() + off, "{\\rtf", 5) == 0) return true;
+  return false;
+}
+
 bool FallbackReadFromDisk(const QString &file_path, std::string *out_content) {
   constexpr qint64 kMaxDirectDiskReadBytes = 1024LL * 1024LL;
   QFileInfo fi(file_path);
@@ -375,11 +428,21 @@ bool FallbackReadFromDisk(const QString &file_path, std::string *out_content) {
     QFile f(file_path);
     if (f.open(QIODevice::ReadOnly)) {
       QByteArray bytes = f.read(kMaxDirectDiskReadBytes);
-      const int sample_len = std::min(bytes.size(), 4096);
-      for (int i = 0; i < sample_len; ++i) {
-        if (bytes[i] == '\0') {
+      if (HasBinaryOrDocumentMagic(bytes)) {
+        return false;
+      }
+      int ctrl_count = 0;
+      for (int i = 0; i < bytes.size(); ++i) {
+        const unsigned char ch = static_cast<unsigned char>(bytes[i]);
+        if (ch == '\0') {
           return false;
         }
+        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r' && ch != '\f' && ch != '\b') {
+          ++ctrl_count;
+        }
+      }
+      if (!bytes.isEmpty() && ctrl_count * 50 > bytes.size()) {
+        return false;
       }
       size_t valid_len = static_cast<size_t>(bytes.size());
       if (fi.size() > kMaxDirectDiskReadBytes && valid_len > 0) {
@@ -409,7 +472,8 @@ bool FallbackReadFromDisk(const QString &file_path, std::string *out_content) {
   return false;
 }
 
-void TruncatePreviewContent(std::string *content) {
+void TruncatePreviewContent(std::string *content, bool *out_truncated) {
+  if (out_truncated) *out_truncated = false;
   if (!content || content->size() <= kMaxPreviewContentBytes) {
     return;
   }
@@ -419,11 +483,96 @@ void TruncatePreviewContent(std::string *content) {
     --cut;
   }
   content->resize(cut);
-  content->append("\n\n");
-  content->append(Tr("preview_content_truncated").toStdString());
+  if (out_truncated) *out_truncated = true;
 }
 
 }  // namespace
+
+DocumentPreviewResult DocumentViewerWidget::LoadPreviewDocument(
+    int64_t doc_id, const QString &file_path, const std::shared_ptr<service::ISearchCoordinator> &coordinator) {
+  DocumentPreviewResult result;
+  try {
+    if (coordinator && doc_id > 0) {
+      coordinator->GetDocumentParseInfo(doc_id, &result.parse_status, &result.issue_reason);
+      if (common::IsIssueParseStatus(result.parse_status)) {
+        return result;
+      }
+      if (coordinator->GetDocumentContent(doc_id, &result.content) && HasVisibleText(result.content)) {
+        TruncatePreviewContent(&result.content, &result.truncated);
+        result.has_content = !result.content.empty();
+        return result;
+      }
+      result.content.clear();
+    }
+
+    if (!IsPlainTextFallbackAllowed(file_path)) {
+      return result;
+    }
+    if (FallbackReadFromDisk(file_path, &result.content) && HasVisibleText(result.content)) {
+      TruncatePreviewContent(&result.content, &result.truncated);
+      result.has_content = !result.content.empty();
+      return result;
+    }
+    result.content.clear();
+  } catch (const std::exception &e) {
+    LOG_WARN("[DocumentViewer] Failed to read content for '{}': {}", file_path.toStdString(), e.what());
+    result.content.clear();
+  } catch (...) {
+    LOG_WARN("[DocumentViewer] Failed to read content for '{}': unknown error", file_path.toStdString());
+    result.content.clear();
+  }
+  return result;
+}
+
+QString DocumentViewerWidget::FormatPreviewText(const DocumentPreviewResult &preview) {
+  QString text = QString::fromStdString(preview.content);
+  if (preview.truncated) {
+    text.append("\n\n");
+    text.append(Tr("preview_content_truncated"));
+  }
+  return text;
+}
+
+QString DocumentViewerWidget::BuildStatusNoticeHtml(const DocumentPreviewResult &preview) {
+  auto format_notice = [&](const QString &bg, const QString &border, const QString &fg, const QString &title,
+                           const QString &detail) {
+    QString html = QString(
+                       "<div style='background:%1; border:1px solid %2; border-radius:6px; padding:12px 14px; "
+                       "color:%3; font-size:12px; line-height:1.6;'>"
+                       "<div style='font-weight:600; margin-bottom:4px;'>%4</div>")
+                       .arg(bg, border, fg, title.toHtmlEscaped());
+    if (!detail.isEmpty()) {
+      html += QString("<div style='color:#475569; font-size:11px;'>%1</div>").arg(detail.toHtmlEscaped());
+    }
+    html += "</div>";
+    return html;
+  };
+
+  const QString reason = QString::fromStdString(preview.issue_reason).trimmed();
+  const QString reason_line = reason.isEmpty() ? QString() : (Tr("preview_reason_label") + reason);
+
+  switch (preview.parse_status) {
+    case common::ParseStatus::kEncrypted: {
+      QString detail = Tr("preview_encrypted_desc");
+      if (!reason.isEmpty()) {
+        detail += QString(" (%1)").arg(reason);
+      }
+      return format_notice("#FFFBEB", "#FDE68A", "#92400E", Tr("preview_encrypted_title"), detail);
+    }
+    case common::ParseStatus::kTimeout:
+      return format_notice("#FFF7ED", "#FED7AA", "#9A3412", Tr("preview_timeout_title"), reason_line);
+    case common::ParseStatus::kCrashed:
+      return format_notice("#FEF2F2", "#FECACA", "#991B1B", Tr("preview_crashed_title"), reason_line);
+    case common::ParseStatus::kFailed:
+      return format_notice("#FEF2F2", "#FECACA", "#991B1B", Tr("preview_failed_title"), reason_line);
+    case common::ParseStatus::kOk:
+      return QString("<p style='color:#64748B; font-style:italic;'>%1</p>")
+          .arg(Tr("preview_empty_parsed_doc").toHtmlEscaped());
+    default:
+      return QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>")
+          .arg(Tr("preview_cannot_read").toHtmlEscaped());
+  }
+}
 
 bool DocumentViewerWidget::ReadDocumentContent(int64_t doc_id, const QString &file_path,
                                                const std::shared_ptr<service::ISearchCoordinator> &coordinator,
@@ -431,27 +580,12 @@ bool DocumentViewerWidget::ReadDocumentContent(int64_t doc_id, const QString &fi
   if (!out_content) return false;
   out_content->clear();
 
-  try {
-    bool ok = false;
-    if (coordinator && doc_id > 0) {
-      ok = coordinator->GetDocumentContent(doc_id, out_content);
-    }
-    if (!ok || out_content->empty()) {
-      ok = FallbackReadFromDisk(file_path, out_content);
-    }
-    if (!ok || out_content->empty()) {
-      return false;
-    }
-    TruncatePreviewContent(out_content);
-    return true;
-  } catch (const std::exception &e) {
-    LOG_WARN("[DocumentViewer] Failed to read content for '{}': {}", file_path.toStdString(), e.what());
-  } catch (...) {
-    LOG_WARN("[DocumentViewer] Failed to read content for '{}': unknown error", file_path.toStdString());
+  DocumentPreviewResult preview = LoadPreviewDocument(doc_id, file_path, coordinator);
+  if (!preview.has_content || preview.content.empty()) {
+    return false;
   }
-
-  out_content->clear();
-  return false;
+  *out_content = std::move(preview.content);
+  return true;
 }
 
 }  // namespace gui

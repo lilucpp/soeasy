@@ -39,6 +39,8 @@ class SearchCoordinator final : public ISearchCoordinator {
                                                      const std::string &path_prefix, int *out_total_count) override;
 
   bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) const override;
+  bool DoGetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status,
+                              std::string *out_reason) const override;
 
   [[nodiscard]] std::vector<DocumentSnippetItem> DoGenerateDocumentSnippets(const std::vector<int64_t> &doc_ids,
                                                                             const std::string &query,

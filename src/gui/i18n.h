@@ -2,6 +2,7 @@
 #define SOEASY_SRC_GUI_I18N_H_
 
 #include <QString>
+#include <atomic>
 #include <string>
 #include <unordered_map>
 
@@ -19,7 +20,7 @@ class I18n {
 
   void SetLanguage(const std::string &lang_code);
   std::string GetLanguageCode() const;
-  Language current_language() const { return current_lang_; }
+  Language current_language() const { return current_lang_.load(std::memory_order_relaxed); }
 
   QString Get(const char *key) const;
 
@@ -31,7 +32,7 @@ class I18n {
   I18n();
   void InitDictionary();
 
-  Language current_lang_ = Language::kChinese;
+  std::atomic<Language> current_lang_{Language::kChinese};
   std::unordered_map<std::string, std::string> zh_dict_;
   std::unordered_map<std::string, std::string> en_dict_;
 };

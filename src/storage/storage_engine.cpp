@@ -1638,6 +1638,43 @@ sqlite3 *StorageEngine::AcquireReadTarget(ScopedReadConnection *out_lease, std::
   return target_db;
 }
 
+bool StorageEngine::DoGetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status, std::string *out_reason) {
+  if (out_status) *out_status = common::ParseStatus::kUnknown;
+  if (out_reason) out_reason->clear();
+
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    SetLastError("Database not open");
+    return false;
+  }
+
+  const char *sql =
+      "SELECT f.parse_stat, COALESCE(p.reason, '') "
+      "FROM files f "
+      "LEFT JOIN parse_issues p ON p.doc_id = f.doc_id "
+      "WHERE f.doc_id = ?1;";
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(target_db));
+    return false;
+  }
+
+  sqlite3_bind_int64(stmt, 1, doc_id);
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    return false;
+  }
+
+  if (out_status) {
+    *out_status = common::ParseStatusFromInt(sqlite3_column_int(stmt, 0));
+  }
+  if (out_reason) {
+    *out_reason = SafeColumnText(stmt, 1);
+  }
+  return true;
+}
+
 common::ParseStatusSummary StorageEngine::DoGetParseStatusSummary() {
   common::ParseStatusSummary summary;
   ScopedReadConnection read_conn;

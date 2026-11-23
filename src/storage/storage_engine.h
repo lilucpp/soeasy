@@ -63,6 +63,7 @@ class StorageEngine : public IStorageEngine {
                                          const std::string &path_prefix, int *out_total_count) override;
   bool DoGetDocumentContent(int64_t doc_id, std::string *out_content) override;
   bool DoGetFileMetadata(int64_t doc_id, uint64_t *out_file_size, int64_t *out_mtime, int *out_parse_stat) override;
+  bool DoGetDocumentParseInfo(int64_t doc_id, common::ParseStatus *out_status, std::string *out_reason) override;
   std::vector<FileMetaRecord> DoGetAllFilesMetadata() override;
   bool DoForEachFileMetadata(FileMetaCallback callback) override;
   ScopedReadConnection DoAcquireReadConnection() override;

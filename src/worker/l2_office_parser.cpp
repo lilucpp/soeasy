@@ -194,7 +194,7 @@ struct TempFileCleaner {
   }
 };
 
-/// Dispatch secondary extractors when DocToText yields empty or whitespace-only text.
+/// Dispatch secondary structured extractors only when DocToText failed (never scrape raw legacy binary bytes).
 bool ApplyFallbackExtractor(const std::string &file_path, const std::string &lower_ext, std::string *out_utf8_text,
                             bool *is_scanned_pdf) {
   out_utf8_text->clear();
@@ -207,9 +207,6 @@ bool ApplyFallbackExtractor(const std::string &file_path, const std::string &low
     ok = L2OfficeParser::ParsePptx(file_path, out_utf8_text);
   } else if (lower_ext == "pdf") {
     ok = L2OfficeParser::ParsePdf(file_path, out_utf8_text, is_scanned_pdf);
-  } else if (lower_ext == "doc" || lower_ext == "xls" || lower_ext == "ppt" || lower_ext == "wps" ||
-             lower_ext == "et" || lower_ext == "dps" || lower_ext == "rtf") {
-    ok = L2OfficeParser::ParseLegacyOffice(file_path, lower_ext, out_utf8_text);
   }
   if (!ok) {
     out_utf8_text->clear();
@@ -470,8 +467,10 @@ bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::stri
     return false;
   }
 
-  // 2. Secondary / Fallback: If DocToText extraction was empty or purely whitespace, use internal extractors
-  if (!HasMeaningfulText(out_doc->utf8_text)) {
+  // 2. Secondary / Fallback: Only run structured OOXML/PDF fallback when DocToText reported an error.
+  //    If DocToText returned DOCTOTEXT_STATUS_OK with empty/whitespace text, preserve blank PDFs as kOk
+  //    (line below) while empty Office files still report kFailed when zero text was extracted.
+  if (dt_status != DOCTOTEXT_STATUS_OK && !HasMeaningfulText(out_doc->utf8_text)) {
     ApplyFallbackExtractor(file_path, lower, &out_doc->utf8_text, &out_doc->is_scanned_pdf);
   }
 
@@ -492,7 +491,8 @@ bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::stri
     }
   }
 
-  if (!out_doc->utf8_text.empty() || (lower == "pdf" && out_doc->is_scanned_pdf)) {
+  if (!out_doc->utf8_text.empty() ||
+      (lower == "pdf" && (out_doc->is_scanned_pdf || dt_status == DOCTOTEXT_STATUS_OK))) {
     out_doc->outcome = ParseOutcome::kOk;
     return true;
   }
@@ -656,82 +656,6 @@ bool L2OfficeParser::ParsePdf(const std::string &file_path, std::string *out_utf
   }
 
   return !out_utf8->empty() || (is_scanned && *is_scanned);
-}
-
-bool L2OfficeParser::ParseLegacyOffice(const std::string &file_path, const std::string &ext, std::string *out_utf8) {
-  // Extract both UTF-16LE and ANSI / UTF-8 characters directly from disk via stream
-  auto ifs = common::EncodingUtils::OpenIfstream(file_path, std::ios::binary);
-  if (!ifs.is_open()) {
-    return false;
-  }
-
-  std::string extracted;
-  extracted.reserve(8192);
-
-  auto is_valid_char = [](wchar_t wc) {
-    if (wc >= 0x0020 && wc <= 0x007E) return true;  // Printable ASCII
-    if (wc == L'\n' || wc == L'\r' || wc == L'\t') return true;
-    if (wc >= 0x00A0 && wc < 0xD800) return true;  // Unicode (including CJK 0x4E00 - 0x9FFF)
-    if (wc >= 0xE000 && wc <= 0xFFFD) return true;
-    return false;
-  };
-
-  std::wstring current_wstr;
-  std::string current_ansi;
-  char buf[65536];
-  uint8_t pending_byte = 0;
-  bool has_pending = false;
-
-  while (ifs) {
-    ifs.read(buf, sizeof(buf));
-    std::streamsize bytes_read = ifs.gcount();
-    if (bytes_read <= 0) break;
-
-    for (std::streamsize idx = 0; idx < bytes_read; ++idx) {
-      uint8_t byte = static_cast<uint8_t>(buf[idx]);
-
-      // 1. ANSI scanner
-      if (byte >= 32 || byte == '\n' || byte == '\t' || byte >= 0x80) {
-        current_ansi.push_back(static_cast<char>(byte));
-      } else {
-        if (current_ansi.size() >= 4) {
-          extracted += common::EncodingUtils::ToUtf8(current_ansi);
-          extracted.push_back(' ');
-        }
-        current_ansi.clear();
-      }
-
-      // 2. UTF-16LE scanner
-      if (!has_pending) {
-        pending_byte = byte;
-        has_pending = true;
-      } else {
-        wchar_t wc = static_cast<wchar_t>(pending_byte | (byte << 8));
-        has_pending = false;
-        if (is_valid_char(wc)) {
-          current_wstr.push_back(wc);
-        } else {
-          if (current_wstr.size() >= 3) {
-            extracted += common::EncodingUtils::WideToUtf8(current_wstr);
-            extracted.push_back(' ');
-          }
-          current_wstr.clear();
-        }
-      }
-    }
-  }
-
-  if (current_ansi.size() >= 4) {
-    extracted += common::EncodingUtils::ToUtf8(current_ansi);
-    extracted.push_back(' ');
-  }
-  if (current_wstr.size() >= 3) {
-    extracted += common::EncodingUtils::WideToUtf8(current_wstr);
-    extracted.push_back(' ');
-  }
-
-  *out_utf8 = std::move(extracted);
-  return !out_utf8->empty();
 }
 
 std::string L2OfficeParser::ExtractXmlText(const std::string &xml_content, bool insert_newlines) {

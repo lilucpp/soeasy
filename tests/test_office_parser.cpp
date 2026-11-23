@@ -743,7 +743,137 @@ int main(int argc, char *argv[]) {
     CHECK(!parser.Parse(bad_ctx, &bad_doc));
     CHECK(bad_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
     CHECK(!bad_doc.error_message.empty());
-    std::cout << "  [+] <1KB PDF (" << pdf_size << " B)、加密文档 (TaskStatus::kEncrypted) 与精确错误原因透传验证通过\n";
+
+    // 8.4 空白页 PDF (< 10 KB, 仅换行无文字) 返回 kOk 且不触发扫描件或 Fallback 源码泄漏
+    const std::string blank_pdf = test_dir + "/blank_page.pdf";
+    {
+      std::ofstream ofs(blank_pdf, std::ios::binary);
+      std::string pdf_data =
+          "%PDF-1.4\n"
+          "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+          "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+          "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n";
+      size_t off1 = pdf_data.find("1 0 obj");
+      size_t off2 = pdf_data.find("2 0 obj");
+      size_t off3 = pdf_data.find("3 0 obj");
+      size_t xref_off = pdf_data.size();
+      auto fmt = [](size_t off, bool used) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%010lu %05u %c \n", static_cast<unsigned long>(off), used ? 0 : 65535,
+                      used ? 'n' : 'f');
+        return std::string(buf);
+      };
+      pdf_data += "xref\n0 4\n" + fmt(0, false) + fmt(off1, true) + fmt(off2, true) + fmt(off3, true) +
+                  "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n" + std::to_string(xref_off) + "\n%%EOF\n";
+      ofs.write(pdf_data.data(), pdf_data.size());
+    }
+    soeasy::worker::ParseContext blank_ctx;
+    blank_ctx.file_path = blank_pdf;
+    blank_ctx.ext = "pdf";
+    soeasy::worker::ExtractedDocument blank_doc;
+    CHECK(parser.Parse(blank_ctx, &blank_doc));
+    CHECK(blank_doc.outcome == soeasy::worker::ParseOutcome::kOk);
+    CHECK(!blank_doc.is_scanned_pdf);
+
+    // 8.5 经典二进制空 PPT 不再误触 ParseLegacyOffice 吐出 UTF-16LE 乱码
+    const std::string empty_ppt = test_dir + "/empty_pictures_only.ppt";
+    {
+      // Minimal valid 4-sector (2048 B) OLE2 container:
+      // sec0 = FAT, sec1 = Root Directory (Root Entry + PowerPoint Document + Pictures),
+      // sec2 = PowerPoint Document (8-byte empty RT_Document), sec3 = Pictures (512B high-bit noise)
+      std::vector<uint8_t> ole(2048, 0);
+      auto put32 = [&](size_t off, uint32_t v) {
+        ole[off] = v & 0xFF;
+        ole[off + 1] = (v >> 8) & 0xFF;
+        ole[off + 2] = (v >> 16) & 0xFF;
+        ole[off + 3] = (v >> 24) & 0xFF;
+      };
+      auto put16 = [&](size_t off, uint16_t v) {
+        ole[off] = v & 0xFF;
+        ole[off + 1] = (v >> 8) & 0xFF;
+      };
+      const uint8_t magic[8] = {0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1};
+      std::memcpy(ole.data(), magic, 8);
+      put16(24, 0x003E);
+      put16(26, 0x0003);
+      put16(28, 0xFFFE);
+      put16(30, 9);
+      put16(32, 6);
+      put32(44, 1);
+      put32(48, 1);  // dir start = sector 1
+      put32(56, 0x1000);
+      put32(60, 0xFFFFFFFE);
+      put32(68, 0xFFFFFFFE);
+      for (int i = 0; i < 109; ++i) put32(76 + i * 4, i == 0 ? 0u : 0xFFFFFFFFu);
+
+      // FAT (sector 0 @ offset 512)
+      put32(512 + 0, 0xFFFFFFFD);  // FATSEC
+      put32(512 + 4, 0xFFFFFFFE);  // sec 1 dir EOF
+      put32(512 + 8, 0xFFFFFFFE);  // sec 2 PowerPoint Document EOF
+      put32(512 + 12, 0xFFFFFFFE); // sec 3 Pictures EOF
+      for (int i = 4; i < 128; ++i) put32(512 + i * 4, 0xFFFFFFFF);
+
+      auto write_dir_entry = [&](int idx, const char *ascii_name, uint8_t type, uint32_t start_sec, uint32_t sz,
+                                 uint32_t child, uint32_t left, uint32_t right) {
+        size_t base = 1024 + static_cast<size_t>(idx) * 128;
+        size_t nlen = std::strlen(ascii_name);
+        for (size_t k = 0; k < nlen; ++k) put16(base + k * 2, static_cast<uint8_t>(ascii_name[k]));
+        put16(base + 64, static_cast<uint16_t>((nlen + 1) * 2));
+        ole[base + 66] = type;
+        ole[base + 67] = 1;  // BLACK
+        put32(base + 68, left);
+        put32(base + 72, right);
+        put32(base + 76, child);
+        put32(base + 116, start_sec);
+        put32(base + 120, sz);
+      };
+      write_dir_entry(0, "Root Entry", 5, 0xFFFFFFFE, 0, 1, 0xFFFFFFFF, 0xFFFFFFFF);
+      write_dir_entry(1, "PowerPoint Document", 2, 2, 8, 0xFFFFFFFF, 0xFFFFFFFF, 2);
+      write_dir_entry(2, "Pictures", 2, 3, 512, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+      // Make file 9728 B: sec0=FAT, sec1=Dir, sec 2..9 = 4096B PowerPoint Document, sec 10..17 = 4096B Pictures
+      ole.resize(512 + 18 * 512, 0);
+      put32(512 + 8, 3);
+      for (int s = 3; s < 9; ++s) put32(512 + s * 4, static_cast<uint32_t>(s + 1));
+      put32(512 + 9 * 4, 0xFFFFFFFE);
+      for (int s = 10; s < 17; ++s) put32(512 + s * 4, static_cast<uint32_t>(s + 1));
+      put32(512 + 17 * 4, 0xFFFFFFFE);
+      write_dir_entry(1, "PowerPoint Document", 2, 2, 4096, 0xFFFFFFFF, 0xFFFFFFFF, 2);
+      write_dir_entry(2, "Pictures", 2, 10, 4096, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+      // RT_END_DOCUMENT_ATOM (0x03EA) with 4088 zero bytes payload at sector 2 (offset 1536)
+      put16(1536, 0x0000);
+      put16(1536 + 2, 0x03EA);
+      put32(1536 + 4, 4088);
+      // Fill Pictures stream (sector 10 @ 5632) with fake UTF-16LE CJK/PUA pattern bytes
+      for (size_t p = 5632; p < 5632 + 4096; p += 2) {
+        ole[p] = 0x55;
+        ole[p + 1] = 0x60;  // 0x6055 CJK pattern if scanned blindly
+      }
+      std::ofstream ofs(empty_ppt, std::ios::binary);
+      ofs.write(reinterpret_cast<const char *>(ole.data()), static_cast<std::streamsize>(ole.size()));
+    }
+    soeasy::worker::ParseContext ppt_ctx;
+    ppt_ctx.file_path = empty_ppt;
+    ppt_ctx.ext = "ppt";
+    soeasy::worker::ExtractedDocument ppt_doc;
+    CHECK(!parser.Parse(ppt_ctx, &ppt_doc));
+    CHECK(ppt_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
+    CHECK(ppt_doc.utf8_text.empty());
+
+    // 8.6 损坏 PDF 返回 kFailed 而非空白页 kOk
+    const std::string broken_pdf = test_dir + "/broken_sample.pdf";
+    {
+      std::ofstream ofs(broken_pdf, std::ios::binary);
+      ofs << "NOT_A_VALID_PDF_HEADER_OR_TRAILER";
+    }
+    soeasy::worker::ParseContext bad_pdf_ctx;
+    bad_pdf_ctx.file_path = broken_pdf;
+    bad_pdf_ctx.ext = "pdf";
+    soeasy::worker::ExtractedDocument bad_pdf_doc;
+    CHECK(!parser.Parse(bad_pdf_ctx, &bad_pdf_doc));
+    CHECK(bad_pdf_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
+
+    std::cout << "  [+] <1KB PDF (" << pdf_size << " B)、空白页 PDF、损坏 PDF、空 PPT 防乱码、加密文档 (TaskStatus::kEncrypted) 与精确错误原因透传验证通过\n";
   }
 
   // Cleanup

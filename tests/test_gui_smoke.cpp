@@ -413,6 +413,9 @@ int main(int argc, char *argv[]) {
     QDir().mkpath(QFileInfo(ultra_long_path).absolutePath());
     WriteFile(ultra_long_path.toStdString(), "正文内容：超长无空格检索关键词用来检验预览工具栏标签...");
     CHECK(QFile::exists(ultra_long_path));
+    CHECK(storage->IndexDocument(999999, ultra_long_path.toStdString(), ultra_long_name.toStdString(), "docx", 96,
+                                 1700000100, 2, "正文内容：超长无空格检索关键词用来检验预览工具栏标签...",
+                                 static_cast<int>(soeasy::common::ParseStatus::kOk), ""));
     const std::string ultra_long_kw =
         "超长无空格检索关键词用来检验预览工具栏标签在极端窄栏下不会把左侧文件列表撑爆_"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
@@ -876,6 +879,85 @@ int main(int argc, char *argv[]) {
     }();
     (void)parse_btn;
     std::cout << "  -> MainWindow 解析健康徽章及 ParseIssuesDialog 分类筛选验证通过!\n";
+
+    // Regression: Encrypted/Blank/Unindexed PDF must NEVER leak raw %PDF- bytes via FallbackReadFromDisk
+    const std::string preview_dir = test_dir + "_preview_regression";
+    std::filesystem::remove_all(preview_dir);
+    std::filesystem::create_directories(preview_dir);
+    const QString locked_pdf_path = QString::fromStdString(preview_dir) + "/locked_preview.pdf";
+    WriteFile(locked_pdf_path.toStdString(), "%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\n%%EOF\n");
+    CHECK(storage->IndexDocument(990003, locked_pdf_path.toStdString(), "locked_preview.pdf", "pdf", 64, 1700000202,
+                                 1, "", static_cast<int>(soeasy::common::ParseStatus::kEncrypted),
+                                 "Document is encrypted and requires a password"));
+    auto locked_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(
+        990003, locked_pdf_path, pipeline->search_coordinator());
+    CHECK(!locked_preview.has_content);
+    CHECK(locked_preview.parse_status == soeasy::common::ParseStatus::kEncrypted);
+    CHECK(locked_preview.content.empty());
+    const QString locked_html = soeasy::gui::DocumentViewerWidget::BuildStatusNoticeHtml(locked_preview);
+    CHECK(!locked_html.contains("%PDF-"));
+
+    const QString blank_pdf_path = QString::fromStdString(preview_dir) + "/blank_preview.pdf";
+    WriteFile(blank_pdf_path.toStdString(), "%PDF-1.6\n1 0 obj\n<< /Title (Blank Page) >>\nendobj\n%%EOF\n");
+    CHECK(storage->IndexDocument(990004, blank_pdf_path.toStdString(), "blank_preview.pdf", "pdf", 68, 1700000203,
+                                 1, "\n\n", static_cast<int>(soeasy::common::ParseStatus::kOk), ""));
+    auto blank_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(
+        990004, blank_pdf_path, pipeline->search_coordinator());
+    CHECK(!blank_preview.has_content);
+    CHECK(blank_preview.parse_status == soeasy::common::ParseStatus::kOk);
+    CHECK(blank_preview.content.empty());
+    const QString blank_html = soeasy::gui::DocumentViewerWidget::BuildStatusNoticeHtml(blank_preview);
+    CHECK(!blank_html.contains("%PDF-"));
+
+    auto unindexed_pdf_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(
+        0, locked_pdf_path, pipeline->search_coordinator());
+    CHECK(!unindexed_pdf_preview.has_content);
+    CHECK(unindexed_pdf_preview.content.empty());
+
+    // Unindexed plain-text structured formats (.svg/.eml) and whitespace-prefixed %PDF- must stay blocked
+    const QString raw_svg_path = QString::fromStdString(preview_dir) + "/raw_vector.svg";
+    WriteFile(raw_svg_path.toStdString(), "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    auto svg_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(0, raw_svg_path, pipeline->search_coordinator());
+    CHECK(!svg_preview.has_content);
+    CHECK(svg_preview.content.empty());
+
+    const QString disguised_pdf_path = QString::fromStdString(preview_dir) + "/disguised_pdf.txt";
+    WriteFile(disguised_pdf_path.toStdString(), "  \n%PDF-1.5\n1 0 obj\n<<>>\nendobj\n");
+    auto disguised_preview =
+        soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(0, disguised_pdf_path, pipeline->search_coordinator());
+    CHECK(!disguised_preview.has_content);
+    CHECK(disguised_preview.content.empty());
+
+    // Status notice rendering + XSS escaping for timeout/crashed/failed + truncation notice on UI thread
+    soeasy::gui::DocumentPreviewResult xss_fail;
+    xss_fail.parse_status = soeasy::common::ParseStatus::kFailed;
+    xss_fail.issue_reason = "<script>alert(1)</script> & broken";
+    const QString fail_html = soeasy::gui::DocumentViewerWidget::BuildStatusNoticeHtml(xss_fail);
+    CHECK(!fail_html.contains("<script>"));
+    CHECK(fail_html.contains("&lt;script&gt;"));
+
+    soeasy::gui::DocumentPreviewResult trunc_res;
+    trunc_res.has_content = true;
+    trunc_res.truncated = true;
+    trunc_res.content = "hello";
+    CHECK(soeasy::gui::DocumentViewerWidget::FormatPreviewText(trunc_res).contains("hello"));
+    CHECK(soeasy::gui::DocumentViewerWidget::FormatPreviewText(trunc_res) != "hello");
+
+    // End-to-end PreviewPanel async load of encrypted doc must NOT leak %PDF-
+    {
+      soeasy::gui::MainWindow preview_win(pipeline);
+      preview_win.show();
+      app.processEvents();
+      auto *ppanel = preview_win.findChild<soeasy::gui::PreviewPanel *>();
+      auto *viewer = ppanel ? ppanel->findChild<soeasy::gui::DocumentViewerWidget *>() : nullptr;
+      CHECK(ppanel != nullptr && viewer != nullptr);
+      ppanel->LoadDocument(990003, "locked_preview.pdf", locked_pdf_path, {});
+      ppanel->WaitForLoadFinished(3000);
+      app.processEvents();
+      CHECK(!viewer->text_viewer()->toPlainText().contains("%PDF-"));
+    }
+    std::filesystem::remove_all(preview_dir);
+    std::cout << "  -> 加密/空白/未索引(.svg/前导空白PDF)/PreviewPanel异步防泄漏与XSS转义验证通过!\n";
   }
 
   // Cleanup
