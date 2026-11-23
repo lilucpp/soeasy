@@ -97,8 +97,14 @@ bool L3ImageParser::ParseSvgText(const std::string &file_path, std::string *out_
 }
 
 bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, std::string *out_utf8_text) {
+  return ParseInternal(file_path, ext, out_utf8_text, nullptr);
+}
+
+bool L3ImageParser::ParseInternal(const std::string &file_path, const std::string &ext, std::string *out_utf8_text,
+                                  std::string *out_error) {
   if (!out_utf8_text) return false;
   out_utf8_text->clear();
+  if (out_error) out_error->clear();
 
   std::string lower_ext = ext;
   std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
@@ -106,6 +112,9 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
   // 1. Vector graphics SVG: direct zero-overhead XML extraction
   if (lower_ext == "svg") {
     bool ok = ParseSvgText(file_path, out_utf8_text);
+    if (!ok && out_error) {
+      *out_error = "Cannot open SVG file for reading";
+    }
     if (ok && min_effective_chars_ > 0 &&
         ocr::ImageFilter::CountEffectiveChars(*out_utf8_text) < min_effective_chars_) {
       out_utf8_text->clear();
@@ -124,6 +133,7 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
   EnsureOcrEngineLoaded();
   if (!ocr_engine_) {
     LOG_ERROR("[L3ImageParser] OCR Engine unavailable. Cannot parse image '{}'", file_path);
+    if (out_error) *out_error = "OCR engine unavailable";
     return false;
   }
   last_ocr_active_time_ = std::chrono::steady_clock::now();
@@ -156,6 +166,7 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
   cv::Mat img = ocr::ImageFilter::NormalizeToBgr(raw_img);
   if (img.empty()) {
     LOG_ERROR("[L3ImageParser] Failed to decode image file '{}'", file_path);
+    if (out_error) *out_error = "Failed to decode raster image";
     return false;
   }
 
@@ -170,6 +181,7 @@ bool L3ImageParser::Parse(const std::string &file_path, const std::string &ext, 
   auto ocr_res = ocr_engine_->Recognize(img);
   if (!ocr_res.success) {
     LOG_ERROR("[L3ImageParser] OCR recognition failed for '{}'", file_path);
+    if (out_error) *out_error = "OCR recognition failed";
     return false;
   }
 
@@ -194,7 +206,13 @@ bool L3ImageParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
   }
   out_doc->is_scanned_pdf = false;
   out_doc->page_count = 1;
-  return Parse(ctx.file_path, ctx.ext, &out_doc->utf8_text);
+  out_doc->outcome = ParseOutcome::kOk;
+  out_doc->error_message.clear();
+  if (!ParseInternal(ctx.file_path, ctx.ext, &out_doc->utf8_text, &out_doc->error_message)) {
+    out_doc->outcome = ParseOutcome::kFailed;
+    return false;
+  }
+  return true;
 }
 
 }  // namespace worker

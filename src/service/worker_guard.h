@@ -29,6 +29,7 @@ enum class TaskStatus {
   kTimeout = 1,
   kCrashed = 2,
   kFailed = 3,
+  kEncrypted = 4,
 };
 
 struct ParseTask {
@@ -36,7 +37,7 @@ struct ParseTask {
   std::string file_path;
   std::string ext;
   int parse_level = 1;
-  uint32_t timeout_ms = 60000;  // Dynamic timeout computed by DocPrechecker
+  uint32_t timeout_ms = 60000;
 };
 
 struct ParseTaskResult {

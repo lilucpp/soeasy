@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QSpinBox>
 #include <QStatusBar>
+#include <QTableWidget>
 #include <QTreeWidget>
 #include <chrono>
 #include <cstdlib>
@@ -27,6 +28,7 @@
 #include "gui/hover_preview_popup.h"
 #include "gui/i18n.h"
 #include "gui/main_window.h"
+#include "gui/parse_issues_dialog.h"
 #include "gui/result_view.h"
 #include "gui/search_bar.h"
 #include "gui/title_bar.h"
@@ -835,6 +837,45 @@ int main(int argc, char *argv[]) {
     app.processEvents();
     CHECK(!drag_win.isMaximized());
     std::cout << "  -> TitleBar 拖拽防误触、移动与双击最大化切换验证通过!\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test 10: Status Bar Parse Health Badge & ParseIssuesDialog Smoke Check
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 10] 测试 MainWindow 状态栏解析健康徽章与 ParseIssuesDialog 异常筛选展示...\n";
+  {
+    CHECK(storage->IndexDocument(990001, test_dir + "/locked.docx", "locked.docx", "docx", 512, 1700000200, 1, "",
+                                 static_cast<int>(soeasy::common::ParseStatus::kEncrypted),
+                                 "Document is encrypted and requires a password"));
+    CHECK(storage->IndexDocument(990002, test_dir + "/stalled.pdf", "stalled.pdf", "pdf", 4096, 1700000201, 1, "",
+                                 static_cast<int>(soeasy::common::ParseStatus::kTimeout),
+                                 "Task timed out after 60000 ms"));
+
+    auto *parse_btn = [&]() -> QPushButton * {
+      soeasy::gui::MainWindow issues_win(pipeline);
+      issues_win.show();
+      app.processEvents();
+      auto *btn = issues_win.findChild<QPushButton *>("statusParseBtn");
+      CHECK(btn != nullptr);
+      CHECK(!btn->text().isEmpty());
+      soeasy::gui::ParseIssuesDialog issues_dlg(pipeline->search_coordinator(), &issues_win);
+      issues_dlg.show();
+      app.processEvents();
+
+      auto *table = issues_dlg.findChild<QTableWidget *>();
+      CHECK(table != nullptr);
+      CHECK(table->rowCount() >= 2);
+      auto *filter_box = issues_dlg.findChild<QComboBox *>();
+      CHECK(filter_box != nullptr);
+      const int enc_idx = filter_box->findData(static_cast<int>(soeasy::common::ParseStatus::kEncrypted));
+      CHECK(enc_idx >= 0);
+      filter_box->setCurrentIndex(enc_idx);
+      app.processEvents();
+      CHECK(table->rowCount() == 1);
+      return btn;
+    }();
+    (void)parse_btn;
+    std::cout << "  -> MainWindow 解析健康徽章及 ParseIssuesDialog 分类筛选验证通过!\n";
   }
 
   // Cleanup

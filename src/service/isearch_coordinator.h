@@ -6,9 +6,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "common/parse_status.h"
 #include "service/name_index.h"
 
 namespace soeasy {
@@ -113,6 +115,19 @@ class ISearchCoordinator {
   [[nodiscard]] bool IsQueryTokenCurrent(uint64_t token) const { return DoIsQueryTokenCurrent(token); }
 
   /**
+   * @brief Query persistent summary counts of normal, encrypted, timeout, crashed, and failed files.
+   */
+  [[nodiscard]] common::ParseStatusSummary GetParseStatusSummary() const { return DoGetParseStatusSummary(); }
+
+  /**
+   * @brief Query persistent parse issue records (encrypted, timeout, crashed, failed) with optional filter.
+   */
+  [[nodiscard]] std::vector<common::ParseIssueRecord> GetParseIssues(
+      std::optional<common::ParseStatus> filter_status = std::nullopt, size_t limit = 500, size_t offset = 0) const {
+    return DoGetParseIssues(filter_status, limit, offset);
+  }
+
+  /**
    * @brief Invalidate all in-flight queries.
    */
   void InvalidateActiveQueries() { DoInvalidateActiveQueries(); }
@@ -134,6 +149,11 @@ class ISearchCoordinator {
   virtual uint64_t DoAllocateQueryToken() = 0;
   [[nodiscard]] virtual bool DoIsQueryTokenCurrent(uint64_t token) const = 0;
   virtual void DoInvalidateActiveQueries() = 0;
+  [[nodiscard]] virtual common::ParseStatusSummary DoGetParseStatusSummary() const { return {}; }
+  [[nodiscard]] virtual std::vector<common::ParseIssueRecord> DoGetParseIssues(
+      std::optional<common::ParseStatus> /*filter_status*/, size_t /*limit*/, size_t /*offset*/) const {
+    return {};
+  }
 };
 
 }  // namespace service

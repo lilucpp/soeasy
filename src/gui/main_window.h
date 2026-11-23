@@ -64,6 +64,7 @@ class MainWindow : public QMainWindow {
   void OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path);
   void OnLoadMoreRequested();
   void OnTogglePreview();
+  void OnOpenParseIssues();
   void OnOpenSettings();
   void OnSettingsAppliedWithDiff(const soeasy::service::ConfigChangeSummary &diff);
   void OnRebuildIndexRequested();
@@ -87,6 +88,7 @@ class MainWindow : public QMainWindow {
   void SetupTrayIcon();
   void RetranslateUi();
   void UpdateStatusBar(int total_matches, double cost_ms);
+  void UpdateParseHealthBadge();
   [[nodiscard]] QString BuildStatusTooltip(double cost_ms, bool is_incomplete) const;
   void UpdateLatencyLabel(double cost_ms);
   [[nodiscard]] service::BackgroundIndexCallbacks MakeBackgroundCallbacks();
@@ -100,6 +102,7 @@ class MainWindow : public QMainWindow {
   PreviewPanel *preview_panel_ = nullptr;
 
   QLabel *status_stats_label_ = nullptr;
+  QPushButton *status_parse_btn_ = nullptr;
   QProgressBar *status_progress_bar_ = nullptr;
   QPushButton *status_cancel_btn_ = nullptr;
   QLabel *status_file_label_ = nullptr;

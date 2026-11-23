@@ -27,13 +27,26 @@ void ParserRegistry::RegisterParser(std::unique_ptr<IDocumentParser> parser) {
 
 bool ParserRegistry::ParseDocument(const ParseContext &ctx, ExtractedDocument *out_doc) {
   if (!out_doc) return false;
+  out_doc->outcome = ParseOutcome::kOk;
+  out_doc->error_message.clear();
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto &parser : parsers_) {
     if (parser->CanHandle(ctx)) {
-      return parser->Parse(ctx, out_doc);
+      const bool ok = parser->Parse(ctx, out_doc);
+      if (!ok) {
+        if (out_doc->outcome == ParseOutcome::kOk) {
+          out_doc->outcome = ParseOutcome::kFailed;
+        }
+        if (out_doc->error_message.empty()) {
+          out_doc->error_message = parser->Name() + " failed to parse document";
+        }
+      }
+      return ok;
     }
   }
   LOG_WARN("[ParserRegistry] No registered parser claimed file '{}' (ext: '{}')", ctx.file_path, ctx.ext);
+  out_doc->outcome = ParseOutcome::kFailed;
+  out_doc->error_message = "No registered parser claimed extension '" + ctx.ext + "'";
   return false;
 }
 

@@ -14,7 +14,7 @@ namespace service {
 namespace {
 
 inline size_t OpPayloadBytes(const WriteOp &op) {
-  return op.content.size() + op.file_path.size() + op.file_name.size();
+  return op.content.size() + op.file_path.size() + op.file_name.size() + op.error_reason.size();
 }
 
 struct ScopedCounter {
@@ -248,7 +248,7 @@ void AsyncWriteQueue::ExecuteBatchTransaction(const std::vector<WriteOp> &batch)
   auto execute_op = [this](const WriteOp &op) {
     if (op.type == WriteOpType::kIndex) {
       return storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                            op.parse_level, op.content);
+                                            op.parse_level, op.content, op.parse_stat, op.error_reason);
     }
     if (op.type == WriteOpType::kDelete) {
       return storage_engine_->DeleteDocument(op.doc_id);

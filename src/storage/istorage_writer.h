@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "common/parse_status.h"
+
 namespace soeasy {
 namespace storage {
 
@@ -20,6 +22,8 @@ struct DocumentIndexEntry {
   int64_t mtime = 0;
   int parse_level = 0;
   std::string utf8_content;
+  int parse_stat = static_cast<int>(common::ParseStatus::kOk);
+  std::string error_reason;
 };
 
 /**

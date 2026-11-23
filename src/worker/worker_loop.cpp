@@ -51,11 +51,11 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     result.setIsScannedPdf(doc.is_scanned_pdf);
 
     if (!parse_ok) {
-      LOG_ERROR("[Worker] Parse FAILED | file: '{}' | ext: '{}' | cost: {:.2f} ms", file_path, ext, cost_ms);
-      result.setStatusCode(soeasy::ipc::ParseStatusCode::FAILED);
+      const auto failure = BuildFailureStatusAndLog(file_path, ext, doc, cost_ms, /*is_stream=*/false);
+      result.setStatusCode(failure.first);
       result.setExtractedBytes(0);
       result.setPageCount(0);
-      result.setMessage("Failed to parse document");
+      result.setMessage(failure.second);
     } else {
       LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path, ext,
                doc.utf8_text.size(), cost_ms);
@@ -93,13 +93,14 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     double cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
     if (!parse_ok) {
+      const auto failure = BuildFailureStatusAndLog(file_path, ext, doc, cost_ms, /*is_stream=*/true);
       std::string().swap(doc.utf8_text);
       MaybeTrimHeap(0, cost_ms);
       auto finishReq = receiver.finishRequest();
       finishReq.setTotalBytes(0);
       finishReq.setIsScannedPdf(false);
-      finishReq.setStatusCode(soeasy::ipc::ParseStatusCode::FAILED);
-      finishReq.setErrorMsg("Failed to parse document");
+      finishReq.setStatusCode(failure.first);
+      finishReq.setErrorMsg(failure.second);
       return finishReq.send().then([](auto &&) {});
     }
 
@@ -142,6 +143,29 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
   }
 
  private:
+  static std::pair<soeasy::ipc::ParseStatusCode, std::string> BuildFailureStatusAndLog(const std::string &file_path,
+                                                                                       const std::string &ext,
+                                                                                       const ExtractedDocument &doc,
+                                                                                       double cost_ms,
+                                                                                       bool is_stream) {
+    const bool is_encrypted = (doc.outcome == ParseOutcome::kEncrypted);
+    const auto status_code =
+        is_encrypted ? soeasy::ipc::ParseStatusCode::ENCRYPTED : soeasy::ipc::ParseStatusCode::FAILED;
+    const std::string err_msg =
+        doc.error_message.empty()
+            ? (is_encrypted ? "Document is encrypted and requires a password" : "Failed to parse document")
+            : doc.error_message;
+    const char *mode_suffix = is_stream ? " (stream)" : "";
+    if (is_encrypted) {
+      LOG_WARN("[Worker] Parse ENCRYPTED{} | file: '{}' | ext: '{}' | cost: {:.2f} ms | {}", mode_suffix, file_path,
+               ext, cost_ms, err_msg);
+    } else {
+      LOG_ERROR("[Worker] Parse FAILED{} | file: '{}' | ext: '{}' | cost: {:.2f} ms | {}", mode_suffix, file_path, ext,
+                cost_ms, err_msg);
+    }
+    return {status_code, err_msg};
+  }
+
   static void CheckTestHooks(const std::string &file_path) {
     if (file_path.find("TEST_TRIGGER_HANG") != std::string::npos) {
       while (true) {

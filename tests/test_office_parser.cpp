@@ -674,6 +674,78 @@ int main(int argc, char *argv[]) {
     std::cout << "  [+] DOCX 内嵌图片 OCR 回调 (user_data 透传)、实例隔离及 CheckIdleUnload(0.0) 卸载验证通过\n";
   }
 
+  // -------------------------------------------------------------
+  // 8. 验证 < 1KB 合法 PDF 解析、加密文档检测 (DOCTOTEXT_STATUS_ENCRYPTED) 与精确错误原因透传
+  // -------------------------------------------------------------
+  std::cout << "\n[Step 8] 验证 < 1KB 合法 PDF、加密文档检测与具体失败原因透传...\n";
+  {
+    // 8.1 < 1KB 合法 PDF (已存在 test.pdf 即 < 1KB) 通过 L2OfficeParser 正常提取
+    const uint64_t pdf_size = GetFileSize(pdf_path);
+    CHECK(pdf_size > 0 && pdf_size < 1024);
+    soeasy::worker::L2OfficeParser parser;
+    soeasy::worker::ParseContext pdf_ctx;
+    pdf_ctx.file_path = pdf_path;
+    pdf_ctx.ext = "pdf";
+    soeasy::worker::ExtractedDocument pdf_doc;
+    CHECK(parser.Parse(pdf_ctx, &pdf_doc));
+    CHECK(pdf_doc.outcome == soeasy::worker::ParseOutcome::kOk);
+    CHECK(pdf_doc.utf8_text.find("SoEasy Deep PDF Document Search Engine") != std::string::npos);
+
+    // 8.2 加密 ODT 触发 DOCTOTEXT_STATUS_ENCRYPTED 且不误入 Fallback
+    const std::string encrypted_odt = test_dir + "/encrypted_sample.odt";
+    {
+      mz_zip_archive zip;
+      std::memset(&zip, 0, sizeof(zip));
+      CHECK(mz_zip_writer_init_file(&zip, encrypted_odt.c_str(), 0));
+      const std::string manifest =
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+          "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">\n"
+          "  <manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\">\n"
+          "    <manifest:encryption-data manifest:checksum=\"abc\"/>\n"
+          "  </manifest:file-entry>\n"
+          "</manifest:manifest>";
+      mz_zip_writer_add_mem(&zip, "META-INF/manifest.xml", manifest.data(), manifest.size(), MZ_BEST_COMPRESSION);
+      CHECK(mz_zip_writer_finalize_archive(&zip));
+      CHECK(mz_zip_writer_end(&zip));
+    }
+
+    soeasy::worker::ParseContext enc_ctx;
+    enc_ctx.file_path = encrypted_odt;
+    enc_ctx.ext = "odt";
+    soeasy::worker::ExtractedDocument enc_doc;
+    CHECK(!parser.Parse(enc_ctx, &enc_doc));
+    CHECK(enc_doc.outcome == soeasy::worker::ParseOutcome::kEncrypted);
+    CHECK(!enc_doc.error_message.empty());
+    CHECK(!enc_doc.is_scanned_pdf);
+
+    // 通过 WorkerGuard RPC 端到端验证 TaskStatus::kEncrypted 透传
+    soeasy::service::ParseTask enc_task;
+    enc_task.doc_id = 9001;
+    enc_task.file_path = encrypted_odt;
+    enc_task.ext = "odt";
+    enc_task.parse_level = 1;
+    enc_task.timeout_ms = 5000;
+    soeasy::service::ParseTaskResult enc_rpc_res;
+    CHECK(worker_guard->ExecuteTask(enc_task, &enc_rpc_res));
+    CHECK(enc_rpc_res.status == soeasy::service::TaskStatus::kEncrypted);
+    CHECK(!enc_rpc_res.error_message.empty());
+
+    // 8.3 损坏文档返回 kFailed 且携带非空错误原因
+    const std::string broken_docx = test_dir + "/broken_sample.docx";
+    {
+      std::ofstream ofs(broken_docx, std::ios::binary);
+      ofs << "not_a_valid_zip_or_docx_payload";
+    }
+    soeasy::worker::ParseContext bad_ctx;
+    bad_ctx.file_path = broken_docx;
+    bad_ctx.ext = "docx";
+    soeasy::worker::ExtractedDocument bad_doc;
+    CHECK(!parser.Parse(bad_ctx, &bad_doc));
+    CHECK(bad_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
+    CHECK(!bad_doc.error_message.empty());
+    std::cout << "  [+] <1KB PDF (" << pdf_size << " B)、加密文档 (TaskStatus::kEncrypted) 与精确错误原因透传验证通过\n";
+  }
+
   // Cleanup
   worker_guard.reset();
   storage->Close();

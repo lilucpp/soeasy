@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/parse_status.h"
 #include "storage/istorage_engine.h"
 
 namespace soeasy {
@@ -33,6 +34,8 @@ struct WriteOp {
   int64_t mtime = 0;
   int parse_level = 1;
   std::string content;
+  int parse_stat = static_cast<int>(common::ParseStatus::kOk);
+  std::string error_reason;
 };
 
 /**

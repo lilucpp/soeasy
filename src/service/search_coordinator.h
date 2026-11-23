@@ -50,6 +50,11 @@ class SearchCoordinator final : public ISearchCoordinator {
 
   void DoInvalidateActiveQueries() override;
 
+  [[nodiscard]] common::ParseStatusSummary DoGetParseStatusSummary() const override;
+
+  [[nodiscard]] std::vector<common::ParseIssueRecord> DoGetParseIssues(
+      std::optional<common::ParseStatus> filter_status, size_t limit, size_t offset) const override;
+
  private:
   std::shared_ptr<NameIndex> name_index_;
   std::shared_ptr<storage::IDocumentSearchReader> storage_engine_;

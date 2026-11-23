@@ -36,6 +36,7 @@ enum class ParseStatusCode_a6dec0bc62f9cc8e: uint16_t {
   TIMEOUT,
   UNSUPPORTED,
   CRASHED,
+  ENCRYPTED,
 };
 CAPNP_DECLARE_ENUM(ParseStatusCode, a6dec0bc62f9cc8e);
 CAPNP_DECLARE_SCHEMA(92a5148d5bfad478);

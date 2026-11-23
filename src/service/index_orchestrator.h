@@ -117,7 +117,8 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   bool IndexSingleFile(const std::string &file_path, bool force_reindex = false);
   bool IndexSingleFileLocked(const std::string &file_path, bool force_reindex = false);
   void PersistIndexedFile(int64_t doc_id, const std::string &file_path, const std::string &filename,
-                          const std::string &ext, uint64_t file_size, int64_t file_mtime, std::string content);
+                          const std::string &ext, uint64_t file_size, int64_t file_mtime, std::string content,
+                          int parse_stat = 1, std::string error_reason = "");
   void PurgeFailedFilesUnder(const std::string &dir_path);
 
   static constexpr int64_t kMinFreePagesForVacuum = 100;

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -124,7 +125,9 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
    * @brief Backward-compatible overload for legacy multi-argument invocation.
    */
   bool IndexDocument(int64_t doc_id, const std::string &file_path, const std::string &file_name, const std::string &ext,
-                     uint64_t file_size, int64_t mtime, int parse_level, const std::string &utf8_content) {
+                     uint64_t file_size, int64_t mtime, int parse_level, const std::string &utf8_content,
+                     int parse_stat = static_cast<int>(common::ParseStatus::kOk),
+                     const std::string &error_reason = "") {
     DocumentIndexEntry entry;
     entry.doc_id = doc_id;
     entry.file_path = file_path;
@@ -134,6 +137,8 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
     entry.mtime = mtime;
     entry.parse_level = parse_level;
     entry.utf8_content = utf8_content;
+    entry.parse_stat = parse_stat;
+    entry.error_reason = error_reason;
     return DoIndexDocument(entry);
   }
 
@@ -202,6 +207,13 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
    */
   bool ForEachFileMetadata(FileMetaCallback callback) override { return DoForEachFileMetadata(std::move(callback)); }
 
+  common::ParseStatusSummary GetParseStatusSummary() override { return DoGetParseStatusSummary(); }
+
+  std::vector<common::ParseIssueRecord> GetParseIssues(
+      std::optional<common::ParseStatus> filter_status = std::nullopt, size_t limit = 500, size_t offset = 0) override {
+    return DoGetParseIssues(filter_status, limit, offset);
+  }
+
   /**
    * @brief Acquire a dedicated read-only connection handle from the pool (Zero-lock read lease).
    */
@@ -267,6 +279,11 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
     return true;
   }
   virtual ScopedReadConnection DoAcquireReadConnection() = 0;
+  virtual common::ParseStatusSummary DoGetParseStatusSummary() { return {}; }
+  virtual std::vector<common::ParseIssueRecord> DoGetParseIssues(std::optional<common::ParseStatus> /*filter_status*/,
+                                                                 size_t /*limit*/, size_t /*offset*/) {
+    return {};
+  }
   virtual bool DoRekey(const std::string &new_key) = 0;
   [[nodiscard]] virtual std::string DoGetLastError() const = 0;
 };

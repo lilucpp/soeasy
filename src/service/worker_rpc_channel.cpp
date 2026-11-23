@@ -34,8 +34,23 @@ class TextStreamReceiverImpl final : public soeasy::ipc::TextStreamReceiver::Ser
     if (out_) {
       out_->extracted_bytes = p.getTotalBytes();
       out_->is_scanned_pdf = p.getIsScannedPdf();
-      out_->status =
-          (p.getStatusCode() == soeasy::ipc::ParseStatusCode::OK) ? TaskStatus::kSuccess : TaskStatus::kFailed;
+      switch (p.getStatusCode()) {
+        case soeasy::ipc::ParseStatusCode::OK:
+          out_->status = TaskStatus::kSuccess;
+          break;
+        case soeasy::ipc::ParseStatusCode::ENCRYPTED:
+          out_->status = TaskStatus::kEncrypted;
+          break;
+        case soeasy::ipc::ParseStatusCode::TIMEOUT:
+          out_->status = TaskStatus::kTimeout;
+          break;
+        case soeasy::ipc::ParseStatusCode::CRASHED:
+          out_->status = TaskStatus::kCrashed;
+          break;
+        default:
+          out_->status = TaskStatus::kFailed;
+          break;
+      }
       out_->error_message = p.getErrorMsg().cStr();
     }
     return kj::READY_NOW;

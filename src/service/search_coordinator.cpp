@@ -266,5 +266,15 @@ void SearchCoordinator::DoInvalidateActiveQueries() {
   current_query_token_.fetch_add(1, std::memory_order_relaxed);
 }
 
+common::ParseStatusSummary SearchCoordinator::DoGetParseStatusSummary() const {
+  return storage_engine_ ? storage_engine_->GetParseStatusSummary() : common::ParseStatusSummary{};
+}
+
+std::vector<common::ParseIssueRecord> SearchCoordinator::DoGetParseIssues(
+    std::optional<common::ParseStatus> filter_status, size_t limit, size_t offset) const {
+  return storage_engine_ ? storage_engine_->GetParseIssues(filter_status, limit, offset)
+                         : std::vector<common::ParseIssueRecord>{};
+}
+
 }  // namespace service
 }  // namespace soeasy

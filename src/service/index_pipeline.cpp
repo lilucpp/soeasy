@@ -175,5 +175,15 @@ PipelineStats IndexPipeline::GetStats() const {
   return orchestrator_ ? orchestrator_->GetStats() : PipelineStats{};
 }
 
+common::ParseStatusSummary IndexPipeline::GetParseStatusSummary() const {
+  return search_coordinator_ ? search_coordinator_->GetParseStatusSummary() : common::ParseStatusSummary{};
+}
+
+std::vector<common::ParseIssueRecord> IndexPipeline::GetParseIssues(
+    std::optional<common::ParseStatus> filter_status, size_t limit, size_t offset) const {
+  return search_coordinator_ ? search_coordinator_->GetParseIssues(filter_status, limit, offset)
+                             : std::vector<common::ParseIssueRecord>{};
+}
+
 }  // namespace service
 }  // namespace soeasy

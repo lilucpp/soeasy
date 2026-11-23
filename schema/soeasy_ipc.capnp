@@ -16,6 +16,7 @@ enum ParseStatusCode {
   timeout     @2;
   unsupported @3;
   crashed     @4;
+  encrypted   @5;
 }
 
 struct ParseResult {

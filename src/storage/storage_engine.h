@@ -66,6 +66,9 @@ class StorageEngine : public IStorageEngine {
   std::vector<FileMetaRecord> DoGetAllFilesMetadata() override;
   bool DoForEachFileMetadata(FileMetaCallback callback) override;
   ScopedReadConnection DoAcquireReadConnection() override;
+  common::ParseStatusSummary DoGetParseStatusSummary() override;
+  std::vector<common::ParseIssueRecord> DoGetParseIssues(std::optional<common::ParseStatus> filter_status, size_t limit,
+                                                         size_t offset) override;
   [[nodiscard]] std::string DoGetLastError() const override;
 
  private:
@@ -92,6 +95,7 @@ class StorageEngine : public IStorageEngine {
   void ApplyWriterPragmasUnlocked(sqlite3 *db, int wal_autocheckpoint, int cache_kb, int64_t mmap_bytes);
   void ShrinkIdleMemoryUnlocked();
   bool GetDocumentContentOnDb(sqlite3 *db, int64_t doc_id, std::string *out_content);
+  sqlite3 *AcquireReadTarget(ScopedReadConnection *out_lease, std::unique_lock<std::mutex> *out_fallback);
   bool DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids,
                                 const std::unordered_map<std::string, int> &ext_counts, bool delete_files_rows);
 
@@ -112,6 +116,8 @@ class StorageEngine : public IStorageEngine {
   sqlite3_stmt *stmt_fts_del_ = nullptr;
   sqlite3_stmt *stmt_fts_ins_ = nullptr;
   sqlite3_stmt *stmt_meta_select_ = nullptr;
+  sqlite3_stmt *stmt_issues_upsert_ = nullptr;
+  sqlite3_stmt *stmt_issues_del_ = nullptr;
   ::ZSTD_CCtx_s *zstd_cctx_ = nullptr;
   std::vector<uint8_t> compress_buf_;
   common::ResourceProfile resource_profile_ = common::ResourceProfile::kLowMemory;

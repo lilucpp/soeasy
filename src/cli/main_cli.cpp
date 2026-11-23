@@ -15,8 +15,8 @@
 
 #include "common/logger.h"
 #include "common/machine_key_provider.h"
+#include "common/parse_status.h"
 #include "common/snippet_highlighter.h"
-#include "service/doc_prechecker.h"
 #include "service/name_index.h"
 #include "service/search_coordinator.h"
 #include "storage/storage_engine.h"
@@ -202,7 +202,7 @@ int HandleSearch(soeasy::storage::StorageEngine &storage, const std::string &que
   return results.empty() ? 1 : 0;
 }
 
-int HandleStats(soeasy::storage::StorageEngine &storage, bool json_output) {
+int HandleStats(soeasy::storage::StorageEngine &storage, bool json_output, bool verbose) {
   soeasy::storage::StorageFragmentation frag;
   bool frag_ok = storage.GetFragmentation(&frag);
 
@@ -213,22 +213,49 @@ int HandleStats(soeasy::storage::StorageEngine &storage, bool json_output) {
     total_indexed_bytes += r.file_size;
   });
 
+  const soeasy::common::ParseStatusSummary parse_summary = storage.GetParseStatusSummary();
+  const size_t issue_limit = (json_output || verbose) ? 5000 : 20;
+  const auto issues = storage.GetParseIssues(std::nullopt, issue_limit, 0);
+
   if (json_output) {
     std::cout << "{\n"
               << "  \"total_documents\": " << total_docs << ",\n"
+              << "  \"normal_documents\": " << parse_summary.ok_count << ",\n"
+              << "  \"encrypted_documents\": " << parse_summary.encrypted_count << ",\n"
+              << "  \"timeout_documents\": " << parse_summary.timeout_count << ",\n"
+              << "  \"crashed_documents\": " << parse_summary.crashed_count << ",\n"
+              << "  \"failed_documents\": " << parse_summary.failed_count << ",\n"
               << "  \"total_indexed_bytes\": " << total_indexed_bytes << ",\n"
               << "  \"db_page_size\": " << (frag_ok ? frag.page_size : 4096) << ",\n"
               << "  \"db_total_pages\": " << (frag_ok ? frag.total_pages : 0) << ",\n"
               << "  \"db_free_pages\": " << (frag_ok ? frag.free_pages : 0) << ",\n"
               << "  \"db_total_bytes\": " << (frag_ok ? frag.total_bytes : 0) << ",\n"
               << "  \"db_free_bytes\": " << (frag_ok ? frag.free_bytes : 0) << ",\n"
-              << "  \"db_fragmentation_ratio\": " << (frag_ok ? frag.frag_ratio : 0.0) << "\n"
+              << "  \"db_fragmentation_ratio\": " << (frag_ok ? frag.frag_ratio : 0.0) << ",\n"
+              << "  \"issues\": [\n";
+    for (size_t i = 0; i < issues.size(); ++i) {
+      const auto &item = issues[i];
+      std::cout << "    {\n"
+                << "      \"status\": \"" << soeasy::common::ParseStatusToKey(item.status) << "\",\n"
+                << "      \"file_name\": \"" << EscapeJson(item.file_name) << "\",\n"
+                << "      \"file_path\": \"" << EscapeJson(item.file_path) << "\",\n"
+                << "      \"ext\": \"" << EscapeJson(item.ext) << "\",\n"
+                << "      \"file_size\": " << item.file_size << ",\n"
+                << "      \"reason\": \"" << EscapeJson(item.reason) << "\"\n"
+                << "    }" << (i + 1 < issues.size() ? "," : "") << "\n";
+    }
+    std::cout << "  ]\n"
               << "}\n";
   } else {
     std::cout << "========================================================\n"
               << "   SoEasy Storage & Index Statistics\n"
               << "========================================================\n"
               << "Total Documents Indexed: " << total_docs << "\n"
+              << "Normal Parsed:           " << parse_summary.ok_count << "\n"
+              << "Encrypted (Skipped):     " << parse_summary.encrypted_count << "\n"
+              << "Failures (Total):        " << parse_summary.failure_count()
+              << " (timeout: " << parse_summary.timeout_count << ", crashed: " << parse_summary.crashed_count
+              << ", failed: " << parse_summary.failed_count << ")\n"
               << "Total Raw Data Size:     " << (total_indexed_bytes / 1024 / 1024) << " MB (" << total_indexed_bytes
               << " bytes)\n";
     if (frag_ok) {
@@ -238,6 +265,22 @@ int HandleStats(soeasy::storage::StorageEngine &storage, bool json_output) {
                 << " bytes)\n"
                 << "Fragmentation Ratio:     " << std::fixed << std::setprecision(2) << (frag.frag_ratio * 100.0)
                 << " %\n";
+    }
+    if (!issues.empty()) {
+      std::cout << "\nParse Issues (" << parse_summary.issue_count() << " total"
+                << (issues.size() < parse_summary.issue_count() ? ", showing first " + std::to_string(issues.size())
+                                                                : "")
+                << "):\n";
+      for (const auto &item : issues) {
+        std::cout << "  [" << soeasy::common::ParseStatusToKey(item.status) << "] " << item.file_path;
+        if (!item.reason.empty()) {
+          std::cout << "  -- " << item.reason;
+        }
+        std::cout << "\n";
+      }
+      if (!verbose && issues.size() < parse_summary.issue_count()) {
+        std::cout << "  ... run with --verbose (-v) or --json to view all issues.\n";
+      }
     }
   }
 
@@ -432,7 +475,7 @@ int main(int argc, char *argv[]) {
   if (command == "search") {
     return HandleSearch(storage, query, limit, offset, path_prefix, json_output, show_snippet);
   } else if (command == "stats") {
-    return HandleStats(storage, json_output);
+    return HandleStats(storage, json_output, verbose);
   } else if (command == "index") {
     return HandleIndex(storage, index_path, verbose);
   } else {

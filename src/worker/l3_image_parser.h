@@ -69,6 +69,8 @@ class L3ImageParser : public IDocumentParser {
   size_t min_effective_chars() const { return min_effective_chars_; }
 
  private:
+  bool ParseInternal(const std::string &file_path, const std::string &ext, std::string *out_utf8_text,
+                     std::string *out_error);
   void EnsureOcrEngineLoaded();
 
   std::unordered_set<std::string> supported_exts_;

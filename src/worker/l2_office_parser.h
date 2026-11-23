@@ -94,9 +94,10 @@ class L2OfficeParser : public IDocumentParser {
   static std::string UnescapeXmlEntities(const std::string &text);
 
  private:
+  bool ParseInternal(const std::string &file_path, const std::string &ext, ExtractedDocument *out_doc);
   std::string RunEmbeddedImageOcr(const std::string &image_name, const char *image_buffer, size_t image_size);
   void ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext,
-                            std::string *out_utf8_text);
+                            std::string *out_utf8_text, int *out_dt_status, std::string *out_dt_error);
   static const char *DocToTextImageParserCallbackC(const char *image_name, const char *image_buffer,
                                                    size_t image_size, void *user_data);
 

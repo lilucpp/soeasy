@@ -20,11 +20,19 @@ struct ParseContext {
   bool enable_embedded_ocr = false;  // Trigger embedded image OCR in Office / PDF
 };
 
+enum class ParseOutcome {
+  kOk = 0,
+  kEncrypted = 1,
+  kFailed = 2,
+};
+
 struct ExtractedDocument {
   std::string utf8_text;        // Normalized UTF-8 text string
   bool is_scanned_pdf = false;  // True if scanned / image-only PDF
   size_t page_count = 0;        // Document page count (if applicable)
   std::string metadata_json;    // Optional extra metadata (JSON formatted)
+  ParseOutcome outcome = ParseOutcome::kOk;
+  std::string error_message;    // Specific failure or encryption reason
 };
 
 /**

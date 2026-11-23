@@ -24,9 +24,9 @@
 
 #include "common/encoding_utils.h"
 #include "common/logger.h"
+#include "common/parse_status.h"
 #include "common/resource_profile.h"
 #include "common/system_env.h"
-#include "service/doc_prechecker.h"
 
 namespace soeasy {
 namespace service {
@@ -99,6 +99,15 @@ bool IsEmbeddedOcrCandidateExt(const std::string &ext) {
   static const std::unordered_set<std::string> kOcrDocExts = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt",
                                                               "ods", "odp", "odg",  "wps", "et",   "dps", "rtf"};
   return kOcrDocExts.find(ext) != kOcrDocExts.end();
+}
+
+uint32_t ComputeTaskTimeoutMs(const std::string &ext) {
+  static const std::unordered_set<std::string> kImageExts = {"jpg",  "jpeg", "png", "bmp", "tiff", "tif", "webp",
+                                                             "gif",  "svg",  "pnm", "ppm", "pgm",  "tga"};
+  if (kImageExts.find(ext) != kImageExts.end()) {
+    return 180000;
+  }
+  return 60000;
 }
 
 bool PathStartsWithNormalizedDir(const std::string &file_path, const std::string &dir_prefix_slash) {
@@ -744,20 +753,8 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     return true;
   }
 
-  // Pre-check
-  auto precheck = DocPrechecker::Check(file_path, ext, file_size);
-  if (precheck.status != PrecheckStatus::kValid) {
-    LOG_WARN("[IndexOrchestrator] Precheck skipped body for '{}' (ext: '{}') | reason: {}", file_path, ext,
-             precheck.reason);
-    PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, "");
-
-    std::lock_guard<std::mutex> lock(failed_files_mutex_);
-    failed_files_[file_path] = {file_size, file_mtime, precheck.reason};
-    return true;
-  }
-
-  // Dispatch to worker sandbox pool
-  ParseTask task{doc_id, file_path, ext, 1, precheck.recommended_timeout_ms};
+  // Dispatch directly to worker sandbox pool (format validation and encrypted detection happen inside parser)
+  ParseTask task{doc_id, file_path, ext, 1, ComputeTaskTimeoutMs(ext)};
   ParseTaskResult res;
 
   auto parse_start = std::chrono::high_resolution_clock::now();
@@ -766,18 +763,53 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
   if (!ok || res.status != TaskStatus::kSuccess) {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    stats_.total_parse_failures++;
-    LOG_ERROR(
-        "[IndexOrchestrator] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | "
-        "status: {} | err: {}",
-        file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status), res.error_message);
+    common::ParseStatus issue_stat = common::ParseStatus::kFailed;
+    std::string reason = res.error_message;
+    {
+      std::lock_guard<std::mutex> lock(stats_mutex_);
+      switch (res.status) {
+        case TaskStatus::kEncrypted:
+          issue_stat = common::ParseStatus::kEncrypted;
+          stats_.total_encrypted_files++;
+          if (reason.empty()) reason = "Document is encrypted and requires a password";
+          break;
+        case TaskStatus::kTimeout:
+          issue_stat = common::ParseStatus::kTimeout;
+          stats_.total_parse_failures++;
+          stats_.total_parse_timeouts++;
+          if (reason.empty()) reason = "Task timed out during document parsing";
+          break;
+        case TaskStatus::kCrashed:
+          issue_stat = common::ParseStatus::kCrashed;
+          stats_.total_parse_failures++;
+          stats_.total_parse_crashes++;
+          if (reason.empty()) reason = "Worker crashed during document parsing";
+          break;
+        default:
+          issue_stat = common::ParseStatus::kFailed;
+          stats_.total_parse_failures++;
+          if (reason.empty()) reason = "Failed to parse document";
+          break;
+      }
+    }
 
-    // Index filename into NameIndex and StorageEngine so it remains searchable
-    PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, "");
+    if (issue_stat == common::ParseStatus::kEncrypted) {
+      LOG_WARN(
+          "[IndexOrchestrator] ENCRYPTED '{}' (ext: '{}', size: {} B) in {:.2f} ms | {}",
+          file_path, ext, file_size, parse_cost_ms, reason);
+    } else {
+      LOG_ERROR(
+          "[IndexOrchestrator] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | "
+          "status: {} | err: {}",
+          file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status), reason);
+    }
+
+    // Index filename into NameIndex and StorageEngine, and persist status + reason into parse_issues
+    PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, "", static_cast<int>(issue_stat),
+                       reason);
 
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
-    failed_files_[file_path] = {file_size, file_mtime, res.error_message};
+    failed_files_[file_path] = {file_size, file_mtime, reason};
     return false;
   }
 
@@ -785,7 +817,13 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   std::string parsed_text = std::move(res.extracted_text);
   size_t extracted_bytes = parsed_text.size();
 
-  PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text));
+  {
+    std::lock_guard<std::mutex> flock(failed_files_mutex_);
+    failed_files_.erase(file_path);
+  }
+
+  PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text),
+                     static_cast<int>(common::ParseStatus::kOk), "");
 
   auto total_end = std::chrono::high_resolution_clock::now();
   double total_cost_ms = std::chrono::duration<double, std::milli>(total_end - start_time).count();
@@ -806,14 +844,15 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
 
 void IndexOrchestrator::PersistIndexedFile(int64_t doc_id, const std::string &file_path, const std::string &filename,
                                            const std::string &ext, uint64_t file_size, int64_t file_mtime,
-                                           std::string content) {
+                                           std::string content, int parse_stat, std::string error_reason) {
   if (name_index_) {
     NameRecord rec{doc_id, filename, file_path, ext, file_size, file_mtime};
     name_index_->Upsert(rec);
   }
 
   if (write_queue_ && write_queue_->is_running()) {
-    WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext, file_size, file_mtime, 1, std::move(content)};
+    WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext, file_size, file_mtime, 1, std::move(content),
+               parse_stat, std::move(error_reason)};
     if (write_queue_->Enqueue(&op)) {
       return;
     }
@@ -821,13 +860,14 @@ void IndexOrchestrator::PersistIndexedFile(int64_t doc_id, const std::string &fi
              file_path);
     if (storage_engine_) {
       storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                     op.parse_level, op.content);
+                                     op.parse_level, op.content, op.parse_stat, op.error_reason);
     }
     return;
   }
 
   if (storage_engine_) {
-    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size, file_mtime, 1, content);
+    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size, file_mtime, 1, content, parse_stat,
+                                   error_reason);
   }
 }
 

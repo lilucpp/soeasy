@@ -21,6 +21,9 @@ struct PipelineStats {
   uint64_t total_bytes_indexed = 0;
   uint64_t total_files_deleted = 0;
   uint64_t total_parse_failures = 0;
+  uint64_t total_encrypted_files = 0;
+  uint64_t total_parse_timeouts = 0;
+  uint64_t total_parse_crashes = 0;
 };
 
 enum class IndexTaskKind {

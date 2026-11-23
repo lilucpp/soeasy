@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,6 +28,35 @@ void WriteFile(const std::filesystem::path &path, const std::string &content) {
   std::filesystem::create_directories(path.parent_path());
   std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
   ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+}
+
+std::string BuildTinyValidPdf(const std::string &text_token) {
+  std::string body = "BT\n/F1 12 Tf\n72 720 Td\n(" + text_token + ") Tj\nET\n";
+  std::string pdf =
+      "%PDF-1.4\n"
+      "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+      "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 4 0 R "
+      "/Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+      "4 0 obj\n<< /Length " +
+      std::to_string(body.size()) + " >>\nstream\n" + body +
+      "endstream\nendobj\n"
+      "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n";
+  const size_t o1 = pdf.find("1 0 obj");
+  const size_t o2 = pdf.find("2 0 obj");
+  const size_t o3 = pdf.find("3 0 obj");
+  const size_t o4 = pdf.find("4 0 obj");
+  const size_t o5 = pdf.find("5 0 obj");
+  const size_t xref = pdf.size();
+  std::ostringstream oss;
+  oss << pdf << "xref\n0 6\n0000000000 65535 f \n";
+  char line[32];
+  for (size_t off : {o1, o2, o3, o4, o5}) {
+    std::snprintf(line, sizeof(line), "%010zu 00000 n \n", off);
+    oss << line;
+  }
+  oss << "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" << xref << "\n%%EOF\n";
+  return oss.str();
 }
 
 bool WaitUntil(const std::function<bool()> &pred, std::chrono::milliseconds timeout = std::chrono::milliseconds(8000)) {
@@ -539,6 +569,53 @@ TEST_F(IndexStateMachineTest, PersistedIndexStateCrashRecoveryAndColdBoot) {
   EXPECT_FALSE(rebooted_rebuild_pipe->HasIncompleteRebuild());
   ASSERT_TRUE(storage_->GetMetaValue("index_state", &state_val));
   EXPECT_EQ(state_val, "ready");
+}
+
+TEST_F(IndexStateMachineTest, SmallPdfIndexedAndFailureReasonsSurviveColdRestart) {
+  InitPipeline();
+
+  const std::string tiny_pdf = BuildTinyValidPdf("TinyPdfSearchableToken");
+  ASSERT_LT(tiny_pdf.size(), 1024u);  // Regression check: < 1KB PDF must NOT be skipped by precheck!
+  WriteFile(dir_a_ / "tiny_valid.pdf", tiny_pdf);
+  WriteFile(dir_a_ / "broken_doc.pdf", "%PDF-1.4\ncorrupt_payload_without_xref\n%%EOF\n");
+  WriteFile(dir_a_ / "note_TEST_TRIGGER_CRASH.txt", "triggers worker SIGSEGV");
+
+  config_->SetIndexedDirectories({dir_a_.string()});
+  config_->SetSupportedExtensions({"pdf", "txt"});
+
+  const size_t indexed = pipeline_->PerformInitialScan();
+  EXPECT_EQ(indexed, 1u);
+
+  const auto hits = pipeline_->SearchFulltext("TinyPdfSearchableToken", 10);
+  ASSERT_EQ(hits.size(), 1u);
+  EXPECT_EQ(hits[0].file_name, "tiny_valid.pdf");
+
+  const auto summary = pipeline_->GetParseStatusSummary();
+  EXPECT_EQ(summary.total_files, 3u);
+  EXPECT_EQ(summary.ok_count, 1u);
+  EXPECT_EQ(summary.crashed_count, 1u);
+  EXPECT_EQ(summary.failed_count, 1u);
+
+  const auto crash_issues = pipeline_->GetParseIssues(common::ParseStatus::kCrashed);
+  ASSERT_EQ(crash_issues.size(), 1u);
+  EXPECT_EQ(crash_issues[0].file_name, "note_TEST_TRIGGER_CRASH.txt");
+  EXPECT_FALSE(crash_issues[0].reason.empty());
+
+  const auto fail_issues = pipeline_->GetParseIssues(common::ParseStatus::kFailed);
+  ASSERT_EQ(fail_issues.size(), 1u);
+  EXPECT_EQ(fail_issues[0].file_name, "broken_doc.pdf");
+  EXPECT_FALSE(fail_issues[0].reason.empty());
+
+  // Cold restart on the same storage must preserve summary counts and reasons
+  pipeline_.reset();
+  auto rebooted = std::make_shared<IndexPipeline>(config_, worker_guard_, storage_);
+  ASSERT_TRUE(rebooted->Init());
+  const auto persisted_summary = rebooted->GetParseStatusSummary();
+  EXPECT_EQ(persisted_summary.total_files, 3u);
+  EXPECT_EQ(persisted_summary.ok_count, 1u);
+  EXPECT_EQ(persisted_summary.crashed_count, 1u);
+  EXPECT_EQ(persisted_summary.failed_count, 1u);
+  EXPECT_EQ(rebooted->GetParseIssues(std::nullopt).size(), 2u);
 }
 
 }  // namespace

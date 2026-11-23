@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -73,6 +75,21 @@ class SqliteStmtScope {
 inline std::string SafeColumnText(sqlite3_stmt *stmt, int col) {
   const auto *text = sqlite3_column_text(stmt, col);
   return text ? reinterpret_cast<const char *>(text) : "";
+}
+
+std::string SanitizeUtf8Bounded(const std::string &raw, size_t max_bytes) {
+  if (raw.empty() || max_bytes == 0) {
+    return {};
+  }
+  const size_t slice_len = std::min(raw.size(), max_bytes);
+  std::string_view slice(raw.data(), slice_len);
+  if (utf8::is_valid(slice.begin(), slice.end())) {
+    return std::string(slice);
+  }
+  std::string cleaned;
+  cleaned.reserve(slice_len);
+  utf8::replace_invalid(slice.begin(), slice.end(), std::back_inserter(cleaned), ' ');
+  return cleaned;
 }
 
 /**
@@ -140,6 +157,14 @@ void StorageEngine::FinalizeCachedStatements() {
   if (stmt_meta_select_) {
     sqlite3_finalize(stmt_meta_select_);
     stmt_meta_select_ = nullptr;
+  }
+  if (stmt_issues_upsert_) {
+    sqlite3_finalize(stmt_issues_upsert_);
+    stmt_issues_upsert_ = nullptr;
+  }
+  if (stmt_issues_del_) {
+    sqlite3_finalize(stmt_issues_del_);
+    stmt_issues_del_ = nullptr;
   }
 }
 
@@ -670,6 +695,20 @@ bool StorageEngine::InitTables() {
         key   TEXT PRIMARY KEY NOT NULL,
         value TEXT NOT NULL
     );
+
+    -- 6. Persistent parse issues & encryption status details
+    CREATE TABLE IF NOT EXISTS parse_issues (
+        doc_id      INTEGER PRIMARY KEY,
+        file_path   TEXT NOT NULL,
+        file_name   TEXT NOT NULL,
+        ext         TEXT NOT NULL,
+        file_size   INTEGER NOT NULL DEFAULT 0,
+        mtime       INTEGER NOT NULL DEFAULT 0,
+        status      INTEGER NOT NULL,
+        reason      TEXT NOT NULL DEFAULT '',
+        updated_at  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_parse_issues_status ON parse_issues(status, updated_at DESC);
   )SQL";
 
   char *err_msg = nullptr;
@@ -708,28 +747,24 @@ bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   compress_buf_.resize(compressed_size);
   auto bind_destructor = SQLITE_STATIC;
 
-  // Extract preliminary preview summary (up to first 200 chars)
-  std::string summary;
-  if (raw_size > 0) {
-    size_t summary_len = std::min<size_t>(raw_size, 400);
-    summary.assign(entry.utf8_content.data(), summary_len);
-    if (!utf8::is_valid(summary.begin(), summary.end())) {
-      std::string cleaned;
-      utf8::replace_invalid(summary.begin(), summary.end(), std::back_inserter(cleaned));
-      summary = std::move(cleaned);
-    }
-  }
+  // Extract preliminary preview summary (up to first 400 bytes, UTF-8 safe)
+  std::string summary = SanitizeUtf8Bounded(entry.utf8_content, 400);
 
   bool is_outer_tx = IsInTransactionUnlocked();
   if (!is_outer_tx) {
     sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
   }
 
+  const common::ParseStatus normalized_stat = common::ParseStatusFromInt(entry.parse_stat);
+  const int effective_parse_stat = (normalized_stat == common::ParseStatus::kUnknown)
+                                       ? static_cast<int>(common::ParseStatus::kOk)
+                                       : static_cast<int>(normalized_stat);
+
   // 2. Insert into files table
   if (!stmt_files_insert_) {
     const char *files_sql = R"SQL(
       INSERT INTO files (doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
       ON CONFLICT(doc_id) DO UPDATE SET
           file_name=excluded.file_name,
           file_path=excluded.file_path,
@@ -759,6 +794,7 @@ bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_bind_int64(stmt_files_insert_, 5, static_cast<int64_t>(entry.file_size));
   sqlite3_bind_int64(stmt_files_insert_, 6, entry.mtime);
   sqlite3_bind_int(stmt_files_insert_, 7, entry.parse_level);
+  sqlite3_bind_int(stmt_files_insert_, 8, effective_parse_stat);
 
   if (sqlite3_step(stmt_files_insert_) != SQLITE_DONE) {
     SetLastError(sqlite3_errmsg(writer_db_));
@@ -845,6 +881,67 @@ bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_reset(stmt_fts_ins_);
   sqlite3_clear_bindings(stmt_fts_ins_);
 
+  // 5. Update parse_issues table (upsert on failure/encrypted, delete on clean recovery)
+  if (common::IsIssueParseStatus(common::ParseStatusFromInt(effective_parse_stat))) {
+    if (!stmt_issues_upsert_) {
+      const char *issues_sql = R"SQL(
+        INSERT INTO parse_issues (doc_id, file_path, file_name, ext, file_size, mtime, status, reason, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        ON CONFLICT(doc_id) DO UPDATE SET
+            file_path=excluded.file_path,
+            file_name=excluded.file_name,
+            ext=excluded.ext,
+            file_size=excluded.file_size,
+            mtime=excluded.mtime,
+            status=excluded.status,
+            reason=excluded.reason,
+            updated_at=excluded.updated_at;
+      )SQL";
+      if (sqlite3_prepare_v2(writer_db_, issues_sql, -1, &stmt_issues_upsert_, nullptr) != SQLITE_OK) {
+        SetLastError(sqlite3_errmsg(writer_db_));
+        if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+    }
+    const int64_t now_epoch = static_cast<int64_t>(std::time(nullptr));
+    const std::string safe_reason = SanitizeUtf8Bounded(entry.error_reason, 2048);
+    sqlite3_reset(stmt_issues_upsert_);
+    sqlite3_clear_bindings(stmt_issues_upsert_);
+    sqlite3_bind_int64(stmt_issues_upsert_, 1, entry.doc_id);
+    sqlite3_bind_text(stmt_issues_upsert_, 2, norm_file_path.data(), static_cast<int>(norm_file_path.size()),
+                      bind_destructor);
+    sqlite3_bind_text(stmt_issues_upsert_, 3, entry.file_name.data(), static_cast<int>(entry.file_name.size()),
+                      bind_destructor);
+    sqlite3_bind_text(stmt_issues_upsert_, 4, entry.ext.data(), static_cast<int>(entry.ext.size()), bind_destructor);
+    sqlite3_bind_int64(stmt_issues_upsert_, 5, static_cast<int64_t>(entry.file_size));
+    sqlite3_bind_int64(stmt_issues_upsert_, 6, entry.mtime);
+    sqlite3_bind_int(stmt_issues_upsert_, 7, effective_parse_stat);
+    sqlite3_bind_text(stmt_issues_upsert_, 8, safe_reason.data(), static_cast<int>(safe_reason.size()),
+                      bind_destructor);
+    sqlite3_bind_int64(stmt_issues_upsert_, 9, now_epoch);
+    if (sqlite3_step(stmt_issues_upsert_) != SQLITE_DONE) {
+      SetLastError(sqlite3_errmsg(writer_db_));
+      sqlite3_reset(stmt_issues_upsert_);
+      sqlite3_clear_bindings(stmt_issues_upsert_);
+      if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
+    sqlite3_reset(stmt_issues_upsert_);
+    sqlite3_clear_bindings(stmt_issues_upsert_);
+  } else {
+    if (!stmt_issues_del_) {
+      const char *issues_del_sql = "DELETE FROM parse_issues WHERE doc_id = ?1;";
+      sqlite3_prepare_v2(writer_db_, issues_del_sql, -1, &stmt_issues_del_, nullptr);
+    }
+    if (stmt_issues_del_) {
+      sqlite3_reset(stmt_issues_del_);
+      sqlite3_clear_bindings(stmt_issues_del_);
+      sqlite3_bind_int64(stmt_issues_del_, 1, entry.doc_id);
+      sqlite3_step(stmt_issues_del_);
+      sqlite3_reset(stmt_issues_del_);
+    }
+  }
+
   if (is_outer_tx) {
     uncommitted_count_++;
   } else {
@@ -877,6 +974,10 @@ bool StorageEngine::DoDeleteDocument(int64_t doc_id) {
       SQLite::Statement stmt3(*writer_cpp_db_, "DELETE FROM fts_docs WHERE rowid = ?1;");
       stmt3.bind(1, doc_id);
       stmt3.exec();
+
+      SQLite::Statement stmt4(*writer_cpp_db_, "DELETE FROM parse_issues WHERE doc_id = ?1;");
+      stmt4.bind(1, doc_id);
+      stmt4.exec();
     } catch (const std::exception &e) {
       SetLastError(e.what());
       if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
@@ -901,6 +1002,12 @@ bool StorageEngine::DoDeleteDocument(int64_t doc_id) {
       sqlite3_bind_int64(stmt, 1, doc_id);
       sqlite3_step(stmt);
     }
+
+    sqlite3_prepare_v2(writer_db_, "DELETE FROM parse_issues WHERE doc_id = ?1;", -1, stmt.address(), nullptr);
+    if (stmt) {
+      sqlite3_bind_int64(stmt, 1, doc_id);
+      sqlite3_step(stmt);
+    }
   }
 
   if (is_outer_tx) {
@@ -921,6 +1028,7 @@ bool StorageEngine::DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids
   SqliteStmtScope stmt_del_files;
   SqliteStmtScope stmt_del_content;
   SqliteStmtScope stmt_del_fts;
+  SqliteStmtScope stmt_del_issues;
   if (delete_files_rows && sqlite3_prepare_v2(writer_db_, "DELETE FROM files WHERE doc_id = ?1;", -1,
                                               stmt_del_files.address(), nullptr) != SQLITE_OK) {
     SetLastError(sqlite3_errmsg(writer_db_));
@@ -929,7 +1037,9 @@ bool StorageEngine::DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids
   if (sqlite3_prepare_v2(writer_db_, "DELETE FROM doc_contents WHERE doc_id = ?1;", -1, stmt_del_content.address(),
                          nullptr) != SQLITE_OK ||
       sqlite3_prepare_v2(writer_db_, "DELETE FROM fts_docs WHERE rowid = ?1;", -1, stmt_del_fts.address(), nullptr) !=
-          SQLITE_OK) {
+          SQLITE_OK ||
+      sqlite3_prepare_v2(writer_db_, "DELETE FROM parse_issues WHERE doc_id = ?1;", -1, stmt_del_issues.address(),
+                         nullptr) != SQLITE_OK) {
     SetLastError(sqlite3_errmsg(writer_db_));
     return false;
   }
@@ -947,6 +1057,10 @@ bool StorageEngine::DeleteDocDetailsUnlocked(const std::vector<int64_t> &doc_ids
     sqlite3_bind_int64(stmt_del_fts, 1, id);
     sqlite3_step(stmt_del_fts);
     sqlite3_reset(stmt_del_fts);
+
+    sqlite3_bind_int64(stmt_del_issues, 1, id);
+    sqlite3_step(stmt_del_issues);
+    sqlite3_reset(stmt_del_issues);
   }
 
   if (!ext_counts.empty()) {
@@ -1171,6 +1285,7 @@ bool StorageEngine::DoClearAll() {
       writer_cpp_db_->exec("DELETE FROM files;");
       writer_cpp_db_->exec("DELETE FROM doc_contents;");
       writer_cpp_db_->exec("DELETE FROM ext_stats;");
+      writer_cpp_db_->exec("DELETE FROM parse_issues;");
       writer_cpp_db_->exec("DROP TABLE IF EXISTS fts_docs;");
       transaction.commit();
       uncommitted_count_ = 0;
@@ -1192,6 +1307,7 @@ bool StorageEngine::DoClearAll() {
       DELETE FROM files;
       DELETE FROM doc_contents;
       DELETE FROM ext_stats;
+      DELETE FROM parse_issues;
       DROP TABLE IF EXISTS fts_docs;
     )SQL";
 
@@ -1503,6 +1619,123 @@ bool StorageEngine::DoForEachFileMetadata(FileMetaCallback callback) {
 std::vector<FileMetaRecord> StorageEngine::DoGetAllFilesMetadata() {
   std::vector<FileMetaRecord> results;
   DoForEachFileMetadata([&results](const FileMetaRecord &r) { results.push_back(r); });
+  return results;
+}
+
+sqlite3 *StorageEngine::AcquireReadTarget(ScopedReadConnection *out_lease, std::unique_lock<std::mutex> *out_fallback) {
+  if (!out_lease || !out_fallback) {
+    return nullptr;
+  }
+  *out_lease = AcquireReadConnection();
+  sqlite3 *target_db = out_lease->get();
+  if (!target_db) {
+    *out_fallback = std::unique_lock<std::mutex>(writer_mutex_);
+    target_db = writer_db_;
+  }
+  if (!target_db) {
+    SetLastError("Database not open");
+  }
+  return target_db;
+}
+
+common::ParseStatusSummary StorageEngine::DoGetParseStatusSummary() {
+  common::ParseStatusSummary summary;
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    return summary;
+  }
+
+  {
+    SqliteStmtScope stmt;
+    if (sqlite3_prepare_v2(target_db, "SELECT COUNT(*) FROM files;", -1, stmt.address(), nullptr) == SQLITE_OK) {
+      if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const int64_t total = sqlite3_column_int64(stmt, 0);
+        summary.total_files = total > 0 ? static_cast<uint64_t>(total) : 0;
+      }
+    }
+  }
+
+  {
+    SqliteStmtScope stmt;
+    if (sqlite3_prepare_v2(target_db, "SELECT status, COUNT(*) FROM parse_issues GROUP BY status;", -1,
+                           stmt.address(), nullptr) == SQLITE_OK) {
+      while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto st = common::ParseStatusFromInt(sqlite3_column_int(stmt, 0));
+        const int64_t cnt_i64 = sqlite3_column_int64(stmt, 1);
+        const uint64_t cnt = cnt_i64 > 0 ? static_cast<uint64_t>(cnt_i64) : 0;
+        switch (st) {
+          case common::ParseStatus::kEncrypted:
+            summary.encrypted_count += cnt;
+            break;
+          case common::ParseStatus::kTimeout:
+            summary.timeout_count += cnt;
+            break;
+          case common::ParseStatus::kCrashed:
+            summary.crashed_count += cnt;
+            break;
+          case common::ParseStatus::kFailed:
+            summary.failed_count += cnt;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+  }
+
+  const uint64_t issues = summary.issue_count();
+  summary.ok_count = (summary.total_files >= issues) ? (summary.total_files - issues) : 0;
+  return summary;
+}
+
+std::vector<common::ParseIssueRecord> StorageEngine::DoGetParseIssues(
+    std::optional<common::ParseStatus> filter_status, size_t limit, size_t offset) {
+  std::vector<common::ParseIssueRecord> results;
+  if (limit == 0) {
+    return results;
+  }
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    return results;
+  }
+
+  const char *sql =
+      filter_status.has_value()
+          ? "SELECT doc_id, file_name, file_path, ext, file_size, mtime, status, reason, updated_at "
+            "FROM parse_issues WHERE status = ?1 ORDER BY updated_at DESC, file_path ASC LIMIT ?2 OFFSET ?3;"
+          : "SELECT doc_id, file_name, file_path, ext, file_size, mtime, status, reason, updated_at "
+            "FROM parse_issues ORDER BY updated_at DESC, file_path ASC LIMIT ?1 OFFSET ?2;";
+
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(target_db));
+    return results;
+  }
+
+  int bind_idx = 1;
+  if (filter_status.has_value()) {
+    sqlite3_bind_int(stmt, bind_idx++, static_cast<int>(*filter_status));
+  }
+  sqlite3_bind_int64(stmt, bind_idx++, static_cast<int64_t>(limit));
+  sqlite3_bind_int64(stmt, bind_idx++, static_cast<int64_t>(offset));
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    common::ParseIssueRecord rec;
+    rec.doc_id = sqlite3_column_int64(stmt, 0);
+    rec.file_name = SafeColumnText(stmt, 1);
+    rec.file_path = SafeColumnText(stmt, 2);
+    rec.ext = SafeColumnText(stmt, 3);
+    rec.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
+    rec.mtime = sqlite3_column_int64(stmt, 5);
+    rec.status = common::ParseStatusFromInt(sqlite3_column_int(stmt, 6));
+    rec.reason = SafeColumnText(stmt, 7);
+    rec.updated_at = sqlite3_column_int64(stmt, 8);
+    results.push_back(std::move(rec));
+  }
   return results;
 }
 

@@ -139,6 +139,75 @@ TEST_F(StorageTransactionTest, MultipleOperationsAtomicRollback) {
   EXPECT_EQ(res_doc1[0].doc_id, doc1);
 }
 
+TEST_F(StorageTransactionTest, ParseIssuesAndStatusSummaryLifecycle) {
+  ASSERT_TRUE(engine_->IndexDocument(101, "/docs/ok.txt", "ok.txt", "txt", 120, 1700000001, 1, "healthy body",
+                                     static_cast<int>(common::ParseStatus::kOk), ""));
+  ASSERT_TRUE(engine_->IndexDocument(102, "/docs/secret.pdf", "secret.pdf", "pdf", 2048, 1700000002, 1, "",
+                                     static_cast<int>(common::ParseStatus::kEncrypted),
+                                     "Document is encrypted and requires a password"));
+  ASSERT_TRUE(engine_->IndexDocument(103, "/docs/huge.pdf", "huge.pdf", "pdf", 9999, 1700000003, 1, "",
+                                     static_cast<int>(common::ParseStatus::kTimeout), "Task timed out after 60000 ms"));
+  ASSERT_TRUE(engine_->IndexDocument(104, "/docs/crash.doc", "crash.doc", "doc", 512, 1700000004, 1, "",
+                                     static_cast<int>(common::ParseStatus::kCrashed),
+                                     "Worker crashed (SIGSEGV/abort) during file parsing"));
+  ASSERT_TRUE(engine_->IndexDocument(105, "/docs/corrupt.docx", "corrupt.docx", "docx", 256, 1700000005, 1, "",
+                                     static_cast<int>(common::ParseStatus::kFailed), "Central directory corrupt"));
+
+  auto summary = engine_->GetParseStatusSummary();
+  EXPECT_EQ(summary.total_files, 5u);
+  EXPECT_EQ(summary.ok_count, 1u);
+  EXPECT_EQ(summary.encrypted_count, 1u);
+  EXPECT_EQ(summary.timeout_count, 1u);
+  EXPECT_EQ(summary.crashed_count, 1u);
+  EXPECT_EQ(summary.failed_count, 1u);
+  EXPECT_EQ(summary.failure_count(), 3u);
+  EXPECT_EQ(summary.issue_count(), 4u);
+
+  const auto all_issues = engine_->GetParseIssues(std::nullopt, 50, 0);
+  ASSERT_EQ(all_issues.size(), 4u);
+  const auto enc_only = engine_->GetParseIssues(common::ParseStatus::kEncrypted, 50, 0);
+  ASSERT_EQ(enc_only.size(), 1u);
+  EXPECT_EQ(enc_only[0].file_path, "/docs/secret.pdf");
+  EXPECT_EQ(enc_only[0].reason, "Document is encrypted and requires a password");
+
+  // Re-indexing doc 105 cleanly removes it from parse_issues and increments ok_count
+  ASSERT_TRUE(engine_->IndexDocument(105, "/docs/corrupt.docx", "corrupt.docx", "docx", 300, 1700000006, 1,
+                                     "Recovered docx text", static_cast<int>(common::ParseStatus::kOk), ""));
+  summary = engine_->GetParseStatusSummary();
+  EXPECT_EQ(summary.total_files, 5u);
+  EXPECT_EQ(summary.ok_count, 2u);
+  EXPECT_EQ(summary.failed_count, 0u);
+  EXPECT_EQ(engine_->GetParseIssues(common::ParseStatus::kFailed, 50, 0).size(), 0u);
+
+  // Deleting doc 102 cascades out of parse_issues
+  ASSERT_TRUE(engine_->DeleteDocument(102));
+  summary = engine_->GetParseStatusSummary();
+  EXPECT_EQ(summary.total_files, 4u);
+  EXPECT_EQ(summary.encrypted_count, 0u);
+
+  // ClearAll resets both files and parse_issues
+  ASSERT_TRUE(engine_->ClearAll());
+  summary = engine_->GetParseStatusSummary();
+  EXPECT_EQ(summary.total_files, 0u);
+  EXPECT_EQ(summary.issue_count(), 0u);
+
+  // Invalid parse_stat normalizes to kOk (no drift), and invalid UTF-8 bytes in error_reason are sanitized
+  ASSERT_TRUE(engine_->IndexDocument(106, "/docs/invalid_stat.txt", "invalid_stat.txt", "txt", 10, 1700000007, 1,
+                                     "normal body", /*parse_stat=*/99, "ignored"));
+  int stored_stat = 0;
+  ASSERT_TRUE(engine_->GetFileMetadata(106, nullptr, nullptr, &stored_stat));
+  EXPECT_EQ(stored_stat, static_cast<int>(common::ParseStatus::kOk));
+  EXPECT_TRUE(engine_->GetParseIssues(std::nullopt, 50, 0).empty());
+
+  const std::string bad_utf8_reason = std::string("Worker diag: \xFF\xFE\x80 trailing");
+  ASSERT_TRUE(engine_->IndexDocument(107, "/docs/bad_utf8.pdf", "bad_utf8.pdf", "pdf", 10, 1700000008, 1, "",
+                                     static_cast<int>(common::ParseStatus::kCrashed), bad_utf8_reason));
+  const auto crash_rows = engine_->GetParseIssues(common::ParseStatus::kCrashed, 50, 0);
+  ASSERT_EQ(crash_rows.size(), 1u);
+  EXPECT_NE(crash_rows[0].reason.find("Worker diag:"), std::string::npos);
+  EXPECT_EQ(crash_rows[0].reason.find('\xFF'), std::string::npos);
+}
+
 // -----------------------------------------------------------------------------
 // GoogleMock Dependency Injection Test: Contract Verification
 // -----------------------------------------------------------------------------

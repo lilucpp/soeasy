@@ -61,6 +61,12 @@ typedef int doctotext_metadata_type;
 #define DOCTOTEXT_METADATA_TYPE_EXTRACTED 1
 #define DOCTOTEXT_METADATA_TYPE_ESTIMATED 2
 
+typedef int doctotext_status;
+
+#define DOCTOTEXT_STATUS_OK 0
+#define DOCTOTEXT_STATUS_ERROR 1
+#define DOCTOTEXT_STATUS_ENCRYPTED 2
+
 /*-------------------------------------------------------------------------------------------------------------------------*/
 
 typedef struct DocToTextFormattingStyle DocToTextFormattingStyle;
@@ -101,6 +107,13 @@ void DOCTOTEXT_CALL doctotext_formatting_style_set_url_style(DocToTextFormatting
  * @param prefix - prefix that should be used in lists
  */
 void DOCTOTEXT_CALL doctotext_formatting_style_set_list_prefix(DocToTextFormattingStyle* formatting_style, const char* prefix);
+
+/**
+ * @brief Enables or disables compact whitespace normalization (collapsing excess justified spaces, trailing line spaces, and blank-line runs)
+ * @param formatting_style - DocToTextFormattingStyle object to configure
+ * @param compact - non-zero to enable compact whitespace normalization, 0 for legacy spacing
+ */
+void DOCTOTEXT_CALL doctotext_formatting_style_set_compact_whitespace(DocToTextFormattingStyle* formatting_style, int compact);
 
 /*-------------------------------------------------------------------------------------------------------------------------*/
 
@@ -174,6 +187,14 @@ typedef const char* (DOCTOTEXT_CALL *doctotext_image_parser_callback)(const char
  * @param user_data - user pointer passed to callback
  */
 void DOCTOTEXT_CALL doctotext_extractor_params_set_image_parser_callback(DocToTextExtractorParams* extractor_params, doctotext_image_parser_callback callback, void* user_data);
+
+/**
+ * @brief Enables or disables parsing embedded files/objects inside documents (PDF, Office, ODF).
+ * Enabled (non-zero) by default.
+ * @param extractor_params - object which holds parameters for data extractor
+ * @param enable - non-zero to extract embedded files, 0 to skip embedded files
+ */
+void DOCTOTEXT_CALL doctotext_extractor_params_set_parse_embedded_files(DocToTextExtractorParams* extractor_params, int enable);
 
 /*-------------------------------------------------------------------------------------------------------------------------*/
 
@@ -545,6 +566,16 @@ char** DOCTOTEXT_CALL doctotext_metadata_get_keys(DocToTextMetadata* metadata);
 DocToTextExtractedData* DOCTOTEXT_CALL doctotext_process_file(const char* file_name, DocToTextExtractorParams* extractor_params, DocToTextException** exception);
 
 /**
+ * @brief Parses file of given name and reports structured extraction status (OK, ERROR, or ENCRYPTED).
+ * @param file_name - file name with path to the file
+ * @param extractor_params - extractor parameters object
+ * @param out_status - optional pointer receiving \c doctotext_status (OK / ERROR / ENCRYPTED)
+ * @param exception - optional pointer receiving exception details on failure
+ * @return Object with extracted data, or NULL on error/encrypted document.
+ */
+DocToTextExtractedData* DOCTOTEXT_CALL doctotext_process_file_ex(const char* file_name, DocToTextExtractorParams* extractor_params, doctotext_status* out_status, DocToTextException** exception);
+
+/**
  * @brief Parses file from memory buffer. Besides that fact, this function works just like \c doctotext_process_file (from file)
  * @param buffer - buffer with file memory
  * @param size - size of the given buffer
@@ -557,6 +588,17 @@ DocToTextExtractedData* DOCTOTEXT_CALL doctotext_process_file(const char* file_n
  * free(). DocToTextExtractedData is C++ object inside and free() will not work. Use \c doctotext_free_extracted_data
  */
 DocToTextExtractedData* DOCTOTEXT_CALL doctotext_process_file_from_buffer(const char* buffer, size_t size, DocToTextExtractorParams* extractor_params, DocToTextException** exception);
+
+/**
+ * @brief Parses file from memory buffer and reports structured extraction status (OK, ERROR, or ENCRYPTED).
+ * @param buffer - buffer with file memory
+ * @param size - size of the given buffer
+ * @param extractor_params - extractor parameters object
+ * @param out_status - optional pointer receiving \c doctotext_status (OK / ERROR / ENCRYPTED)
+ * @param exception - optional pointer receiving exception details on failure
+ * @return Object with extracted data, or NULL on error/encrypted document.
+ */
+DocToTextExtractedData* DOCTOTEXT_CALL doctotext_process_file_from_buffer_ex(const char* buffer, size_t size, DocToTextExtractorParams* extractor_params, doctotext_status* out_status, DocToTextException** exception);
 
 /**
  * @brief Parses file of given name. Uses DocToTextExtractorParams objects to adjust its behavior to user expectations.

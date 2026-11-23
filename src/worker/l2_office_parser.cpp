@@ -162,6 +162,27 @@ std::string ExtractZipEntryXmlText(mz_zip_archive *zip, const char *entry_name, 
   return L2OfficeParser::ExtractXmlText(xml, strip_tags);
 }
 
+/// Safely collect error messages from a DocToTextException using bounded iteration.
+std::string ExtractDocToTextErrors(DocToTextException *exc) {
+  if (!exc) {
+    return {};
+  }
+  const size_t count = doctotext_exception_error_messages_count(exc);
+  const size_t limit = std::min<size_t>(count, 4);
+  std::string combined;
+  for (size_t i = 0; i < limit; ++i) {
+    const char *msg = doctotext_exception_get_error_message(exc, i);
+    if (!msg || !*msg) {
+      continue;
+    }
+    if (!combined.empty()) {
+      combined += "; ";
+    }
+    combined += msg;
+  }
+  return combined;
+}
+
 /// Remove a temporary DocToText log file automatically on scope exit.
 struct TempFileCleaner {
   std::string path;
@@ -260,7 +281,9 @@ const char *L2OfficeParser::DocToTextImageParserCallbackC(const char *image_name
 }
 
 void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext,
-                                          std::string *out_utf8_text) {
+                                          std::string *out_utf8_text, int *out_dt_status, std::string *out_dt_error) {
+  if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_OK;
+  if (out_dt_error) out_dt_error->clear();
   TempFileCleaner temp_cleaner;
   bool enable_logging = false;
   try {
@@ -276,7 +299,11 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const st
 
     std::unique_ptr<DocToTextExtractorParams, decltype(&doctotext_free_extractor_params)> params(
         doctotext_create_extractor_params(), &doctotext_free_extractor_params);
-    if (!params) return;
+    if (!params) {
+      if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ERROR;
+      if (out_dt_error) *out_dt_error = "Failed to allocate DocToText extractor parameters";
+      return;
+    }
 
     doctotext_extractor_params_set_verbose_logging(params.get(), enable_logging ? 1 : 0);
     if (enable_logging && !log_file_path.empty()) {
@@ -297,15 +324,29 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const st
     }
 
     DocToTextException *raw_exc = nullptr;
+    doctotext_status dt_status = DOCTOTEXT_STATUS_OK;
     std::string native_path = common::EncodingUtils::ToNativeAnsiPath(file_path);
     std::unique_ptr<DocToTextExtractedData, decltype(&doctotext_free_extracted_data)> data(
-        doctotext_process_file(native_path.c_str(), params.get(), &raw_exc), &doctotext_free_extracted_data);
+        doctotext_process_file_ex(native_path.c_str(), params.get(), &dt_status, &raw_exc),
+        &doctotext_free_extracted_data);
     std::unique_ptr<DocToTextException, decltype(&doctotext_free_exception)> exc(raw_exc, &doctotext_free_exception);
 
     if (data) {
       const char *txt = doctotext_extracted_data_get_text(data.get());
       if (txt && *txt) {
         *out_utf8_text = txt;
+      }
+      if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_OK;
+    } else {
+      std::string dt_err = ExtractDocToTextErrors(exc.get());
+      if (dt_status == DOCTOTEXT_STATUS_ENCRYPTED) {
+        if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ENCRYPTED;
+        if (out_dt_error) {
+          *out_dt_error = dt_err.empty() ? "Document is encrypted and requires a password" : std::move(dt_err);
+        }
+      } else {
+        if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ERROR;
+        if (out_dt_error) *out_dt_error = std::move(dt_err);
       }
     }
 
@@ -333,9 +374,13 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const st
     }
   } catch (const std::exception &e) {
     LOG_WARN("[OfficeParser] ExtractDocToText failed for {}: {}", file_path, e.what());
+    if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ERROR;
+    if (out_dt_error && out_dt_error->empty()) *out_dt_error = e.what();
     // Graceful fallback to secondary extractors
   } catch (...) {
     LOG_WARN("[OfficeParser] ExtractDocToText failed for {} with unknown exception", file_path);
+    if (out_dt_status) *out_dt_status = DOCTOTEXT_STATUS_ERROR;
+    if (out_dt_error && out_dt_error->empty()) *out_dt_error = "DocToText unknown internal exception";
     // Graceful fallback to secondary extractors
   }
 }
@@ -401,45 +446,74 @@ bool L2OfficeParser::embedded_image_ocr() {
   return s_embedded_image_ocr.load(std::memory_order_relaxed);
 }
 
+bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::string &ext, ExtractedDocument *out_doc) {
+  if (!out_doc) return false;
+  out_doc->utf8_text.clear();
+  out_doc->is_scanned_pdf = false;
+  out_doc->outcome = ParseOutcome::kOk;
+  out_doc->error_message.clear();
+
+  const std::string lower = ToLowerAscii(ext);
+
+  // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
+  int dt_status = DOCTOTEXT_STATUS_OK;
+  std::string dt_error;
+  ExtractWithDocToText(file_path, lower, &out_doc->utf8_text, &dt_status, &dt_error);
+
+  // Never fall back to raw stream/ZIP scanners on encrypted documents (avoids scanned-PDF false positives).
+  if (dt_status == DOCTOTEXT_STATUS_ENCRYPTED) {
+    out_doc->utf8_text.clear();
+    out_doc->is_scanned_pdf = false;
+    out_doc->outcome = ParseOutcome::kEncrypted;
+    out_doc->error_message =
+        dt_error.empty() ? "Document is encrypted and requires a password" : std::move(dt_error);
+    return false;
+  }
+
+  // 2. Secondary / Fallback: If DocToText extraction was empty or purely whitespace, use internal extractors
+  if (!HasMeaningfulText(out_doc->utf8_text)) {
+    ApplyFallbackExtractor(file_path, lower, &out_doc->utf8_text, &out_doc->is_scanned_pdf);
+  }
+
+  // 3. Sanitize UTF-8 output before counting Unicode codepoints
+  if (!out_doc->utf8_text.empty()) {
+    std::string sanitized;
+    sanitized.reserve(out_doc->utf8_text.size());
+    utf8::replace_invalid(out_doc->utf8_text.begin(), out_doc->utf8_text.end(), std::back_inserter(sanitized), ' ');
+    out_doc->utf8_text = std::move(sanitized);
+  }
+
+  // 4. Flag scanned / image-only PDFs that still lack meaningful text (> 10 KB & < 15 codepoints)
+  if (lower == "pdf") {
+    const size_t non_ws_codepoints = CountNonWhitespaceCodepoints(out_doc->utf8_text);
+    const uint64_t file_size = GetFileSize(file_path);
+    if (non_ws_codepoints < 15 && file_size > 10 * 1024) {
+      out_doc->is_scanned_pdf = true;
+    }
+  }
+
+  if (!out_doc->utf8_text.empty() || (lower == "pdf" && out_doc->is_scanned_pdf)) {
+    out_doc->outcome = ParseOutcome::kOk;
+    return true;
+  }
+
+  out_doc->outcome = ParseOutcome::kFailed;
+  out_doc->error_message =
+      !dt_error.empty() ? std::move(dt_error) : "Failed to extract text from document (empty or unsupported structure)";
+  return false;
+}
+
 bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext, std::string *out_utf8_text,
                            bool *is_scanned_pdf) {
   if (!out_utf8_text) return false;
   out_utf8_text->clear();
   if (is_scanned_pdf) *is_scanned_pdf = false;
 
-  const std::string lower = ToLowerAscii(ext);
-
-  // 1. Primary: Use DocToText (lithiumFlower/doctotext) for comprehensive multi-format extraction
-  ExtractWithDocToText(file_path, lower, out_utf8_text);
-
-  // 2. Secondary / Fallback: If DocToText extraction was empty or purely whitespace, use internal extractors
-  if (!HasMeaningfulText(*out_utf8_text)) {
-    ApplyFallbackExtractor(file_path, lower, out_utf8_text, is_scanned_pdf);
-  }
-
-  // 3. Sanitize UTF-8 output before counting Unicode codepoints
-  if (!out_utf8_text->empty()) {
-    std::string sanitized;
-    sanitized.reserve(out_utf8_text->size());
-    utf8::replace_invalid(out_utf8_text->begin(), out_utf8_text->end(), std::back_inserter(sanitized), ' ');
-    *out_utf8_text = std::move(sanitized);
-  }
-
-  // 4. Flag scanned / image-only PDFs that still lack meaningful text (> 10 KB & < 15 codepoints)
-  if (lower == "pdf" && is_scanned_pdf) {
-    const size_t non_ws_codepoints = CountNonWhitespaceCodepoints(*out_utf8_text);
-    const uint64_t file_size = GetFileSize(file_path);
-    if (non_ws_codepoints < 15 && file_size > 10 * 1024) {
-      *is_scanned_pdf = true;
-    }
-  }
-
-  if (!out_utf8_text->empty()) {
-    return true;
-  }
-
-  // If this is a valid scanned PDF, treat as successful extraction with empty text
-  return lower == "pdf" && is_scanned_pdf && *is_scanned_pdf;
+  ExtractedDocument doc;
+  const bool ok = ParseInternal(file_path, ext, &doc);
+  *out_utf8_text = std::move(doc.utf8_text);
+  if (is_scanned_pdf) *is_scanned_pdf = doc.is_scanned_pdf;
+  return ok;
 }
 
 bool L2OfficeParser::ParseDocx(const std::string &file_path, std::string *out_utf8) {
@@ -733,9 +807,8 @@ bool L2OfficeParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) 
   if (!out_doc) {
     return false;
   }
-  out_doc->is_scanned_pdf = false;
   out_doc->page_count = 1;
-  return Parse(ctx.file_path, ctx.ext, &out_doc->utf8_text, &out_doc->is_scanned_pdf);
+  return ParseInternal(ctx.file_path, ctx.ext, out_doc);
 }
 
 }  // namespace worker

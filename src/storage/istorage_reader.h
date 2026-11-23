@@ -6,9 +6,12 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "common/parse_status.h"
 
 struct sqlite3;
 
@@ -110,6 +113,11 @@ class IDocumentSearchReader {
   virtual ScopedReadConnection AcquireReadConnection() = 0;
 
   virtual bool GetMetaValue(const std::string &key, std::string *out_value) = 0;
+
+  virtual common::ParseStatusSummary GetParseStatusSummary() = 0;
+
+  virtual std::vector<common::ParseIssueRecord> GetParseIssues(
+      std::optional<common::ParseStatus> filter_status = std::nullopt, size_t limit = 500, size_t offset = 0) = 0;
 };
 
 }  // namespace storage

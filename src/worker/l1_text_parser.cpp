@@ -283,7 +283,14 @@ bool L1TextParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
   }
   out_doc->is_scanned_pdf = false;
   out_doc->page_count = 1;
-  return ParseFile(ctx.file_path, ctx.ext, &out_doc->utf8_text);
+  out_doc->outcome = ParseOutcome::kOk;
+  out_doc->error_message.clear();
+  if (!ParseFile(ctx.file_path, ctx.ext, &out_doc->utf8_text)) {
+    out_doc->outcome = ParseOutcome::kFailed;
+    out_doc->error_message = "Cannot open text file for reading";
+    return false;
+  }
+  return true;
 }
 
 bool L1TextParser::ParseStream(std::istream &stream, const ParseContext &ctx, ExtractedDocument *out_doc) {

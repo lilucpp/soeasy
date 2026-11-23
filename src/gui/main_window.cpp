@@ -21,6 +21,7 @@
 #include "common/snippet_highlighter.h"
 #include "gui/i18n.h"
 #include "gui/icon_provider.h"
+#include "gui/parse_issues_dialog.h"
 
 namespace soeasy {
 namespace gui {
@@ -269,6 +270,11 @@ void MainWindow::SetupUi() {
   status_stats_label_->setTextFormat(Qt::RichText);
   status_stats_label_->setStyleSheet("color: #334155; font-size: 12px;");
 
+  status_parse_btn_ = new QPushButton(this);
+  status_parse_btn_->setObjectName("statusParseBtn");
+  status_parse_btn_->setCursor(Qt::PointingHandCursor);
+  connect(status_parse_btn_, &QPushButton::clicked, this, &MainWindow::OnOpenParseIssues);
+
   status_progress_bar_ = new QProgressBar(this);
   status_progress_bar_->setRange(0, 100);
   status_progress_bar_->setValue(0);
@@ -357,6 +363,7 @@ void MainWindow::SetupUi() {
   connect(status_preview_btn_, &QPushButton::clicked, this, &MainWindow::OnTogglePreview);
 
   statusBar()->addWidget(status_stats_label_);
+  statusBar()->addWidget(status_parse_btn_);
   statusBar()->addWidget(status_progress_bar_);
   statusBar()->addWidget(status_cancel_btn_);
   statusBar()->addWidget(status_file_label_, 1);
@@ -552,6 +559,76 @@ void MainWindow::RetranslateUi() {
   UpdateStatusBar(total_matched_count_, last_search_cost_ms_);
 }
 
+void MainWindow::UpdateParseHealthBadge() {
+  if (!status_parse_btn_) {
+    return;
+  }
+  const common::ParseStatusSummary summary =
+      pipeline_ ? pipeline_->GetParseStatusSummary() : common::ParseStatusSummary{};
+  const uint64_t failures = summary.failure_count();
+  const bool has_issues = summary.issue_count() > 0;
+
+  if (has_issues) {
+    status_parse_btn_->setText(
+        Tr("status_parse_issues").arg(summary.ok_count).arg(summary.encrypted_count).arg(failures));
+    const bool has_failures = (failures > 0);
+    status_parse_btn_->setStyleSheet(has_failures ? "QPushButton#statusParseBtn {"
+                                                    "  border: 1px solid #FCA5A5;"
+                                                    "  border-radius: 3px;"
+                                                    "  background-color: #FEF2F2;"
+                                                    "  color: #B91C1C;"
+                                                    "  font-size: 11px;"
+                                                    "  padding: 1px 8px;"
+                                                    "}"
+                                                    "QPushButton#statusParseBtn:hover {"
+                                                    "  background-color: #FEE2E2;"
+                                                    "}"
+                                                  : "QPushButton#statusParseBtn {"
+                                                    "  border: 1px solid #FCD34D;"
+                                                    "  border-radius: 3px;"
+                                                    "  background-color: #FFFBEB;"
+                                                    "  color: #B45309;"
+                                                    "  font-size: 11px;"
+                                                    "  padding: 1px 8px;"
+                                                    "}"
+                                                    "QPushButton#statusParseBtn:hover {"
+                                                    "  background-color: #FEF3C7;"
+                                                    "}");
+  } else {
+    status_parse_btn_->setText(Tr("status_parse_healthy").arg(summary.ok_count));
+    status_parse_btn_->setStyleSheet(
+        "QPushButton#statusParseBtn {"
+        "  border: 1px solid #CBD5E1;"
+        "  border-radius: 3px;"
+        "  background-color: #FFFFFF;"
+        "  color: #15803D;"
+        "  font-size: 11px;"
+        "  padding: 1px 8px;"
+        "}"
+        "QPushButton#statusParseBtn:hover {"
+        "  background-color: #F0FDF4;"
+        "  border-color: #86EFAC;"
+        "}");
+  }
+
+  status_parse_btn_->setToolTip(Tr("status_parse_tooltip")
+                                    .arg(summary.ok_count)
+                                    .arg(summary.encrypted_count)
+                                    .arg(failures)
+                                    .arg(summary.timeout_count)
+                                    .arg(summary.crashed_count)
+                                    .arg(summary.failed_count));
+}
+
+void MainWindow::OnOpenParseIssues() {
+  if (!pipeline_) {
+    return;
+  }
+  ParseIssuesDialog dlg(pipeline_->search_coordinator(), this);
+  dlg.exec();
+  UpdateParseHealthBadge();
+}
+
 QString MainWindow::BuildStatusTooltip(double cost_ms, bool is_incomplete) const {
   QString tooltip = is_incomplete ? Tr("status_incomplete_tooltip") : QString();
   if (has_completed_index_) {
@@ -640,6 +717,10 @@ void MainWindow::UpdateStatusBar(int total_matches, double cost_ms) {
         Tr(is_incomplete ? "status_stats_incomplete" : "status_stats").arg(indexed_files).arg(total_matches));
   }
 
+  UpdateParseHealthBadge();
+  if (status_parse_btn_) {
+    status_parse_btn_->setVisible(true);
+  }
   UpdateLatencyLabel(cost_ms);
 }
 
@@ -876,6 +957,9 @@ void MainWindow::OnIndexTaskStarted(int task_type, quint64 generation) {
   }
 
   statusBar()->clearMessage();
+  if (status_parse_btn_) {
+    status_parse_btn_->setVisible(false);
+  }
   status_progress_bar_->setValue(0);
   status_progress_bar_->setVisible(true);
   status_cancel_btn_->setVisible(true);
@@ -965,6 +1049,10 @@ void MainWindow::OnIndexFinished(int task_type, int total_indexed, bool cancelle
       finish_desc = Tr("status_finish_incremental").arg(elapsed_str);
     }
     status_stats_label_->setText(finish_desc);
+  }
+  UpdateParseHealthBadge();
+  if (status_parse_btn_) {
+    status_parse_btn_->setVisible(true);
   }
   UpdateLatencyLabel(last_search_cost_ms_);
 

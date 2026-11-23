@@ -349,7 +349,6 @@ add_library(soeasy_service STATIC
     src/service/event_debouncer.cpp
     src/service/watch_engine.cpp
     src/service/name_index.cpp
-    src/service/doc_prechecker.cpp
     src/service/search_coordinator.cpp
     src/service/index_orchestrator.cpp
     src/service/index_pipeline.cpp
@@ -484,6 +483,7 @@ add_library(soeasy_gui STATIC
     src/gui/hover_preview_popup.cpp
     src/gui/document_viewer_widget.cpp
     src/gui/content_preview_dialog.cpp
+    src/gui/parse_issues_dialog.cpp
     src/gui/preview_panel.cpp
     src/gui/settings/general_tab.cpp
     src/gui/settings/extensions_tab.cpp
