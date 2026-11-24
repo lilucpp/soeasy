@@ -406,18 +406,20 @@ void I18n::InitDictionary() {
       {"custom_format_desc", "用户手动添加的专有文件后缀与提取规则"},
 
       // Parse Status & Issues Dialog
-      {"status_parse_healthy", "✓ 正常 %1 · 加密 0 · 部分OCR 0 · 失败 0"},
-      {"status_parse_issues", "⚠ 正常 %1 · 加密 %2 · 部分OCR %3 · 失败 %4"},
+      {"status_parse_healthy", "✓ 正常 %1 · 加密 0 · 空正文 0 · 部分OCR 0 · 失败 0"},
+      {"status_parse_issues", "⚠ 正常 %1 · 加密 %2 · 空正文 %3 · 部分OCR %4 · 失败 %5"},
       {"status_parse_tooltip",
-       "文档解析状态统计（点击查看加密、部分OCR或失败文件详情）：\n"
+       "文档解析状态统计（点击查看加密、空正文、部分OCR或失败文件详情）：\n"
        "· 正常解析: %1 个\n"
        "· 加密跳过: %2 个\n"
-       "· 部分OCR（超单文档预算跳过余图，正文完整）: %3 个\n"
-       "· 解析失败: %4 个（超时 %5 / 崩溃 %6 / 其他 %7）"},
+       "· 空正文（无文字图片/链接/宏/空白文档）: %3 个\n"
+       "· 部分OCR（超单文档预算跳过余图，正文完整）: %4 个\n"
+       "· 解析失败: %5 个（超时 %6 / 崩溃 %7 / 其他 %8）"},
       {"issues_dlg_title", "文档解析状态与异常详情"},
       {"issues_dlg_title_truncated", "文档解析状态与异常详情（仅显示最新 %1 / 共 %2 条）"},
       {"issues_kpi_ok", "正常解析: %1"},
       {"issues_kpi_encrypted", "加密跳过: %1"},
+      {"issues_kpi_empty_content", "空正文: %1"},
       {"issues_kpi_partial_ocr", "部分OCR: %1"},
       {"issues_kpi_timeout", "解析超时: %1"},
       {"issues_kpi_crashed", "Worker 崩溃: %1"},
@@ -427,6 +429,7 @@ void I18n::InitDictionary() {
       {"issues_filter_all", "全部问题"},
       {"issues_filter_ph", "按文件名、路径、后缀或原因关键字过滤..."},
       {"issues_status_encrypted", "加密"},
+      {"issues_status_empty_content", "空正文"},
       {"issues_status_partial_ocr", "部分OCR"},
       {"issues_status_timeout", "超时"},
       {"issues_status_crashed", "崩溃"},
@@ -440,6 +443,7 @@ void I18n::InitDictionary() {
       {"issues_detail_ph", "选中一条记录以查看完整文件路径与失败原因详情..."},
       {"issues_btn_copy", "复制详情"},
       {"preview_partial_ocr_title", "该文档部分内嵌图片因超时预算跳过 OCR，正文已完整保留"},
+      {"preview_empty_content_title", "文档无可提取正文（空正文、纯无文字图片、宏或外部链接）"},
       {"btn_index_detail", "详情"},
       {"tip_index_detail", "查看总进度与各 Worker 实时解析文件及耗时"},
       {"progress_dlg_title", "索引进度与 Worker 详情"},
@@ -904,18 +908,20 @@ void I18n::InitDictionary() {
       {"fmt_desc_xz", "XZ Compressed Archive"},
 
       // Parse Status & Issues Dialog
-      {"status_parse_healthy", "✓ OK %1 · Encrypted 0 · Partial OCR 0 · Failed 0"},
-      {"status_parse_issues", "⚠ OK %1 · Encrypted %2 · Partial OCR %3 · Failed %4"},
+      {"status_parse_healthy", "✓ OK %1 · Encrypted 0 · Empty 0 · Partial OCR 0 · Failed 0"},
+      {"status_parse_issues", "⚠ OK %1 · Encrypted %2 · Empty %3 · Partial OCR %4 · Failed %5"},
       {"status_parse_tooltip",
        "Document Parse Status (click to inspect details):\n"
        "· Normal: %1\n"
        "· Encrypted: %2\n"
-       "· Partial OCR (budget limit reached, document text intact): %3\n"
-       "· Failures: %4 (timeout: %5 / crashed: %6 / failed: %7)"},
+       "· Empty Content (blank, non-text image, macro, or link only): %3\n"
+       "· Partial OCR (budget limit reached, document text intact): %4\n"
+       "· Failures: %5 (timeout: %6 / crashed: %7 / failed: %8)"},
       {"issues_dlg_title", "Document Parse Status & Issues"},
       {"issues_dlg_title_truncated", "Document Parse Status & Issues (showing %1 of %2)"},
       {"issues_kpi_ok", "Normal: %1"},
       {"issues_kpi_encrypted", "Encrypted: %1"},
+      {"issues_kpi_empty_content", "Empty: %1"},
       {"issues_kpi_partial_ocr", "Partial OCR: %1"},
       {"issues_kpi_timeout", "Timeout: %1"},
       {"issues_kpi_crashed", "Crashed: %1"},
@@ -925,6 +931,7 @@ void I18n::InitDictionary() {
       {"issues_filter_all", "All Issues"},
       {"issues_filter_ph", "Filter by file name, path, extension, or reason..."},
       {"issues_status_encrypted", "Encrypted"},
+      {"issues_status_empty_content", "Empty"},
       {"issues_status_partial_ocr", "Partial OCR"},
       {"issues_status_timeout", "Timeout"},
       {"issues_status_crashed", "Crashed"},
@@ -938,6 +945,7 @@ void I18n::InitDictionary() {
       {"issues_detail_ph", "Select a row to inspect full file path and failure reason..."},
       {"issues_btn_copy", "Copy Details"},
       {"preview_partial_ocr_title", "Embedded image OCR reached budget limit; full document text preserved"},
+      {"preview_empty_content_title", "Document has no extractable text (empty body, non-text image, macro, or link only)"},
       {"btn_index_detail", "Details"},
       {"tip_index_detail", "View overall progress and per-worker active files"},
       {"progress_dlg_title", "Indexing Progress & Worker Details"},

@@ -41,6 +41,9 @@ class TextStreamReceiverImpl final : public soeasy::ipc::TextStreamReceiver::Ser
         case soeasy::ipc::ParseStatusCode::PARTIAL_OCR:
           out_->status = TaskStatus::kPartialOcr;
           break;
+        case soeasy::ipc::ParseStatusCode::EMPTY_CONTENT:
+          out_->status = TaskStatus::kEmptyContent;
+          break;
         case soeasy::ipc::ParseStatusCode::ENCRYPTED:
           out_->status = TaskStatus::kEncrypted;
           break;

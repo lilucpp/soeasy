@@ -856,8 +856,8 @@ int main(int argc, char *argv[]) {
     ppt_ctx.file_path = empty_ppt;
     ppt_ctx.ext = "ppt";
     soeasy::worker::ExtractedDocument ppt_doc;
-    CHECK(!parser.Parse(ppt_ctx, &ppt_doc));
-    CHECK(ppt_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
+    CHECK(parser.Parse(ppt_ctx, &ppt_doc));
+    CHECK(ppt_doc.outcome == soeasy::worker::ParseOutcome::kEmptyContent);
     CHECK(ppt_doc.utf8_text.empty());
 
     // 8.6 损坏 PDF 返回 kFailed 而非空白页 kOk

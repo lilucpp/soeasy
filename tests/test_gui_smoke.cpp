@@ -938,6 +938,33 @@ int main(int argc, char *argv[]) {
       CHECK(tbl->item(0, 1)->text() == "partial_ocr_preview.odt");
     }
 
+    // EmptyContent status: neutral non-red notice & non-red status row in ParseIssuesDialog
+    const QString empty_docx_path = QString::fromStdString(preview_dir) + "/empty_body_preview.docx";
+    WriteFile(empty_docx_path.toStdString(), "dummy empty docx placeholder");
+    CHECK(storage->IndexDocument(990006, empty_docx_path.toStdString(), "empty_body_preview.docx", "docx", 1024,
+                                 1700000205, 1, "", static_cast<int>(soeasy::common::ParseStatus::kEmptyContent),
+                                 "Document contains no extractable text"));
+    auto empty_preview = soeasy::gui::DocumentViewerWidget::LoadPreviewDocument(
+        990006, empty_docx_path, pipeline->search_coordinator());
+    CHECK(!empty_preview.has_content);
+    CHECK(empty_preview.parse_status == soeasy::common::ParseStatus::kEmptyContent);
+    const QString empty_html = soeasy::gui::DocumentViewerWidget::BuildStatusNoticeHtml(empty_preview);
+    CHECK(empty_html.contains("#475569") && !empty_html.contains("#991B1B") && !empty_html.contains("#FEF2F2"));
+    {
+      soeasy::gui::ParseIssuesDialog issues_dlg(pipeline->search_coordinator());
+      issues_dlg.Reload();
+      auto *tbl = issues_dlg.findChild<QTableWidget *>();
+      auto *combo = issues_dlg.findChild<QComboBox *>();
+      CHECK(tbl != nullptr && combo != nullptr);
+      const int empty_idx = combo->findData(static_cast<int>(soeasy::common::ParseStatus::kEmptyContent));
+      CHECK(empty_idx >= 0);
+      combo->setCurrentIndex(empty_idx);
+      app.processEvents();
+      CHECK(tbl->rowCount() == 1);
+      CHECK(tbl->item(0, 1)->text() == "empty_body_preview.docx");
+      CHECK(tbl->item(0, 0)->foreground().color() == QColor("#64748B"));
+    }
+
     // Status bar badge + [Details] button & IndexProgressDialog lifecycle (cancel sync, RetranslateUi, has_followup, auto-close)
     {
       pipeline->PerformInitialScan();  // Reset any prior CancelScan state from earlier MainWindow teardown
@@ -1051,8 +1078,29 @@ int main(int argc, char *argv[]) {
       app.processEvents();
       CHECK(!viewer->text_viewer()->toPlainText().contains("%PDF-"));
     }
+    // MainWindow parse health badge in kEmptyContent-only state MUST use neutral slate styling (never red)
+    CHECK(storage->ClearAll());
+    CHECK(storage->IndexDocument(990007, blank_pdf_path.toStdString(), "ok_doc.pdf", "pdf", 68, 1700000206, 1,
+                                 "HealthyDocumentText", static_cast<int>(soeasy::common::ParseStatus::kOk), ""));
+    CHECK(storage->IndexDocument(990008, empty_docx_path.toStdString(), "empty_only.docx", "docx", 1024, 1700000207,
+                                 1, "", static_cast<int>(soeasy::common::ParseStatus::kEmptyContent),
+                                 "Document contains no extractable text"));
+    {
+      soeasy::gui::MainWindow empty_only_win(pipeline);
+      empty_only_win.show();
+      app.processEvents();
+      auto *empty_parse_btn = empty_only_win.findChild<QPushButton *>("statusParseBtn");
+      CHECK(empty_parse_btn != nullptr);
+      const QString badge_qss = empty_parse_btn->styleSheet();
+      CHECK(badge_qss.contains("#475569"));
+      CHECK(badge_qss.contains("#F8FAFC"));
+      CHECK(!badge_qss.contains("#B91C1C"));
+      CHECK(!badge_qss.contains("#FEF2F2"));
+      CHECK(!badge_qss.contains("#B45309"));
+    }
+
     std::filesystem::remove_all(preview_dir);
-    std::cout << "  -> 加密/空白/未索引(.svg/前导空白PDF)/PreviewPanel异步防泄漏与XSS转义验证通过!\n";
+    std::cout << "  -> 加密/空白/未索引(.svg/前导空白PDF)/空正文中性徽章/PreviewPanel异步防泄漏与XSS转义验证通过!\n";
   }
 
   // Cleanup

@@ -155,20 +155,27 @@ TEST_F(StorageTransactionTest, ParseIssuesAndStatusSummaryLifecycle) {
   ASSERT_TRUE(engine_->IndexDocument(106, "/docs/partial.odt", "partial.odt", "odt", 4096, 1700000006, 1,
                                      "PartialOcrSearchableBody", static_cast<int>(common::ParseStatus::kPartialOcr),
                                      "Embedded image OCR budget (45000 ms) reached"));
+  ASSERT_TRUE(engine_->IndexDocument(107, "/docs/empty.docx", "empty.docx", "docx", 512, 1700000007, 1, "",
+                                     static_cast<int>(common::ParseStatus::kEmptyContent),
+                                     "Document contains no extractable text"));
 
   auto summary = engine_->GetParseStatusSummary();
-  EXPECT_EQ(summary.total_files, 6u);
+  EXPECT_EQ(summary.total_files, 7u);
   EXPECT_EQ(summary.ok_count, 1u);
   EXPECT_EQ(summary.encrypted_count, 1u);
   EXPECT_EQ(summary.partial_ocr_count, 1u);
+  EXPECT_EQ(summary.empty_content_count, 1u);
   EXPECT_EQ(summary.timeout_count, 1u);
   EXPECT_EQ(summary.crashed_count, 1u);
   EXPECT_EQ(summary.failed_count, 1u);
   EXPECT_EQ(summary.failure_count(), 3u);
-  EXPECT_EQ(summary.issue_count(), 5u);
+  EXPECT_EQ(summary.issue_count(), 6u);
 
   const auto all_issues = engine_->GetParseIssues(std::nullopt, 50, 0);
-  ASSERT_EQ(all_issues.size(), 5u);
+  ASSERT_EQ(all_issues.size(), 6u);
+  const auto empty_only = engine_->GetParseIssues(common::ParseStatus::kEmptyContent, 50, 0);
+  ASSERT_EQ(empty_only.size(), 1u);
+  EXPECT_EQ(empty_only[0].file_path, "/docs/empty.docx");
   const auto partial_only = engine_->GetParseIssues(common::ParseStatus::kPartialOcr, 50, 0);
   ASSERT_EQ(partial_only.size(), 1u);
   EXPECT_EQ(partial_only[0].file_path, "/docs/partial.odt");
@@ -181,16 +188,17 @@ TEST_F(StorageTransactionTest, ParseIssuesAndStatusSummaryLifecycle) {
   ASSERT_TRUE(engine_->IndexDocument(105, "/docs/corrupt.docx", "corrupt.docx", "docx", 300, 1700000006, 1,
                                      "Recovered docx text", static_cast<int>(common::ParseStatus::kOk), ""));
   summary = engine_->GetParseStatusSummary();
-  EXPECT_EQ(summary.total_files, 6u);
+  EXPECT_EQ(summary.total_files, 7u);
   EXPECT_EQ(summary.ok_count, 2u);
   EXPECT_EQ(summary.partial_ocr_count, 1u);
+  EXPECT_EQ(summary.empty_content_count, 1u);
   EXPECT_EQ(summary.failed_count, 0u);
   EXPECT_EQ(engine_->GetParseIssues(common::ParseStatus::kFailed, 50, 0).size(), 0u);
 
   // Deleting doc 102 cascades out of parse_issues
   ASSERT_TRUE(engine_->DeleteDocument(102));
   summary = engine_->GetParseStatusSummary();
-  EXPECT_EQ(summary.total_files, 5u);
+  EXPECT_EQ(summary.total_files, 6u);
   EXPECT_EQ(summary.encrypted_count, 0u);
 
   // ClearAll resets both files and parse_issues

@@ -26,6 +26,7 @@ struct PipelineStats {
   uint64_t total_parse_timeouts = 0;
   uint64_t total_parse_crashes = 0;
   uint64_t total_partial_ocr_files = 0;
+  uint64_t total_empty_content_files = 0;
 };
 
 enum class IndexTaskKind {

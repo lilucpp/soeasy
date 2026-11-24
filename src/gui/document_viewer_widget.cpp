@@ -568,6 +568,8 @@ QString DocumentViewerWidget::BuildStatusNoticeHtml(const DocumentPreviewResult 
       return format_notice("#FEF2F2", "#FECACA", "#991B1B", Tr("preview_failed_title"), reason_line);
     case common::ParseStatus::kPartialOcr:
       return format_notice("#F0F9FF", "#BAE6FD", "#0369A1", Tr("preview_partial_ocr_title"), reason_line);
+    case common::ParseStatus::kEmptyContent:
+      return format_notice("#F8FAFC", "#CBD5E1", "#475569", Tr("preview_empty_content_title"), reason_line);
     case common::ParseStatus::kOk:
       return QString("<p style='color:#64748B; font-style:italic;'>%1</p>")
           .arg(Tr("preview_empty_parsed_doc").toHtmlEscaped());

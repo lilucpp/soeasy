@@ -223,6 +223,7 @@ int HandleStats(soeasy::storage::StorageEngine &storage, bool json_output, bool 
               << "  \"normal_documents\": " << parse_summary.ok_count << ",\n"
               << "  \"encrypted_documents\": " << parse_summary.encrypted_count << ",\n"
               << "  \"partial_ocr_documents\": " << parse_summary.partial_ocr_count << ",\n"
+              << "  \"empty_content_documents\": " << parse_summary.empty_content_count << ",\n"
               << "  \"timeout_documents\": " << parse_summary.timeout_count << ",\n"
               << "  \"crashed_documents\": " << parse_summary.crashed_count << ",\n"
               << "  \"failed_documents\": " << parse_summary.failed_count << ",\n"
@@ -255,6 +256,7 @@ int HandleStats(soeasy::storage::StorageEngine &storage, bool json_output, bool 
               << "Normal Parsed:           " << parse_summary.ok_count << "\n"
               << "Encrypted (Skipped):     " << parse_summary.encrypted_count << "\n"
               << "Partial OCR:             " << parse_summary.partial_ocr_count << "\n"
+              << "Empty Content:           " << parse_summary.empty_content_count << "\n"
               << "Failures (Total):        " << parse_summary.failure_count()
               << " (timeout: " << parse_summary.timeout_count << ", crashed: " << parse_summary.crashed_count
               << ", failed: " << parse_summary.failed_count << ")\n"

@@ -525,8 +525,8 @@ bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::stri
   }
 
   // 2. Secondary / Fallback: Only run structured OOXML/PDF fallback when DocToText reported an error.
-  //    If DocToText returned DOCTOTEXT_STATUS_OK with empty/whitespace text, preserve blank PDFs as kOk
-  //    (line below) while empty Office files still report kFailed when zero text was extracted.
+  //    If DocToText returned DOCTOTEXT_STATUS_OK with empty/whitespace text, blank PDFs stay kOk while
+  //    empty valid Office/RTF documents are classified below as kEmptyContent.
   if (dt_status != DOCTOTEXT_STATUS_OK && !HasMeaningfulText(out_doc->utf8_text)) {
     ApplyFallbackExtractor(file_path, lower, &out_doc->utf8_text, &out_doc->is_scanned_pdf);
   }
@@ -566,6 +566,14 @@ bool L2OfficeParser::ParseInternal(const std::string &file_path, const std::stri
     return true;
   }
 
+  if (dt_status == DOCTOTEXT_STATUS_OK && !ocr_budget.hit_limit) {
+    out_doc->utf8_text.clear();
+    out_doc->outcome = ParseOutcome::kEmptyContent;
+    out_doc->error_message =
+        "Document contains no extractable text (empty body, images without text, macros, or links only)";
+    return true;
+  }
+
   out_doc->outcome = ParseOutcome::kFailed;
   if (!dt_error.empty()) {
     out_doc->error_message = std::move(dt_error);
@@ -587,7 +595,7 @@ bool L2OfficeParser::Parse(const std::string &file_path, const std::string &ext,
   const bool ok = ParseInternal(file_path, ext, 60000, &doc);
   *out_utf8_text = std::move(doc.utf8_text);
   if (is_scanned_pdf) *is_scanned_pdf = doc.is_scanned_pdf;
-  return ok;
+  return ok && doc.outcome != ParseOutcome::kEmptyContent;
 }
 
 bool L2OfficeParser::ParseDocx(const std::string &file_path, std::string *out_utf8) {

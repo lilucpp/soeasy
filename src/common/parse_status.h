@@ -24,6 +24,7 @@ enum class ParseStatus : int {
   kCrashed = 4,
   kFailed = 5,
   kPartialOcr = 6,
+  kEmptyContent = 7,
 };
 
 inline bool IsIssueParseStatus(ParseStatus status) {
@@ -44,6 +45,8 @@ inline ParseStatus ParseStatusFromInt(int value) {
       return ParseStatus::kFailed;
     case 6:
       return ParseStatus::kPartialOcr;
+    case 7:
+      return ParseStatus::kEmptyContent;
     default:
       return ParseStatus::kUnknown;
   }
@@ -63,6 +66,8 @@ inline const char *ParseStatusToKey(ParseStatus status) {
       return "failed";
     case ParseStatus::kPartialOcr:
       return "partial_ocr";
+    case ParseStatus::kEmptyContent:
+      return "empty_content";
     default:
       return "unknown";
   }
@@ -76,13 +81,14 @@ struct ParseStatusSummary {
   uint64_t crashed_count = 0;
   uint64_t failed_count = 0;
   uint64_t partial_ocr_count = 0;
+  uint64_t empty_content_count = 0;
 
   [[nodiscard]] uint64_t failure_count() const {
     return timeout_count + crashed_count + failed_count;
   }
 
   [[nodiscard]] uint64_t issue_count() const {
-    return encrypted_count + partial_ocr_count + timeout_count + crashed_count + failed_count;
+    return encrypted_count + partial_ocr_count + empty_content_count + timeout_count + crashed_count + failed_count;
   }
 };
 

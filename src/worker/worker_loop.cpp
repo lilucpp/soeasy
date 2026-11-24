@@ -59,20 +59,29 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
       result.setMessage(failure.second);
     } else {
       const bool partial_ocr = (doc.outcome == ParseOutcome::kPartialOcr);
+      const bool empty_content = (doc.outcome == ParseOutcome::kEmptyContent);
+      auto status_code = soeasy::ipc::ParseStatusCode::OK;
+      std::string msg = "Success";
       if (partial_ocr) {
+        status_code = soeasy::ipc::ParseStatusCode::PARTIAL_OCR;
+        if (!doc.error_message.empty()) msg = doc.error_message;
         LOG_WARN("[Worker] Parse PARTIAL_OCR | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms | {}",
                  file_path, ext, doc.utf8_text.size(), cost_ms, doc.error_message);
+      } else if (empty_content) {
+        status_code = soeasy::ipc::ParseStatusCode::EMPTY_CONTENT;
+        msg = !doc.error_message.empty() ? doc.error_message : "Document contains no extractable text";
+        LOG_INFO("[Worker] Parse EMPTY_CONTENT | file: '{}' | ext: '{}' | cost: {:.2f} ms | {}", file_path, ext,
+                 cost_ms, msg);
       } else {
         LOG_INFO("[Worker] Parse SUCCESS | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms", file_path,
                  ext, doc.utf8_text.size(), cost_ms);
       }
-      result.setStatusCode(partial_ocr ? soeasy::ipc::ParseStatusCode::PARTIAL_OCR
-                                       : soeasy::ipc::ParseStatusCode::OK);
-      result.setExtractedBytes(doc.utf8_text.size());
+      result.setStatusCode(status_code);
+      result.setExtractedBytes(empty_content ? 0 : doc.utf8_text.size());
       result.setPageCount(doc.page_count > 0 ? doc.page_count : 1);
       result.setIsScannedPdf(doc.is_scanned_pdf);
-      result.setMessage((partial_ocr && !doc.error_message.empty()) ? doc.error_message : "Success");
-      result.setExtractedText(doc.utf8_text);
+      result.setMessage(msg);
+      result.setExtractedText(empty_content ? std::string() : doc.utf8_text);
     }
     const size_t extracted_bytes = doc.utf8_text.size();
     std::string().swap(doc.utf8_text);
@@ -119,10 +128,21 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     auto textShared = std::make_shared<std::string>(std::move(doc.utf8_text));
     const bool is_scanned = doc.is_scanned_pdf;
     const bool partial_ocr = (doc.outcome == ParseOutcome::kPartialOcr);
-    const std::string finish_msg = (partial_ocr && !doc.error_message.empty()) ? doc.error_message : "Success";
+    const bool empty_content = (doc.outcome == ParseOutcome::kEmptyContent);
+    auto finish_status = soeasy::ipc::ParseStatusCode::OK;
+    std::string finish_msg = "Success";
     if (partial_ocr) {
+      finish_status = soeasy::ipc::ParseStatusCode::PARTIAL_OCR;
+      if (!doc.error_message.empty()) finish_msg = doc.error_message;
       LOG_WARN("[Worker] Parse PARTIAL_OCR (stream) | file: '{}' | ext: '{}' | extracted: {} bytes | cost: {:.2f} ms | {}",
                file_path, ext, text_bytes, cost_ms, finish_msg);
+    } else if (empty_content) {
+      finish_status = soeasy::ipc::ParseStatusCode::EMPTY_CONTENT;
+      finish_msg = !doc.error_message.empty() ? doc.error_message : "Document contains no extractable text";
+      text_bytes = 0;
+      num_chunks = 0;
+      LOG_INFO("[Worker] Parse EMPTY_CONTENT (stream) | file: '{}' | ext: '{}' | cost: {:.2f} ms | {}", file_path, ext,
+               cost_ms, finish_msg);
     }
 
     kj::Promise<void> streamPromise = kj::READY_NOW;
@@ -139,13 +159,12 @@ class WorkerAgentImpl final : public soeasy::ipc::WorkerAgent::Server {
     }
     textShared.reset();
 
-    return streamPromise.then([this, receiver, is_scanned, text_bytes, cost_ms, partial_ocr, finish_msg]() mutable {
+    return streamPromise.then([this, receiver, is_scanned, text_bytes, cost_ms, finish_status, finish_msg]() mutable {
       MaybeTrimHeap(text_bytes, cost_ms);
       auto finishReq = receiver.finishRequest();
       finishReq.setTotalBytes(text_bytes);
       finishReq.setIsScannedPdf(is_scanned);
-      finishReq.setStatusCode(partial_ocr ? soeasy::ipc::ParseStatusCode::PARTIAL_OCR
-                                          : soeasy::ipc::ParseStatusCode::OK);
+      finishReq.setStatusCode(finish_status);
       finishReq.setErrorMsg(finish_msg);
       return finishReq.send().then([](auto &&) {});
     });

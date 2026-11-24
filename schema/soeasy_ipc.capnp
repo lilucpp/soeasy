@@ -18,6 +18,7 @@ enum ParseStatusCode {
   crashed     @4;
   encrypted   @5;
   partialOcr  @6;
+  emptyContent @7;
 }
 
 struct ParseResult {

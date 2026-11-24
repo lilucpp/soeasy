@@ -590,36 +590,57 @@ void MainWindow::UpdateParseHealthBadge() {
       pipeline_ ? pipeline_->GetParseStatusSummary() : common::ParseStatusSummary{};
   const uint64_t failures = summary.failure_count();
   const bool has_issues = summary.issue_count() > 0;
+  const bool has_warnings = (summary.encrypted_count + summary.partial_ocr_count) > 0;
 
   if (has_issues) {
     status_parse_btn_->setText(Tr("status_parse_issues")
                                    .arg(summary.ok_count)
                                    .arg(summary.encrypted_count)
+                                   .arg(summary.empty_content_count)
                                    .arg(summary.partial_ocr_count)
                                    .arg(failures));
     const bool has_failures = (failures > 0);
-    status_parse_btn_->setStyleSheet(has_failures ? "QPushButton#statusParseBtn {"
-                                                    "  border: 1px solid #FCA5A5;"
-                                                    "  border-radius: 3px;"
-                                                    "  background-color: #FEF2F2;"
-                                                    "  color: #B91C1C;"
-                                                    "  font-size: 11px;"
-                                                    "  padding: 1px 8px;"
-                                                    "}"
-                                                    "QPushButton#statusParseBtn:hover {"
-                                                    "  background-color: #FEE2E2;"
-                                                    "}"
-                                                  : "QPushButton#statusParseBtn {"
-                                                    "  border: 1px solid #FCD34D;"
-                                                    "  border-radius: 3px;"
-                                                    "  background-color: #FFFBEB;"
-                                                    "  color: #B45309;"
-                                                    "  font-size: 11px;"
-                                                    "  padding: 1px 8px;"
-                                                    "}"
-                                                    "QPushButton#statusParseBtn:hover {"
-                                                    "  background-color: #FEF3C7;"
-                                                    "}");
+    if (has_failures) {
+      status_parse_btn_->setStyleSheet(
+          "QPushButton#statusParseBtn {"
+          "  border: 1px solid #FCA5A5;"
+          "  border-radius: 3px;"
+          "  background-color: #FEF2F2;"
+          "  color: #B91C1C;"
+          "  font-size: 11px;"
+          "  padding: 1px 8px;"
+          "}"
+          "QPushButton#statusParseBtn:hover {"
+          "  background-color: #FEE2E2;"
+          "}");
+    } else if (has_warnings) {
+      status_parse_btn_->setStyleSheet(
+          "QPushButton#statusParseBtn {"
+          "  border: 1px solid #FCD34D;"
+          "  border-radius: 3px;"
+          "  background-color: #FFFBEB;"
+          "  color: #B45309;"
+          "  font-size: 11px;"
+          "  padding: 1px 8px;"
+          "}"
+          "QPushButton#statusParseBtn:hover {"
+          "  background-color: #FEF3C7;"
+          "}");
+    } else {
+      // Only kEmptyContent exists (zero failures/warnings): neutral slate style, NOT red
+      status_parse_btn_->setStyleSheet(
+          "QPushButton#statusParseBtn {"
+          "  border: 1px solid #CBD5E1;"
+          "  border-radius: 3px;"
+          "  background-color: #F8FAFC;"
+          "  color: #475569;"
+          "  font-size: 11px;"
+          "  padding: 1px 8px;"
+          "}"
+          "QPushButton#statusParseBtn:hover {"
+          "  background-color: #F1F5F9;"
+          "}");
+    }
   } else {
     status_parse_btn_->setText(Tr("status_parse_healthy").arg(summary.ok_count));
     status_parse_btn_->setStyleSheet(
@@ -640,6 +661,7 @@ void MainWindow::UpdateParseHealthBadge() {
   status_parse_btn_->setToolTip(Tr("status_parse_tooltip")
                                     .arg(summary.ok_count)
                                     .arg(summary.encrypted_count)
+                                    .arg(summary.empty_content_count)
                                     .arg(summary.partial_ocr_count)
                                     .arg(failures)
                                     .arg(summary.timeout_count)

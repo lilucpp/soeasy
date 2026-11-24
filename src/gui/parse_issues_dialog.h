@@ -46,6 +46,7 @@ class ParseIssuesDialog : public QDialog {
 
   QLabel *kpi_ok_label_ = nullptr;
   QLabel *kpi_encrypted_label_ = nullptr;
+  QLabel *kpi_empty_content_label_ = nullptr;
   QLabel *kpi_partial_ocr_label_ = nullptr;
   QLabel *kpi_timeout_label_ = nullptr;
   QLabel *kpi_crashed_label_ = nullptr;

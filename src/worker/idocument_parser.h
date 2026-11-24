@@ -25,6 +25,7 @@ enum class ParseOutcome {
   kEncrypted = 1,
   kFailed = 2,
   kPartialOcr = 3,
+  kEmptyContent = 4,
 };
 
 struct ExtractedDocument {

@@ -899,7 +899,9 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   auto parse_end = std::chrono::high_resolution_clock::now();
   double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
-  const bool content_extracted = ok && (res.status == TaskStatus::kSuccess || res.status == TaskStatus::kPartialOcr);
+  const bool content_extracted =
+      ok && (res.status == TaskStatus::kSuccess || res.status == TaskStatus::kPartialOcr ||
+             res.status == TaskStatus::kEmptyContent);
   if (!content_extracted) {
     common::ParseStatus issue_stat = common::ParseStatus::kFailed;
     std::string reason = res.error_message;
@@ -961,10 +963,20 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   }
 
   const bool is_partial_ocr = (res.status == TaskStatus::kPartialOcr);
-  const int parse_stat =
-      static_cast<int>(is_partial_ocr ? common::ParseStatus::kPartialOcr : common::ParseStatus::kOk);
-  PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text), parse_stat,
-                     is_partial_ocr ? res.error_message : "");
+  const bool is_empty_content = (res.status == TaskStatus::kEmptyContent);
+  common::ParseStatus final_stat = common::ParseStatus::kOk;
+  std::string final_reason;
+  if (is_partial_ocr) {
+    final_stat = common::ParseStatus::kPartialOcr;
+    final_reason = res.error_message;
+  } else if (is_empty_content) {
+    final_stat = common::ParseStatus::kEmptyContent;
+    final_reason = !res.error_message.empty() ? res.error_message : "Document contains no extractable text";
+    parsed_text.clear();
+    extracted_bytes = 0;
+  }
+  PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text),
+                     static_cast<int>(final_stat), std::move(final_reason));
 
   auto total_end = std::chrono::high_resolution_clock::now();
   double total_cost_ms = std::chrono::duration<double, std::milli>(total_end - start_time).count();
@@ -975,6 +987,8 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     stats_.total_bytes_indexed += extracted_bytes;
     if (is_partial_ocr) {
       stats_.total_partial_ocr_files++;
+    } else if (is_empty_content) {
+      stats_.total_empty_content_files++;
     }
   }
 
@@ -983,6 +997,11 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
         "[IndexOrchestrator] PARTIAL_OCR parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
         "parse: {:.2f} ms, total: {:.2f} ms | {}",
         file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms, res.error_message);
+  } else if (is_empty_content) {
+    LOG_INFO(
+        "[IndexOrchestrator] EMPTY_CONTENT indexed metadata '{}' (ext: '{}', size: {} B) | "
+        "parse: {:.2f} ms, total: {:.2f} ms | {}",
+        file_path, ext, file_size, parse_cost_ms, total_cost_ms, res.error_message);
   } else {
     LOG_INFO(
         "[IndexOrchestrator] SUCCESS parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "

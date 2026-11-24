@@ -31,6 +31,7 @@ enum class TaskStatus {
   kFailed = 3,
   kEncrypted = 4,
   kPartialOcr = 5,
+  kEmptyContent = 6,
 };
 
 struct ParseTask {
