@@ -34,6 +34,10 @@
 #include "common/logger.h"
 #include "common/system_env.h"
 #include "doctotext_c_api.h"
+#if !defined(DOCTOTEXT_VERSION_MAJOR) || !defined(DOCTOTEXT_VERSION_MINOR) || !defined(DOCTOTEXT_VERSION_PATCH) || \
+    DOCTOTEXT_VERSION_MAJOR != 5 || DOCTOTEXT_VERSION_MINOR != 1 || DOCTOTEXT_VERSION_PATCH != 5
+#error "DocToText header version mismatch: SoEasy requires DocToText 5.1.5 headers."
+#endif
 #include "miniz.h"
 #include "utf8.h"
 #include "worker/ocr/image_filter.h"

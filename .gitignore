@@ -43,6 +43,7 @@ third_party/onnxruntime/lib/*.dll
 third_party/onnxruntime/lib/*.lib
 !models/**
 !third_party/doctotext/doctotext.cmake
+third_party/doctotext/include/
 third_party/doctotext/lib/
 third_party/doctotext/.installed_*
 
