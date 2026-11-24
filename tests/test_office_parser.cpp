@@ -623,7 +623,48 @@ int main(int argc, char *argv[]) {
   CHECK(alt_docx_fallback_text.find("COMMENT_DECOY_MUST_SKIP") == std::string::npos);
   CHECK(alt_docx_fallback_text.find("EXTERNAL_DECOY_MUST_SKIP") == std::string::npos);
 
-  std::cout << "  [+] 异常 XLSX (缺 workbook.xml / 无内容 / 损坏文件) 与替代路径 DOCX 校验通过\n";
+  // Case E: Headless <p> HTML fragment disguised as .docx (with spaces in filename) + negative guards
+  const std::string html_docx = test_dir + "/green farm notice 2026.docx";
+  {
+    std::ofstream html_ofs(html_docx, std::ios::binary);
+    html_ofs << "<p>\xe3\x80\x80\xe3\x80\x80&nbsp;&nbsp;\xe7\xbb\xbf\xe8\x89\xb2\xe5\x86\x9c\xe6\x88\xbf\xe5\xbb\xba\xe8\xae\xbe</p>";
+  }
+  soeasy::worker::ParseContext html_docx_ctx;
+  html_docx_ctx.file_path = html_docx;
+  html_docx_ctx.ext = "docx";
+  soeasy::worker::ExtractedDocument html_docx_doc;
+  CHECK(parser.Parse(html_docx_ctx, &html_docx_doc));
+  CHECK(html_docx_doc.outcome == soeasy::worker::ParseOutcome::kOk);
+  CHECK(html_docx_doc.utf8_text.find("\xe7\xbb\xbf\xe8\x89\xb2\xe5\x86\x9c\xe6\x88\xbf\xe5\xbb\xba\xe8\xae\xbe") != std::string::npos);
+  CHECK(html_docx_doc.utf8_text.find("&nbsp;") == std::string::npos);
+
+  const std::string empty_html_docx = test_dir + "/empty_html_body.docx";
+  {
+    std::ofstream empty_ofs(empty_html_docx, std::ios::binary);
+    empty_ofs << "<p>&nbsp;&nbsp;</p>";
+  }
+  soeasy::worker::ParseContext empty_html_ctx;
+  empty_html_ctx.file_path = empty_html_docx;
+  empty_html_ctx.ext = "docx";
+  soeasy::worker::ExtractedDocument empty_html_doc;
+  CHECK(parser.Parse(empty_html_ctx, &empty_html_doc));
+  CHECK(empty_html_doc.outcome == soeasy::worker::ParseOutcome::kEmptyContent);
+  CHECK(empty_html_doc.utf8_text.empty());
+
+  const std::string bin_doc = test_dir + "/_4_Lucene41_0_102.doc";
+  {
+    std::ofstream bin_ofs(bin_doc, std::ios::binary);
+    const std::string payload("<p>Lucene\0\0PostingsWriterDoc</p>", 32);
+    bin_ofs.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+  }
+  soeasy::worker::ParseContext bin_ctx;
+  bin_ctx.file_path = bin_doc;
+  bin_ctx.ext = "doc";
+  soeasy::worker::ExtractedDocument bin_out_doc;
+  CHECK(!parser.Parse(bin_ctx, &bin_out_doc));
+  CHECK(bin_out_doc.outcome == soeasy::worker::ParseOutcome::kFailed);
+
+  std::cout << "  [+] 异常 XLSX (缺 workbook.xml / 无内容 / 损坏文件) 与替代路径/裸HTML DOCX 校验通过\n";
 
   // -------------------------------------------------------------
   // Test 10: Embedded Image OCR End-to-End, Instance Isolation & CheckIdleUnload
