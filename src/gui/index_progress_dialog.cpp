@@ -224,7 +224,7 @@ void IndexProgressDialog::Refresh() {
   const QString badge = TaskKindPrefix(snap.task_kind);
   const int pct =
       (snap.total_files > 0)
-          ? static_cast<int>(std::clamp<uint64_t>((static_cast<uint64_t>(snap.indexed_count) * 100) / snap.total_files,
+          ? static_cast<int>(std::clamp<uint64_t>((static_cast<uint64_t>(snap.processed_count) * 100) / snap.total_files,
                                                   0, 100))
           : 0;
   progress_bar_->setValue(pct);

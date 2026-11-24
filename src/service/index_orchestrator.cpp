@@ -567,7 +567,7 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
   const size_t num_threads = total_files > 0 ? std::min<size_t>(worker_concurrency, total_files) : 0;
   std::atomic<size_t> file_idx{0};
   std::mutex progress_report_mutex;
-  size_t max_reported_indexed = 0;
+  size_t max_reported_processed = 0;
   auto last_progress_report = std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
   size_t finished_workers = 0;
 
@@ -626,7 +626,7 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
               force_ocr_reindex && IsEmbeddedOcrCandidateExt(ExtractExtension(ExtractFileName(file_path)));
           const bool file_ok = IndexSingleFile(file_path, force_file);
 
-          size_t report_indexed = 0;
+          size_t report_processed = 0;
           bool should_report = false;
           {
             std::lock_guard<std::mutex> lock(active_scan_mutex_);
@@ -636,7 +636,7 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
               ++active_scan_indexed_;
             }
             const size_t processed = ++active_scan_processed_;
-            report_indexed = active_scan_indexed_;
+            report_processed = processed;
             if (progress_cb) {
               const auto now = std::chrono::steady_clock::now();
               if (processed == total_files ||
@@ -648,8 +648,8 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
           }
           if (should_report) {
             std::lock_guard<std::mutex> report_lock(progress_report_mutex);
-            max_reported_indexed = std::max(max_reported_indexed, report_indexed);
-            progress_cb(max_reported_indexed, total_files, file_path);
+            max_reported_processed = std::max(max_reported_processed, report_processed);
+            progress_cb(max_reported_processed, total_files, file_path);
           }
         }
         {
@@ -680,13 +680,13 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
             }
           }
           if (!oldest_active_path.empty()) {
-            const size_t report_indexed = active_scan_indexed_;
+            const size_t report_processed = active_scan_processed_;
             last_progress_report = now;
             lock.unlock();
             {
               std::lock_guard<std::mutex> report_lock(progress_report_mutex);
-              max_reported_indexed = std::max(max_reported_indexed, report_indexed);
-              progress_cb(max_reported_indexed, total_files, oldest_active_path);
+              max_reported_processed = std::max(max_reported_processed, report_processed);
+              progress_cb(max_reported_processed, total_files, oldest_active_path);
             }
             lock.lock();
           }
@@ -716,8 +716,8 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
 
   if (progress_cb) {
     std::lock_guard<std::mutex> report_lock(progress_report_mutex);
-    max_reported_indexed = std::max(max_reported_indexed, final_indexed);
-    progress_cb(max_reported_indexed, total_files, "");
+    max_reported_processed = std::max(max_reported_processed, final_processed);
+    progress_cb(max_reported_processed, total_files, "");
   }
 
   DoFlushWriteQueue();

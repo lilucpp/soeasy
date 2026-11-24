@@ -749,6 +749,27 @@ TEST_F(IndexStateMachineTest, EmptyScanLeavesSnapshotInactiveAndSamePathSerializ
   EXPECT_FALSE(pipeline_->GetActiveScanSnapshot().active);
 }
 
+TEST_F(IndexStateMachineTest, ProgressReportsProcessedCountWhenFilesFail) {
+  InitPipeline();
+
+  WriteFile(dir_b_ / "valid.txt", "HealthyFileContentForProgress");
+  WriteFile(dir_b_ / "corrupt.docx", "NOT_A_VALID_ZIP_ARCHIVE");
+
+  config_->SetIndexedDirectories({dir_b_.string()});
+  config_->SetSupportedExtensions({"txt", "docx"});
+
+  size_t last_processed = 0;
+  size_t last_total = 0;
+  const size_t indexed = pipeline_->PerformInitialScan([&](size_t processed, size_t total, const std::string &) {
+    last_processed = processed;
+    last_total = total;
+  });
+
+  EXPECT_EQ(indexed, 1u);
+  EXPECT_EQ(last_total, 2u);
+  EXPECT_EQ(last_processed, 2u);
+}
+
 }  // namespace
 }  // namespace service
 }  // namespace soeasy
