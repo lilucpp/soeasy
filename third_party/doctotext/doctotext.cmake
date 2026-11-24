@@ -3,7 +3,7 @@
 # Downloads and extracts prebuilt doctotext binaries from GitHub Releases
 # ==============================================================================
 
-set(DOCTOTEXT_VERSION "v5.1.4")
+set(DOCTOTEXT_VERSION "v5.1.5")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -34,6 +34,25 @@ set(DOCTOTEXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctotext")
 set(DOCTOTEXT_LIB_DIR "${DOCTOTEXT_DIR}/lib")
 set(DOCTOTEXT_INCLUDE_DIR "${DOCTOTEXT_DIR}/include")
 set(DOCTOTEXT_STAMP "${DOCTOTEXT_DIR}/.installed_${DOCTOTEXT_VERSION}_${DOCTOTEXT_ARCH}")
+
+string(REGEX REPLACE "^v" "" _DOCTOTEXT_EXPECTED_VER "${DOCTOTEXT_VERSION}")
+set(_DOCTOTEXT_LOCAL_MATCH FALSE)
+if(EXISTS "${DOCTOTEXT_INCLUDE_DIR}/doctotext_c_api.h")
+    file(READ "${DOCTOTEXT_INCLUDE_DIR}/doctotext_c_api.h" _DOCTOTEXT_HDR)
+    string(FIND "${_DOCTOTEXT_HDR}" "#define DOCTOTEXT_VERSION \"${_DOCTOTEXT_EXPECTED_VER}\"" _DOCTOTEXT_VER_POS)
+    if(NOT _DOCTOTEXT_VER_POS EQUAL -1)
+        if(WIN32 AND EXISTS "${DOCTOTEXT_LIB_DIR}/doctotext.dll" AND EXISTS "${DOCTOTEXT_LIB_DIR}/libdoctotext.a")
+            set(_DOCTOTEXT_LOCAL_MATCH TRUE)
+        elseif(UNIX AND EXISTS "${DOCTOTEXT_LIB_DIR}/libdoctotext.so")
+            set(_DOCTOTEXT_LOCAL_MATCH TRUE)
+        endif()
+    endif()
+endif()
+
+if(NOT EXISTS "${DOCTOTEXT_STAMP}" AND _DOCTOTEXT_LOCAL_MATCH)
+    message(STATUS "[DocToText] Using locally populated ${DOCTOTEXT_VERSION} artifacts in ${DOCTOTEXT_DIR}")
+    file(WRITE "${DOCTOTEXT_STAMP}" "${DOCTOTEXT_VERSION} ${DOCTOTEXT_ARCH} (local)\n")
+endif()
 
 if(NOT EXISTS "${DOCTOTEXT_STAMP}")
     message(STATUS "[DocToText] Downloading prebuilt ${DOCTOTEXT_VERSION} for ${DOCTOTEXT_ARCH}...")

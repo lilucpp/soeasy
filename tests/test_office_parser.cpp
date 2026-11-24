@@ -628,6 +628,7 @@ int main(int argc, char *argv[]) {
   {
     std::ofstream html_ofs(html_docx, std::ios::binary);
     html_ofs << "<p>\xe3\x80\x80\xe3\x80\x80&nbsp;&nbsp;\xe7\xbb\xbf\xe8\x89\xb2\xe5\x86\x9c\xe6\x88\xbf\xe5\xbb\xba\xe8\xae\xbe</p>";
+    CHECK(html_ofs.good());
   }
   soeasy::worker::ParseContext html_docx_ctx;
   html_docx_ctx.file_path = html_docx;
@@ -642,6 +643,7 @@ int main(int argc, char *argv[]) {
   {
     std::ofstream empty_ofs(empty_html_docx, std::ios::binary);
     empty_ofs << "<p>&nbsp;&nbsp;</p>";
+    CHECK(empty_ofs.good());
   }
   soeasy::worker::ParseContext empty_html_ctx;
   empty_html_ctx.file_path = empty_html_docx;
@@ -656,6 +658,7 @@ int main(int argc, char *argv[]) {
     std::ofstream bin_ofs(bin_doc, std::ios::binary);
     const std::string payload("<p>Lucene\0\0PostingsWriterDoc</p>", 32);
     bin_ofs.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    CHECK(bin_ofs.good());
   }
   soeasy::worker::ParseContext bin_ctx;
   bin_ctx.file_path = bin_doc;
