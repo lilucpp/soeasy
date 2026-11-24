@@ -1,6 +1,7 @@
 #ifndef DOCTOTEXT_PDF_PARSER_H
 #define DOCTOTEXT_PDF_PARSER_H
 
+#include "attachment.h"
 #include "link.h"
 #include <string>
 #include <vector>
@@ -9,6 +10,10 @@ namespace doctotext
 {
 	struct FormattingStyle;
 	class Metadata;
+	typedef std::string (*ImageParserCallback)(const std::string& image_name,
+	                                          const char* image_buffer,
+	                                          size_t image_size,
+	                                          void* user_data);
 }
 
 using namespace doctotext;
@@ -25,10 +30,13 @@ class PDFParser
 		~PDFParser();
 		void setVerboseLogging(bool verbose);
 		void setLogStream(std::ostream& log_stream);
+		void setImageParserCallback(doctotext::ImageParserCallback callback, void* user_data = NULL);
 		bool isPDF();
 		void getLinks(std::vector<Link>& links);
+		void getAttachments(std::vector<Attachment>& attachments);
 		std::string plainText(const FormattingStyle& formatting);
 		bool error();
+		bool encrypted();
 		Metadata metaData();
 };
 

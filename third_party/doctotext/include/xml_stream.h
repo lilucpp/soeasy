@@ -3,6 +3,9 @@
 
 #include <string>
 
+typedef struct _xmlNode xmlNode;
+typedef xmlNode *xmlNodePtr;
+
 class XmlStream
 {
 	private:
@@ -10,6 +13,7 @@ class XmlStream
 		Implementation* impl;
 
 	public:
+		static void ensureXmlParserInitialized(bool manage_xml_parser = true);
 		XmlStream(const std::string& xml, bool manage_xml_parser, int xml_parse_options = 0);
 		~XmlStream();
 		operator bool();
@@ -21,6 +25,7 @@ class XmlStream
 		std::string fullName();
 		std::string stringValue();
 		std::string attribute(const std::string& attr_name);
+		xmlNodePtr expand();
 };
 
 #endif

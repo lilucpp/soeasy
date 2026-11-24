@@ -88,4 +88,8 @@ std::string int_to_str(int i);
 
 int str_to_int(const std::string& s);
 
+std::string normalizeZipPath(const std::string& path);
+
+bool asciiEqualsIgnoreCase(const std::string& a, const char* b);
+
 #endif
