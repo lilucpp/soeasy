@@ -51,7 +51,7 @@ class MainWindow : public QMainWindow {
 
  signals:
   void IndexTaskStarted(int task_type, quint64 generation);
-  void IndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file, quint64 generation);
+  void IndexProgressUpdated(int task_type, int processed, int total, const QString &current_file, quint64 generation);
   void IndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec, bool has_followup,
                      quint64 generation);
 
@@ -73,7 +73,7 @@ class MainWindow : public QMainWindow {
   void OnRebuildIndexRequested();
 
   void OnIndexTaskStarted(int task_type, quint64 generation);
-  void OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file, quint64 generation);
+  void OnIndexProgressUpdated(int task_type, int processed, int total, const QString &current_file, quint64 generation);
   void OnIndexFinished(int task_type, int total_indexed, bool cancelled, double elapsed_sec, bool has_followup,
                        quint64 generation);
 

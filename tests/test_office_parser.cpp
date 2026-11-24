@@ -859,6 +859,9 @@ int main(int argc, char *argv[]) {
     CHECK(parser.Parse(ppt_ctx, &ppt_doc));
     CHECK(ppt_doc.outcome == soeasy::worker::ParseOutcome::kEmptyContent);
     CHECK(ppt_doc.utf8_text.empty());
+    std::string legacy_ppt_text;
+    CHECK(!parser.Parse(empty_ppt, "ppt", &legacy_ppt_text));
+    CHECK(legacy_ppt_text.empty());
 
     // 8.6 损坏 PDF 返回 kFailed 而非空白页 kOk
     const std::string broken_pdf = test_dir + "/broken_sample.pdf";

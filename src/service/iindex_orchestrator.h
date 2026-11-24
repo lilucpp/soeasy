@@ -58,10 +58,10 @@ struct IndexTaskResult {
   bool has_pending_followup = false;
 };
 
-using ScanProgressCallback = std::function<void(size_t indexed, size_t total, const std::string &current_path)>;
+using ScanProgressCallback = std::function<void(size_t processed, size_t total, const std::string &current_path)>;
 using IndexTaskStartedCallback = std::function<void(IndexTaskKind kind, uint64_t generation)>;
 using IndexTaskProgressCallback =
-    std::function<void(IndexTaskKind kind, uint64_t generation, size_t indexed, size_t total, const std::string &path)>;
+    std::function<void(IndexTaskKind kind, uint64_t generation, size_t processed, size_t total, const std::string &path)>;
 using IndexTaskFinishedCallback = std::function<void(const IndexTaskResult &result)>;
 
 struct BackgroundIndexCallbacks {

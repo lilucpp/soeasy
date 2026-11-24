@@ -972,13 +972,27 @@ int main(int argc, char *argv[]) {
       detail_win.show();
       app.processEvents();
       auto *parse_btn = detail_win.findChild<QPushButton *>("statusParseBtn");
-      CHECK(parse_btn != nullptr && parse_btn->text().contains("部分OCR"));
+      CHECK(parse_btn != nullptr && parse_btn->text().contains("解析详情: 正常 ") &&
+            parse_btn->text().contains("· 其他 ") && !parse_btn->text().contains("部分OCR"));
+      const QString parse_tip = parse_btn->toolTip();
+      CHECK(parse_tip.contains("正常解析:") && parse_tip.contains("加密跳过:") && parse_tip.contains("空正文") &&
+            parse_tip.contains("部分OCR") && parse_tip.contains("解析失败:"));
+      CHECK(parse_btn->styleSheet().contains("#475569"));
+      CHECK(!parse_btn->styleSheet().contains("#B91C1C"));
+      CHECK(!parse_btn->styleSheet().contains("#FEF2F2"));
+      CHECK(!parse_btn->styleSheet().contains("#B45309"));
       auto *detail_btn = detail_win.findChild<QPushButton *>("statusDetailBtn");
       auto *cancel_btn = detail_win.findChild<QPushButton *>("statusCancelBtn");
       CHECK(detail_btn != nullptr && !detail_btn->isVisible());
       CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexTaskStarted", Qt::DirectConnection, Q_ARG(int, 1),
                                       Q_ARG(quint64, 42)));
       app.processEvents();
+      CHECK(QMetaObject::invokeMethod(&detail_win, "OnIndexProgressUpdated", Qt::DirectConnection, Q_ARG(int, 1),
+                                      Q_ARG(int, 379), Q_ARG(int, 380), Q_ARG(QString, "last_file.pdf"),
+                                      Q_ARG(quint64, 42)));
+      app.processEvents();
+      auto *status_prog = detail_win.findChild<QProgressBar *>();
+      CHECK(status_prog != nullptr && status_prog->value() == 99);
       CHECK(detail_btn->isVisible());
       detail_btn->click();
       app.processEvents();
@@ -1078,10 +1092,18 @@ int main(int argc, char *argv[]) {
       app.processEvents();
       CHECK(!viewer->text_viewer()->toPlainText().contains("%PDF-"));
     }
-    // MainWindow parse health badge in kEmptyContent-only state MUST use neutral slate styling (never red)
+    // MainWindow parse health badge in healthy and kEmptyContent-only states MUST stay concise & neutral slate
     CHECK(storage->ClearAll());
     CHECK(storage->IndexDocument(990007, blank_pdf_path.toStdString(), "ok_doc.pdf", "pdf", 68, 1700000206, 1,
                                  "HealthyDocumentText", static_cast<int>(soeasy::common::ParseStatus::kOk), ""));
+    {
+      soeasy::gui::MainWindow healthy_win(pipeline);
+      healthy_win.show();
+      app.processEvents();
+      auto *healthy_btn = healthy_win.findChild<QPushButton *>("statusParseBtn");
+      CHECK(healthy_btn != nullptr && healthy_btn->text() == "解析详情: 正常 1");
+      CHECK(healthy_btn->styleSheet().contains("#475569") && !healthy_btn->styleSheet().contains("#15803D"));
+    }
     CHECK(storage->IndexDocument(990008, empty_docx_path.toStdString(), "empty_only.docx", "docx", 1024, 1700000207,
                                  1, "", static_cast<int>(soeasy::common::ParseStatus::kEmptyContent),
                                  "Document contains no extractable text"));
@@ -1090,10 +1112,11 @@ int main(int argc, char *argv[]) {
       empty_only_win.show();
       app.processEvents();
       auto *empty_parse_btn = empty_only_win.findChild<QPushButton *>("statusParseBtn");
-      CHECK(empty_parse_btn != nullptr);
+      CHECK(empty_parse_btn != nullptr && empty_parse_btn->text() == "解析详情: 正常 1 · 其他 1");
       const QString badge_qss = empty_parse_btn->styleSheet();
       CHECK(badge_qss.contains("#475569"));
-      CHECK(badge_qss.contains("#F8FAFC"));
+      CHECK(badge_qss.contains("#FFFFFF"));
+      CHECK(badge_qss.contains("#CBD5E1"));
       CHECK(!badge_qss.contains("#B91C1C"));
       CHECK(!badge_qss.contains("#FEF2F2"));
       CHECK(!badge_qss.contains("#B45309"));

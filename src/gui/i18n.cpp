@@ -406,8 +406,8 @@ void I18n::InitDictionary() {
       {"custom_format_desc", "用户手动添加的专有文件后缀与提取规则"},
 
       // Parse Status & Issues Dialog
-      {"status_parse_healthy", "✓ 正常 %1 · 加密 0 · 空正文 0 · 部分OCR 0 · 失败 0"},
-      {"status_parse_issues", "⚠ 正常 %1 · 加密 %2 · 空正文 %3 · 部分OCR %4 · 失败 %5"},
+      {"status_parse_healthy", "解析详情: 正常 %1"},
+      {"status_parse_issues", "解析详情: 正常 %1 · 其他 %2"},
       {"status_parse_tooltip",
        "文档解析状态统计（点击查看加密、空正文、部分OCR或失败文件详情）：\n"
        "· 正常解析: %1 个\n"
@@ -908,8 +908,8 @@ void I18n::InitDictionary() {
       {"fmt_desc_xz", "XZ Compressed Archive"},
 
       // Parse Status & Issues Dialog
-      {"status_parse_healthy", "✓ OK %1 · Encrypted 0 · Empty 0 · Partial OCR 0 · Failed 0"},
-      {"status_parse_issues", "⚠ OK %1 · Encrypted %2 · Empty %3 · Partial OCR %4 · Failed %5"},
+      {"status_parse_healthy", "Index: %1 OK"},
+      {"status_parse_issues", "Index Details: %1 OK · %2 other"},
       {"status_parse_tooltip",
        "Document Parse Status (click to inspect details):\n"
        "· Normal: %1\n"

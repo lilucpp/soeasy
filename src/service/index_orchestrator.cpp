@@ -1511,14 +1511,14 @@ void IndexOrchestrator::BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t 
     bool ok = true;
     size_t count = 0;
 
-    auto progress_forwarder = [this, kind, generation](size_t indexed, size_t total, const std::string &path) {
+    auto progress_forwarder = [this, kind, generation](size_t processed, size_t total, const std::string &path) {
       IndexTaskProgressCallback on_progress;
       {
         std::lock_guard<std::mutex> cb_lock(bg_callback_mutex_);
         on_progress = bg_callbacks_.on_progress;
       }
       if (on_progress) {
-        on_progress(kind, generation, indexed, total, path);
+        on_progress(kind, generation, processed, total, path);
       }
     };
 

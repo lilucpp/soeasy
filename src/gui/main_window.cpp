@@ -589,74 +589,29 @@ void MainWindow::UpdateParseHealthBadge() {
   const common::ParseStatusSummary summary =
       pipeline_ ? pipeline_->GetParseStatusSummary() : common::ParseStatusSummary{};
   const uint64_t failures = summary.failure_count();
-  const bool has_issues = summary.issue_count() > 0;
-  const bool has_warnings = (summary.encrypted_count + summary.partial_ocr_count) > 0;
+  const uint64_t issue_total = summary.issue_count();
 
-  if (has_issues) {
-    status_parse_btn_->setText(Tr("status_parse_issues")
-                                   .arg(summary.ok_count)
-                                   .arg(summary.encrypted_count)
-                                   .arg(summary.empty_content_count)
-                                   .arg(summary.partial_ocr_count)
-                                   .arg(failures));
-    const bool has_failures = (failures > 0);
-    if (has_failures) {
-      status_parse_btn_->setStyleSheet(
-          "QPushButton#statusParseBtn {"
-          "  border: 1px solid #FCA5A5;"
-          "  border-radius: 3px;"
-          "  background-color: #FEF2F2;"
-          "  color: #B91C1C;"
-          "  font-size: 11px;"
-          "  padding: 1px 8px;"
-          "}"
-          "QPushButton#statusParseBtn:hover {"
-          "  background-color: #FEE2E2;"
-          "}");
-    } else if (has_warnings) {
-      status_parse_btn_->setStyleSheet(
-          "QPushButton#statusParseBtn {"
-          "  border: 1px solid #FCD34D;"
-          "  border-radius: 3px;"
-          "  background-color: #FFFBEB;"
-          "  color: #B45309;"
-          "  font-size: 11px;"
-          "  padding: 1px 8px;"
-          "}"
-          "QPushButton#statusParseBtn:hover {"
-          "  background-color: #FEF3C7;"
-          "}");
-    } else {
-      // Only kEmptyContent exists (zero failures/warnings): neutral slate style, NOT red
-      status_parse_btn_->setStyleSheet(
-          "QPushButton#statusParseBtn {"
-          "  border: 1px solid #CBD5E1;"
-          "  border-radius: 3px;"
-          "  background-color: #F8FAFC;"
-          "  color: #475569;"
-          "  font-size: 11px;"
-          "  padding: 1px 8px;"
-          "}"
-          "QPushButton#statusParseBtn:hover {"
-          "  background-color: #F1F5F9;"
-          "}");
-    }
+  if (issue_total > 0) {
+    status_parse_btn_->setText(Tr("status_parse_issues").arg(summary.ok_count).arg(issue_total));
   } else {
     status_parse_btn_->setText(Tr("status_parse_healthy").arg(summary.ok_count));
-    status_parse_btn_->setStyleSheet(
-        "QPushButton#statusParseBtn {"
-        "  border: 1px solid #CBD5E1;"
-        "  border-radius: 3px;"
-        "  background-color: #FFFFFF;"
-        "  color: #15803D;"
-        "  font-size: 11px;"
-        "  padding: 1px 8px;"
-        "}"
-        "QPushButton#statusParseBtn:hover {"
-        "  background-color: #F0FDF4;"
-        "  border-color: #86EFAC;"
-        "}");
   }
+
+  // Keep the bottom-bar inspection pill understated & neutral across all states (no glaring red/amber).
+  status_parse_btn_->setStyleSheet(
+      "QPushButton#statusParseBtn {"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 3px;"
+      "  background-color: #FFFFFF;"
+      "  color: #475569;"
+      "  font-size: 11px;"
+      "  padding: 1px 8px;"
+      "}"
+      "QPushButton#statusParseBtn:hover {"
+      "  background-color: #F1F5F9;"
+      "  border-color: #94A3B8;"
+      "  color: #1E293B;"
+      "}");
 
   status_parse_btn_->setToolTip(Tr("status_parse_tooltip")
                                     .arg(summary.ok_count)
@@ -1006,12 +961,12 @@ service::BackgroundIndexCallbacks MainWindow::MakeBackgroundCallbacks() {
       emit target->window->IndexTaskStarted(static_cast<int>(kind), static_cast<quint64>(generation));
     }
   };
-  callbacks.on_progress = [target](service::IndexTaskKind kind, uint64_t generation, size_t indexed, size_t total,
+  callbacks.on_progress = [target](service::IndexTaskKind kind, uint64_t generation, size_t processed, size_t total,
                                    const std::string &path) {
     if (!target) return;
     std::lock_guard<std::mutex> lock(target->mutex);
     if (target->window) {
-      emit target->window->IndexProgressUpdated(static_cast<int>(kind), static_cast<int>(indexed),
+      emit target->window->IndexProgressUpdated(static_cast<int>(kind), static_cast<int>(processed),
                                                 static_cast<int>(total), QString::fromStdString(path),
                                                 static_cast<quint64>(generation));
     }
@@ -1065,7 +1020,7 @@ void MainWindow::OnIndexTaskStarted(int task_type, quint64 generation) {
   }
 }
 
-void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total, const QString &current_file,
+void MainWindow::OnIndexProgressUpdated(int task_type, int processed, int total, const QString &current_file,
                                         quint64 generation) {
   if (!is_task_active_ || generation != active_generation_) {
     // Drop late progress events from a task that already finished or was superseded.
@@ -1074,10 +1029,10 @@ void MainWindow::OnIndexProgressUpdated(int task_type, int indexed, int total, c
   const QString badge = IndexTaskBadge(task_type);
 
   if (total > 0) {
-    const int pct = static_cast<int>(std::clamp<int64_t>((static_cast<int64_t>(indexed) * 100) / total, 0, 100));
+    const int pct = static_cast<int>(std::clamp<int64_t>((static_cast<int64_t>(processed) * 100) / total, 0, 100));
     status_progress_bar_->setValue(pct);
     status_progress_bar_->setVisible(true);
-    status_stats_label_->setText(badge + Tr("status_building_progress").arg(indexed).arg(total).arg(pct));
+    status_stats_label_->setText(badge + Tr("status_building_progress").arg(processed).arg(total).arg(pct));
   } else {
     status_stats_label_->setText(badge + Tr("status_scanning_dirs"));
   }
