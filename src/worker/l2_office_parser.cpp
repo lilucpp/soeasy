@@ -150,16 +150,225 @@ class ZipFileScope {
   FILE *file_;
 };
 
-/// Helper to safely extract and parse an XML entry from a zip archive using RAII.
-std::string ExtractZipEntryXmlText(mz_zip_archive *zip, const char *entry_name, bool strip_tags) {
+constexpr uint64_t kMaxFallbackZipEntryBytes = 64ULL * 1024ULL * 1024ULL;
+
+bool AsciiEqualsIgnoreCase(const std::string &a, const char *b) {
+  const size_t b_len = std::strlen(b);
+  if (a.size() != b_len) {
+    return false;
+  }
+  for (size_t i = 0; i < b_len; ++i) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string NormalizeZipRelPath(const std::string &raw_path) {
+  std::vector<std::string> parts;
+  size_t i = 0;
+  while (i < raw_path.size()) {
+    while (i < raw_path.size() && (raw_path[i] == '/' || raw_path[i] == '\\')) {
+      ++i;
+    }
+    if (i >= raw_path.size()) {
+      break;
+    }
+    size_t j = i;
+    while (j < raw_path.size() && raw_path[j] != '/' && raw_path[j] != '\\') {
+      ++j;
+    }
+    std::string seg = raw_path.substr(i, j - i);
+    i = j;
+    if (seg == ".") {
+      continue;
+    }
+    if (seg == "..") {
+      if (!parts.empty()) {
+        parts.pop_back();
+      }
+      continue;
+    }
+    parts.push_back(std::move(seg));
+  }
+  std::string out;
+  for (size_t k = 0; k < parts.size(); ++k) {
+    if (k > 0) {
+      out.push_back('/');
+    }
+    out += parts[k];
+  }
+  return out;
+}
+
+std::string ReadZipEntryString(mz_zip_archive *zip, const char *entry_name) {
+  const int file_idx = mz_zip_reader_locate_file(zip, entry_name, nullptr, 0);
+  if (file_idx < 0) {
+    return "";
+  }
+  mz_zip_archive_file_stat stat{};
+  if (!mz_zip_reader_file_stat(zip, static_cast<mz_uint>(file_idx), &stat) ||
+      stat.m_uncomp_size > kMaxFallbackZipEntryBytes) {
+    return "";
+  }
   size_t uncomp_size = 0;
-  void *data = mz_zip_reader_extract_file_to_heap(zip, entry_name, &uncomp_size, 0);
+  void *data = mz_zip_reader_extract_to_heap(zip, static_cast<mz_uint>(file_idx), &uncomp_size, 0);
   if (!data) {
     return "";
   }
   std::unique_ptr<char, decltype(&mz_free)> data_guard(static_cast<char *>(data), mz_free);
-  std::string xml(data_guard.get(), uncomp_size);
+  return std::string(data_guard.get(), uncomp_size);
+}
+
+/// Helper to safely extract and parse an XML entry from a zip archive using RAII.
+std::string ExtractZipEntryXmlText(mz_zip_archive *zip, const char *entry_name, bool strip_tags) {
+  const std::string xml = ReadZipEntryString(zip, entry_name);
+  if (xml.empty()) {
+    return "";
+  }
   return L2OfficeParser::ExtractXmlText(xml, strip_tags);
+}
+
+std::string ResolveAlternateDocxPath(mz_zip_archive *zip) {
+  const std::string rels = ReadZipEntryString(zip, "_rels/.rels");
+  if (rels.empty()) {
+    return "";
+  }
+  size_t pos = 0;
+  while (pos < rels.size()) {
+    const size_t open = rels.find('<', pos);
+    if (open == std::string::npos) {
+      break;
+    }
+    if (rels.compare(open, 4, "<!--") == 0) {
+      const size_t cmt_end = rels.find("-->", open + 4);
+      if (cmt_end == std::string::npos) {
+        break;
+      }
+      pos = cmt_end + 3;
+      continue;
+    }
+    if (rels.compare(open, 2, "<?") == 0) {
+      const size_t pi_end = rels.find("?>", open + 2);
+      if (pi_end == std::string::npos) {
+        break;
+      }
+      pos = pi_end + 2;
+      continue;
+    }
+    if (open + 1 < rels.size() && (rels[open + 1] == '!' || rels[open + 1] == '/')) {
+      const size_t skip_end = rels.find('>', open + 2);
+      if (skip_end == std::string::npos) {
+        break;
+      }
+      pos = skip_end + 1;
+      continue;
+    }
+
+    // Find matching unquoted '>' for start/empty-element tag
+    char quote = '\0';
+    size_t close = std::string::npos;
+    for (size_t i = open + 1; i < rels.size(); ++i) {
+      const char ch = rels[i];
+      if (quote != '\0') {
+        if (ch == quote) {
+          quote = '\0';
+        }
+      } else if (ch == '"' || ch == '\'') {
+        quote = ch;
+      } else if (ch == '>') {
+        close = i;
+        break;
+      }
+    }
+    if (close == std::string::npos) {
+      break;
+    }
+    pos = close + 1;
+
+    // Parse tag local name (supporting optional namespace prefix such as ns:Relationship)
+    size_t p = open + 1;
+    while (p < close && std::isspace(static_cast<unsigned char>(rels[p]))) {
+      ++p;
+    }
+    const size_t name_start = p;
+    while (p < close && !std::isspace(static_cast<unsigned char>(rels[p])) && rels[p] != '/') {
+      ++p;
+    }
+    const size_t colon = rels.rfind(':', p - 1);
+    const size_t local_start = (colon != std::string::npos && colon >= name_start) ? (colon + 1) : name_start;
+    if (p <= local_start || rels.compare(local_start, p - local_start, "Relationship") != 0) {
+      continue;
+    }
+
+    // Parse attributes cleanly within [p, close) respecting quotes
+    std::string type;
+    std::string raw_target;
+    std::string target_mode;
+    while (p < close) {
+      while (p < close && (std::isspace(static_cast<unsigned char>(rels[p])) || rels[p] == '/')) {
+        ++p;
+      }
+      if (p >= close) {
+        break;
+      }
+      const size_t attr_start = p;
+      while (p < close && !std::isspace(static_cast<unsigned char>(rels[p])) && rels[p] != '=' && rels[p] != '/') {
+        ++p;
+      }
+      const std::string attr_name = rels.substr(attr_start, p - attr_start);
+      while (p < close && std::isspace(static_cast<unsigned char>(rels[p]))) {
+        ++p;
+      }
+      if (p >= close || rels[p] != '=') {
+        continue;
+      }
+      ++p;
+      while (p < close && std::isspace(static_cast<unsigned char>(rels[p]))) {
+        ++p;
+      }
+      if (p >= close || (rels[p] != '"' && rels[p] != '\'')) {
+        continue;
+      }
+      const char q = rels[p++];
+      const size_t val_start = p;
+      while (p < close && rels[p] != q) {
+        ++p;
+      }
+      if (p >= close) {
+        break;
+      }
+      const std::string attr_val = rels.substr(val_start, p - val_start);
+      ++p;
+
+      if (attr_name == "Type") {
+        type = L2OfficeParser::UnescapeXmlEntities(attr_val);
+      } else if (attr_name == "Target") {
+        raw_target = L2OfficeParser::UnescapeXmlEntities(attr_val);
+      } else if (attr_name == "TargetMode") {
+        target_mode = L2OfficeParser::UnescapeXmlEntities(attr_val);
+      }
+    }
+
+    if (AsciiEqualsIgnoreCase(target_mode, "External")) {
+      continue;
+    }
+    constexpr const char kSuffix[] = "/officeDocument";
+    constexpr size_t kSuffixLen = sizeof(kSuffix) - 1;
+    if (type.size() < kSuffixLen || type.compare(type.size() - kSuffixLen, kSuffixLen, kSuffix) != 0) {
+      continue;
+    }
+    const std::string target = NormalizeZipRelPath(raw_target);
+    if (target.size() >= 4 && target[target.size() - 4] == '.' &&
+        std::tolower(static_cast<unsigned char>(target[target.size() - 3])) == 'x' &&
+        std::tolower(static_cast<unsigned char>(target[target.size() - 2])) == 'm' &&
+        std::tolower(static_cast<unsigned char>(target[target.size() - 1])) == 'l' &&
+        mz_zip_reader_locate_file(zip, target.c_str(), nullptr, 0) >= 0) {
+      return target;
+    }
+  }
+  return "";
 }
 
 /// Safely collect error messages from a DocToTextException using bounded iteration.
@@ -604,6 +813,12 @@ bool L2OfficeParser::ParseDocx(const std::string &file_path, std::string *out_ut
     return false;
   }
   *out_utf8 = ExtractZipEntryXmlText(zip_scope.zip(), "word/document.xml", true);
+  if (out_utf8->empty()) {
+    const std::string alt_path = ResolveAlternateDocxPath(zip_scope.zip());
+    if (!alt_path.empty()) {
+      *out_utf8 = ExtractZipEntryXmlText(zip_scope.zip(), alt_path.c_str(), true);
+    }
+  }
   return !out_utf8->empty();
 }
 

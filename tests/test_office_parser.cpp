@@ -577,7 +577,53 @@ int main(int argc, char *argv[]) {
   std::string bad_xlsx_text = "stale";
   CHECK(!parser.Parse(bad_xlsx, "xlsx", &bad_xlsx_text));
   CHECK(bad_xlsx_text.empty());
-  std::cout << "  [+] 异常 XLSX (缺 workbook.xml / 无内容 / 损坏文件) 兜底与失败语义验证通过\n";
+
+  // Case D: ECMA-376 alternate DOCX main document path via _rels/.rels (/word/document2.xml)
+  const std::string alt_docx = test_dir + "/alternate_doc_path.docx";
+  {
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+    CHECK(mz_zip_writer_init_file(&zip, alt_docx.c_str(), 0));
+    const std::string rels =
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        "<!-- <Relationship Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+        "Target=\"/word/comment_decoy.xml\" Id=\"rIdC\"/> -->"
+        "<Relationship Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+        "Desc=\"1>0\" Target=\"/word/external_decoy.xml\" TargetMode = \"external\" Id=\"rId0\"/>"
+        "<Relationship Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+        "Target=\"/word/missing.xml\" Id=\"rId1\"/>"
+        "<Relationship Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+        "Target = \"./word/../word/doc&amp;2.xml\" Id=\"rId2\"/>"
+        "</Relationships>";
+    const std::string cmt_decoy =
+        "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+        "<w:body><w:p><w:r><w:t>COMMENT_DECOY_MUST_SKIP</w:t></w:r></w:p></w:body></w:document>";
+    const std::string decoy =
+        "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+        "<w:body><w:p><w:r><w:t>EXTERNAL_DECOY_MUST_SKIP</w:t></w:r></w:p></w:body></w:document>";
+    const std::string doc2 =
+        "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+        "<w:body><w:p><w:r><w:t>AlternateDocxMainPartOk</w:t></w:r></w:p></w:body></w:document>";
+    mz_zip_writer_add_mem(&zip, "_rels/.rels", rels.data(), rels.size(), MZ_BEST_COMPRESSION);
+    mz_zip_writer_add_mem(&zip, "word/comment_decoy.xml", cmt_decoy.data(), cmt_decoy.size(), MZ_BEST_COMPRESSION);
+    mz_zip_writer_add_mem(&zip, "word/external_decoy.xml", decoy.data(), decoy.size(), MZ_BEST_COMPRESSION);
+    mz_zip_writer_add_mem(&zip, "word/doc&2.xml", doc2.data(), doc2.size(), MZ_BEST_COMPRESSION);
+    CHECK(mz_zip_writer_finalize_archive(&zip));
+    CHECK(mz_zip_writer_end(&zip));
+  }
+  std::string alt_docx_text;
+  CHECK(parser.Parse(alt_docx, "docx", &alt_docx_text));
+  CHECK(alt_docx_text.find("AlternateDocxMainPartOk") != std::string::npos);
+  CHECK(alt_docx_text.find("COMMENT_DECOY_MUST_SKIP") == std::string::npos);
+  CHECK(alt_docx_text.find("EXTERNAL_DECOY_MUST_SKIP") == std::string::npos);
+  std::string alt_docx_fallback_text;
+  CHECK(soeasy::worker::L2OfficeParser::ParseDocx(alt_docx, &alt_docx_fallback_text));
+  CHECK(alt_docx_fallback_text.find("AlternateDocxMainPartOk") != std::string::npos);
+  CHECK(alt_docx_fallback_text.find("COMMENT_DECOY_MUST_SKIP") == std::string::npos);
+  CHECK(alt_docx_fallback_text.find("EXTERNAL_DECOY_MUST_SKIP") == std::string::npos);
+
+  std::cout << "  [+] 异常 XLSX (缺 workbook.xml / 无内容 / 损坏文件) 与替代路径 DOCX 校验通过\n";
 
   // -------------------------------------------------------------
   // Test 10: Embedded Image OCR End-to-End, Instance Isolation & CheckIdleUnload
