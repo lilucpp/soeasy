@@ -251,6 +251,9 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
         gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
     fi
 fi
+if [ "$1" = "purge" ]; then
+    echo "SoEasy system files purged. Per-user index data (if any) is preserved under ~/.local/share/SoEasy/."
+fi
 exit 0
 EOF
 

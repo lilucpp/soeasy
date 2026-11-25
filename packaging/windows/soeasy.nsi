@@ -25,7 +25,7 @@ Unicode true
 !define APP_DISPLAY_NAME "SoEasy Desktop Search Engine"
 !define APP_PUBLISHER "SoEasy Team"
 !define APP_URL "https://github.com/lilucpp/soeasy"
-!define APP_EXE "bin\soeasy-gui.exe"
+!define APP_EXE "soeasy-gui.exe"
 !define UNINSTALL_REG_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SoEasy"
 
 !include "MUI2.nsh"
@@ -124,26 +124,13 @@ Section "SoEasy Core (Required)" SecCore
   !insertmacro ENSURE_NOT_RUNNING
 
   SetOutPath "$INSTDIR"
-  File /nonfatal "${STAGE_DIR}\README.md"
-  File /nonfatal "${STAGE_DIR}\run.bat"
-
-  SetOutPath "$INSTDIR\bin"
-  File /r "${STAGE_DIR}\bin\*.*"
-
-  SetOutPath "$INSTDIR\dict"
-  File /r "${STAGE_DIR}\dict\*.*"
-
-  SetOutPath "$INSTDIR\models"
-  File /r "${STAGE_DIR}\models\*.*"
-
-  SetOutPath "$INSTDIR\icons"
-  File /r "${STAGE_DIR}\icons\*.*"
+  File /r /x "Uninstall.exe" "${STAGE_DIR}\*"
 
   ; Create uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   ; Start Menu shortcuts (SetOutPath sets working directory for CreateShortcut)
-  SetOutPath "$INSTDIR\bin"
+  SetOutPath "$INSTDIR"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\icons\soeasy.ico" 0
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\Uninstall ${APP_NAME}.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
@@ -165,7 +152,7 @@ Section "SoEasy Core (Required)" SecCore
 SectionEnd
 
 Section "Desktop Shortcut" SecDesktop
-  SetOutPath "$INSTDIR\bin"
+  SetOutPath "$INSTDIR"
   CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\icons\soeasy.ico" 0
 SectionEnd
 
@@ -173,6 +160,8 @@ LangString DESC_SecCore ${LANG_ENGLISH} "Install SoEasy GUI, worker sandbox, CLI
 LangString DESC_SecCore ${LANG_SIMPCHINESE} "安装 SoEasy 桌面主程序、沙箱解析器、CLI 命令行工具、分词词典及 OCR 模型。"
 LangString DESC_SecDesktop ${LANG_ENGLISH} "Create a SoEasy shortcut on the Desktop."
 LangString DESC_SecDesktop ${LANG_SIMPCHINESE} "在桌面创建 SoEasy 快捷方式。"
+LangString MSG_RemoveUserData ${LANG_ENGLISH} "Do you also want to remove your personal SoEasy index database, configuration, and logs (%APPDATA%\SoEasy)?$\r$\nChoose No to keep your existing index when upgrading or reinstalling."
+LangString MSG_RemoveUserData ${LANG_SIMPCHINESE} "是否同时删除个人索引数据库、配置及日志（%APPDATA%\SoEasy）？$\r$\n选择“否”可在重装或升级时保留现有索引。"
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} $(DESC_SecCore)
@@ -189,15 +178,29 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\${APP_NAME}"
 
   ; Remove installed files
-  RMDir /r "$INSTDIR\bin"
+  Delete "$INSTDIR\*.exe"
+  Delete "$INSTDIR\*.dll"
+  RMDir /r "$INSTDIR\platforms"
+  RMDir /r "$INSTDIR\styles"
+  RMDir /r "$INSTDIR\imageformats"
+  RMDir /r "$INSTDIR\iconengines"
+  RMDir /r "$INSTDIR\bearer"
+  RMDir /r "$INSTDIR\translations"
   RMDir /r "$INSTDIR\dict"
   RMDir /r "$INSTDIR\models"
   RMDir /r "$INSTDIR\icons"
-  Delete "$INSTDIR\README.md"
-  Delete "$INSTDIR\run.bat"
-  Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 
   ; Remove registry entry
   DeleteRegKey HKLM "${UNINSTALL_REG_KEY}"
+
+  ; Optional interactive cleanup of per-user index/config data (never deleted in /S silent mode)
+  ${IfNot} ${Silent}
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 $(MSG_RemoveUserData) IDNO skip_user_data_cleanup
+      SetShellVarContext current
+      RMDir /r "$APPDATA\SoEasy"
+      RMDir /r "$LOCALAPPDATA\soeasy"
+      SetShellVarContext all
+    skip_user_data_cleanup:
+  ${EndIf}
 SectionEnd

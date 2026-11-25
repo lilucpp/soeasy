@@ -97,29 +97,43 @@ std::string EscapeJson(const std::string &input) {
 }
 
 std::string ResolveAppDataDir() {
-  const char *home = std::getenv("HOME");
-  if (!home) {
-    home = std::getenv("USERPROFILE");
-  }
-  if (!home) {
+  std::error_code ec;
+#ifdef _WIN32
+  fs::path base_dir;
+  if (const char *appdata = std::getenv("APPDATA"); appdata && *appdata) {
+    base_dir = fs::path(appdata);
+  } else if (const char *profile = std::getenv("USERPROFILE"); profile && *profile) {
+    base_dir = fs::path(profile) / "AppData" / "Roaming";
+  } else {
     return ".soeasy";
   }
-  fs::path p(home);
-#ifdef _WIN32
-  p /= "AppData";
-  p /= "Local";
-  p /= "soeasy";
+  fs::path gui_dir = base_dir / "SoEasy";
+  fs::path legacy_cli_dir;
+  if (const char *local_appdata = std::getenv("LOCALAPPDATA"); local_appdata && *local_appdata) {
+    legacy_cli_dir = fs::path(local_appdata) / "soeasy";
+  }
+  if (!fs::exists(gui_dir / "soeasy_index.db", ec) && !legacy_cli_dir.empty() &&
+      fs::exists(legacy_cli_dir / "soeasy_index.db", ec)) {
+    return soeasy::common::EncodingUtils::PathToUtf8(legacy_cli_dir);
+  }
+  return soeasy::common::EncodingUtils::PathToUtf8(gui_dir);
 #else
+  fs::path data_root;
   const char *xdg = std::getenv("XDG_DATA_HOME");
   if (xdg && *xdg) {
-    p = fs::path(xdg) / "soeasy";
+    data_root = fs::path(xdg);
+  } else if (const char *home = std::getenv("HOME"); home && *home) {
+    data_root = fs::path(home) / ".local" / "share";
   } else {
-    p /= ".local";
-    p /= "share";
-    p /= "soeasy";
+    return ".soeasy";
   }
+  fs::path gui_dir = data_root / "SoEasy";
+  fs::path legacy_cli_dir = data_root / "soeasy";
+  if (!fs::exists(gui_dir / "soeasy_index.db", ec) && fs::exists(legacy_cli_dir / "soeasy_index.db", ec)) {
+    return legacy_cli_dir.string();
+  }
+  return gui_dir.string();
 #endif
-  return p.string();
 }
 
 fs::path ResolveExecutableDir() {

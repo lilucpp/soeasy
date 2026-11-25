@@ -303,9 +303,10 @@ jobs:
           $uninstallReg = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\SoEasy"
 
           foreach ($path in @(
-            "$installDir\bin\soeasy-gui.exe",
-            "$installDir\bin\soeasy-worker.exe",
-            "$installDir\bin\soeasy-cli.exe",
+            "$installDir\soeasy-gui.exe",
+            "$installDir\soeasy-worker.exe",
+            "$installDir\soeasy-cli.exe",
+            "$installDir\platforms\qwindows.dll",
             "$installDir\dict\jieba_dat.bin",
             "$installDir\Uninstall.exe",
             $desktopShortcut,
@@ -324,7 +325,7 @@ jobs:
             Push-Location $env:TEMP
             try {
               $smokeDb = Join-Path $env:TEMP "soeasy_win_smoke.db"
-              & "$installDir\bin\soeasy-cli.exe" stats -v -d $smokeDb
+              & "$installDir\soeasy-cli.exe" stats -v -d $smokeDb
               if ($LASTEXITCODE -ne 0) {
                 throw "soeasy-cli.exe failed with exit code $LASTEXITCODE"
               }
@@ -333,7 +334,7 @@ jobs:
               Pop-Location
             }
 
-            $guiProc = Start-Process -FilePath "$installDir\bin\soeasy-gui.exe" -ArgumentList "--no-log-console" -PassThru
+            $guiProc = Start-Process -FilePath "$installDir\soeasy-gui.exe" -ArgumentList "--no-log-console" -PassThru
             Start-Sleep -Seconds 3
             if ($guiProc.HasExited) {
               throw "soeasy-gui.exe exited prematurely with code $($guiProc.ExitCode)"

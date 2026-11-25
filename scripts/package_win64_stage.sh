@@ -59,26 +59,26 @@ if [[ -z "${BUILD_DIR}" || -z "${STAGE_DIR}" || -z "${MINGW_BIN}" || -z "${QT_DI
 fi
 
 mkdir -p \
-    "${STAGE_DIR}/bin/platforms" \
-    "${STAGE_DIR}/bin/imageformats" \
-    "${STAGE_DIR}/bin/styles" \
+    "${STAGE_DIR}/platforms" \
+    "${STAGE_DIR}/imageformats" \
+    "${STAGE_DIR}/styles" \
     "${STAGE_DIR}/dict" \
     "${STAGE_DIR}/models" \
     "${STAGE_DIR}/icons"
 
-# 1. Copy compiled Windows binaries (GUI, Worker sandbox, and headless CLI)
-cp -p "${BUILD_DIR}/soeasy-gui.exe" "${STAGE_DIR}/bin/"
-cp -p "${BUILD_DIR}/soeasy-worker.exe" "${STAGE_DIR}/bin/"
+# 1. Copy compiled Windows binaries directly to root (standard flat Windows layout)
+cp -p "${BUILD_DIR}/soeasy-gui.exe" "${STAGE_DIR}/"
+cp -p "${BUILD_DIR}/soeasy-worker.exe" "${STAGE_DIR}/"
 if [[ -f "${BUILD_DIR}/soeasy-cli.exe" ]]; then
-    cp -p "${BUILD_DIR}/soeasy-cli.exe" "${STAGE_DIR}/bin/"
+    cp -p "${BUILD_DIR}/soeasy-cli.exe" "${STAGE_DIR}/"
 fi
 
 # 2. Run windeployqt if available (native Windows runner)
 if [[ -n "${WINDEPLOYQT_BIN}" && -x "${WINDEPLOYQT_BIN}" ]]; then
-    "${WINDEPLOYQT_BIN}" --release --no-translations --no-opengl-sw "${STAGE_DIR}/bin/soeasy-gui.exe" || true
+    "${WINDEPLOYQT_BIN}" --release --no-translations --no-opengl-sw "${STAGE_DIR}/soeasy-gui.exe" || true
 fi
 
-# 3. Ensure jieba_dat.bin exists and copy runtime dictionaries, models, icons, README
+# 3. Ensure jieba_dat.bin exists and copy runtime dictionaries, models, and icons
 if [[ ! -f "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" ]] && [[ -n "${BUILD_DAT_DICT_BIN}" && -x "${BUILD_DAT_DICT_BIN}" ]]; then
     "${BUILD_DAT_DICT_BIN}" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba.dict.utf8" "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin"
 fi
@@ -86,30 +86,29 @@ cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" "${STAGE_DIR}/di
 cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/hmm_model.utf8" "${STAGE_DIR}/dict/"
 cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/user.dict.utf8" "${STAGE_DIR}/dict/" 2>/dev/null || touch "${STAGE_DIR}/dict/user.dict.utf8"
 cp -rp "${PROJECT_ROOT}/models/ppocr_v6" "${STAGE_DIR}/models/" 2>/dev/null || true
-cp -p "${PROJECT_ROOT}/README.md" "${STAGE_DIR}/" 2>/dev/null || true
 cp -rp "${PROJECT_ROOT}/resources/icons/"* "${STAGE_DIR}/icons/" 2>/dev/null || true
 
-# 4. Copy third-party DLLs (preferring MinGW sysroot runtime over legacy doctotext copies)
-cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/doctotext.dll" "${STAGE_DIR}/bin/" 2>/dev/null || true
-cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/pthreadGC2.dll" "${STAGE_DIR}/bin/" 2>/dev/null || true
-cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/libiconv"*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/libwv2"*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-cp -p "${PROJECT_ROOT}/third_party/onnxruntime/lib/"*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+# 4. Copy third-party DLLs directly to root (preferring MinGW sysroot runtime over legacy doctotext copies)
+cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/doctotext.dll" "${STAGE_DIR}/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/pthreadGC2.dll" "${STAGE_DIR}/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/libiconv"*.dll "${STAGE_DIR}/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/third_party/doctotext/lib/libwv2"*.dll "${STAGE_DIR}/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/third_party/onnxruntime/lib/"*.dll "${STAGE_DIR}/" 2>/dev/null || true
 
-# 5. Copy Qt plugins explicitly
+# 5. Copy Qt plugins explicitly beside the executable
 QT_PLUGIN_ROOT="${QT_DIR}/plugins"
 if [[ ! -d "${QT_PLUGIN_ROOT}" && -d "${QT_DIR}/lib/qt5/plugins" ]]; then
     QT_PLUGIN_ROOT="${QT_DIR}/lib/qt5/plugins"
 fi
-cp -p "${QT_PLUGIN_ROOT}/platforms/qwindows.dll" "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
-cp -p "${QT_PLUGIN_ROOT}/styles/"*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
-cp -p "${QT_PLUGIN_ROOT}/imageformats/qico.dll" "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
-cp -p "${QT_PLUGIN_ROOT}/imageformats/qjpeg.dll" "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
+cp -p "${QT_PLUGIN_ROOT}/platforms/qwindows.dll" "${STAGE_DIR}/platforms/" 2>/dev/null || true
+cp -p "${QT_PLUGIN_ROOT}/styles/"*.dll "${STAGE_DIR}/styles/" 2>/dev/null || true
+cp -p "${QT_PLUGIN_ROOT}/imageformats/qico.dll" "${STAGE_DIR}/imageformats/" 2>/dev/null || true
+cp -p "${QT_PLUGIN_ROOT}/imageformats/qjpeg.dll" "${STAGE_DIR}/imageformats/" 2>/dev/null || true
 
 # 6. Ensure modern MSYS2/MinGW C++ runtime overrides any older copies
-cp -p "${MINGW_BIN}/libgcc"*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-cp -p "${MINGW_BIN}/libstdc"*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-cp -p "${MINGW_BIN}/libwinpthread"*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+cp -p "${MINGW_BIN}/libgcc"*.dll "${STAGE_DIR}/" 2>/dev/null || true
+cp -p "${MINGW_BIN}/libstdc"*.dll "${STAGE_DIR}/" 2>/dev/null || true
+cp -p "${MINGW_BIN}/libwinpthread"*.dll "${STAGE_DIR}/" 2>/dev/null || true
 
 # 7. Automated recursive PE dependency convergence
 SEARCH_DIRS=("${MINGW_BIN}")
@@ -120,8 +119,5 @@ SEARCH_DIRS+=("${PROJECT_ROOT}/third_party/doctotext/lib" "${PROJECT_ROOT}/third
 
 export PYTHONIOENCODING=utf-8
 python3 "${PROJECT_ROOT}/scripts/collect_win64_deps.py" \
-    --target-dir "${STAGE_DIR}/bin" \
+    --target-dir "${STAGE_DIR}" \
     --search-dirs "${SEARCH_DIRS[@]}"
-
-# 8. Portable launcher for ZIP users (CRLF)
-printf '@echo off\r\nset APP_DIR=%%~dp0\r\nstart "" "%%APP_DIR%%bin\\soeasy-gui.exe" %%*\r\n' > "${STAGE_DIR}/run.bat"
