@@ -36,15 +36,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-VERSION="${VERSION:-$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.4.4")}"
+RAW_TAG="$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null || true)"
+VERSION="${VERSION:-${RAW_TAG#v}}"
+VERSION="${VERSION:-0.4.5}"
 # Debian package versions must start with a digit and should not contain spaces
 DEB_VERSION="$(echo "${VERSION}" | sed 's/^[^0-9]*//; s/-/~/g')"
 if [[ -z "${DEB_VERSION}" ]]; then
-    DEB_VERSION="0.4.4"
+    DEB_VERSION="0.4.5"
 fi
 
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo "amd64")"
 DIST_DIR="${PROJECT_ROOT}/dist"
+USER_STAGE_DIR="${STAGE_DIR}"
 STAGE_DIR="${STAGE_DIR:-${DIST_DIR}/soeasy-v${VERSION}-linux-x86_64}"
 DEB_ROOT="${DIST_DIR}/deb_root_${DEB_VERSION}_${ARCH}"
 DEB_FILE="${DIST_DIR}/soeasy_${DEB_VERSION}_${ARCH}.deb"
@@ -55,6 +58,10 @@ echo "   版本: ${DEB_VERSION}  |  架构: ${ARCH}"
 echo "========================================================"
 
 if [[ ! -d "${STAGE_DIR}/bin" ]]; then
+    if [[ -n "${USER_STAGE_DIR}" ]]; then
+        echo "Error: 指定分发目录不存在或不完整: ${STAGE_DIR}" >&2
+        exit 1
+    fi
     echo "[1/5] 未检测到现成分发目录 ${STAGE_DIR}，先执行 scripts/package.sh..."
     bash "${SCRIPT_DIR}/package.sh" "${VERSION}"
 else
