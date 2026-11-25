@@ -46,7 +46,8 @@ int main(int argc, char *argv[]) {
   const std::string passphrase = "SoEasy_Log_Test_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 
-  std::filesystem::remove_all(test_dir);
+  std::error_code init_ec;
+  std::filesystem::remove_all(test_dir, init_ec);
   std::filesystem::create_directories(test_dir);
   std::filesystem::create_directories(test_dir + "/docs");
 
@@ -168,8 +169,15 @@ int main(int argc, char *argv[]) {
   assert(pipeline->GetDocumentContent(hits_rebuild1[0].doc_id, &rebuilt_doc_content) && !rebuilt_doc_content.empty());
   std::cout << "  [+] 重建后文件名秒搜与正文读取验证通过 (IndexedFileCount=" << pipeline->IndexedFileCount() << ")\n\n";
 
-  // [Step 6] 校验日志文件内容并确认满足所有需求
+  // [Step 6] 先优雅停机再关闭日志器并校验滚动日志文件（避免停机回调重触发默认日志初始化）
   std::cout << "[Step 6] 检验实际生成的滚动日志文件及内容...\n";
+  pipeline->StopLiveWatch();
+  if (worker_guard) {
+    worker_guard->Shutdown();
+  }
+  pipeline.reset();
+  worker_guard.reset();
+  storage->Close();
   soeasy::common::Logger::Shutdown();  // Flush and close log file
 
   assert(std::filesystem::exists(test_log) && "Log file must exist on disk");
@@ -205,6 +213,9 @@ int main(int argc, char *argv[]) {
   std::cout << "========================================================\n";
   std::cout << "🎉 全部验证项 100% 通过! spdlog 滚动日志与重建索引实证成功!\n";
   std::cout << "========================================================\n";
+
+  std::error_code clean_ec;
+  std::filesystem::remove_all(test_dir, clean_ec);
 
   return 0;
 }

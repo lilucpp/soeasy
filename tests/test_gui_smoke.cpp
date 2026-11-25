@@ -13,6 +13,7 @@
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTableWidget>
+#include <QThreadPool>
 #include <QTreeWidget>
 #include <chrono>
 #include <cstdlib>
@@ -80,7 +81,8 @@ int main(int argc, char *argv[]) {
   const std::string passphrase = "SoEasy_Phase4_Passphrase_2026!";
   const std::string dict_dir = soeasy::test::FindDictDir();
 
-  std::filesystem::remove_all(test_dir);
+  std::error_code init_ec;
+  std::filesystem::remove_all(test_dir, init_ec);
   std::filesystem::create_directories(test_dir);
   std::remove(test_db.c_str());
   std::remove((test_db + "-wal").c_str());
@@ -202,7 +204,7 @@ int main(int argc, char *argv[]) {
       app.processEvents();
       auto *hint_en = dlg_perf.findChild<QLabel *>("label_workers_hint");
       CHECK(hint_en != nullptr && hint_en->text().isEmpty());
-      dlg_perf.grab().save("/tmp/tab5_combo_fixed.png");
+      dlg_perf.grab().save(QString::fromStdString(soeasy::test::GetTestTempPath("tab5_combo_fixed.png").string()));
     }
 
     std::string test_cfg_file = soeasy::test::GetTestTempPath("soeasy_i18n_test_config.json").string();
@@ -660,7 +662,8 @@ int main(int argc, char *argv[]) {
   std::cout << "\n[Step 8] 测试 SettingsDialog 在后台索引期间的结构只读锁定、语言可编辑及停止按钮解锁...\n";
   {
     const std::string lock_dir = soeasy::test::GetTestTempPath("soeasy_gui_lock_test").string();
-    std::filesystem::remove_all(lock_dir);
+    std::error_code lock_init_ec;
+    std::filesystem::remove_all(lock_dir, lock_init_ec);
     std::filesystem::create_directories(lock_dir);
     for (int i = 0; i < 6; ++i) {
       WriteFile(lock_dir + "/doc_" + std::to_string(i) + ".txt", "lock test payload " + std::to_string(i));
@@ -772,7 +775,8 @@ int main(int argc, char *argv[]) {
 
     lock_pipeline.reset();
     lock_storage->Close();
-    std::filesystem::remove_all(lock_dir);
+    std::error_code lock_clean_ec;
+    std::filesystem::remove_all(lock_dir, lock_clean_ec);
     std::remove(lock_db.c_str());
     std::remove((lock_db + "-wal").c_str());
     std::remove((lock_db + "-shm").c_str());
@@ -883,7 +887,8 @@ int main(int argc, char *argv[]) {
 
     // Regression: Encrypted/Blank/Unindexed PDF must NEVER leak raw %PDF- bytes via FallbackReadFromDisk
     const std::string preview_dir = test_dir + "_preview_regression";
-    std::filesystem::remove_all(preview_dir);
+    std::error_code prev_init_ec;
+    std::filesystem::remove_all(preview_dir, prev_init_ec);
     std::filesystem::create_directories(preview_dir);
     const QString locked_pdf_path = QString::fromStdString(preview_dir) + "/locked_preview.pdf";
     WriteFile(locked_pdf_path.toStdString(), "%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\n%%EOF\n");
@@ -1090,8 +1095,14 @@ int main(int argc, char *argv[]) {
       ppanel->LoadDocument(990003, "locked_preview.pdf", locked_pdf_path, {});
       ppanel->WaitForLoadFinished(3000);
       app.processEvents();
-      CHECK(!viewer->text_viewer()->toPlainText().contains("%PDF-"));
+      const QString preview_txt = viewer->text_viewer()->toPlainText();
+      CHECK(!preview_txt.contains("%PDF-"));
+      CHECK(preview_txt.contains("encrypted") || preview_txt.contains("加密"));
     }
+    // Stop live watch and drain async preview jobs before directly mutating storage in health badge checks
+    pipeline->StopLiveWatch();
+    QThreadPool::globalInstance()->waitForDone(3000);
+    app.processEvents();
     // MainWindow parse health badge in healthy and kEmptyContent-only states MUST stay concise & neutral slate
     CHECK(storage->ClearAll());
     CHECK(storage->IndexDocument(990007, blank_pdf_path.toStdString(), "ok_doc.pdf", "pdf", 68, 1700000206, 1,
@@ -1122,16 +1133,25 @@ int main(int argc, char *argv[]) {
       CHECK(!badge_qss.contains("#B45309"));
     }
 
-    std::filesystem::remove_all(preview_dir);
+    std::error_code prev_clean_ec;
+    std::filesystem::remove_all(preview_dir, prev_clean_ec);
     std::cout << "  -> 加密/空白/未索引(.svg/前导空白PDF)/空正文中性徽章/PreviewPanel异步防泄漏与XSS转义验证通过!\n";
   }
 
-  // Cleanup
+  // Cleanup: shut down live watch, drain queued previews, and stop worker pool explicitly while pipeline
+  // still holds shared_ptr refs, ensuring all child worker processes exit before removing test_dir.
   pipeline->StopLiveWatch();
+  QThreadPool::globalInstance()->waitForDone(3000);
+  app.processEvents();
+  if (worker_guard) {
+    worker_guard->Shutdown();
+  }
+  pipeline.reset();
   worker_guard.reset();
   storage->Close();
 
-  std::filesystem::remove_all(test_dir);
+  std::error_code final_clean_ec;
+  std::filesystem::remove_all(test_dir, final_clean_ec);
   std::remove(test_db.c_str());
   std::remove((test_db + "-wal").c_str());
   std::remove((test_db + "-shm").c_str());

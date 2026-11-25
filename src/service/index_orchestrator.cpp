@@ -131,7 +131,8 @@ int64_t IndexOrchestrator::GenerateDocId(const std::string &path) {
   constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
   uint64_t hash = kFnvOffsetBasis;
   for (char c : path) {
-    hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+    const unsigned char normalized = static_cast<unsigned char>(c == '\\' ? '/' : c);
+    hash ^= static_cast<uint64_t>(normalized);
     hash *= kFnvPrime;
   }
   return static_cast<int64_t>(hash & 0x7FFFFFFFFFFFFFFFLL);
@@ -347,8 +348,8 @@ bool IndexOrchestrator::DoRemoveDirectoryIndex(const std::string &dir_path) {
 
 void IndexOrchestrator::PurgeFailedFilesUnder(const std::string &dir_path) {
   std::lock_guard<std::mutex> lock(failed_files_mutex_);
-  std::string normalized_dir = dir_path;
-  if (!normalized_dir.empty() && normalized_dir.back() != '/' && normalized_dir.back() != '\\') {
+  std::string normalized_dir = NormalizeLockPath(dir_path);
+  if (!normalized_dir.empty() && normalized_dir.back() != '/') {
     normalized_dir += '/';
   }
 
@@ -488,7 +489,7 @@ void IndexOrchestrator::SweepOfflineDeletedFiles(const std::unordered_set<int64_
   {
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
     for (const auto &p : offline_deleted_paths) {
-      failed_files_.erase(p);
+      failed_files_.erase(NormalizeLockPath(p));
     }
   }
   {
@@ -866,9 +867,10 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   }
 
   // Check if previously marked as failed/corrupt and file has not changed
+  const std::string normalized_failed_key = NormalizeLockPath(file_path);
   if (!force_reindex) {
     std::lock_guard<std::mutex> lock(failed_files_mutex_);
-    auto it = failed_files_.find(file_path);
+    auto it = failed_files_.find(normalized_failed_key);
     if (it != failed_files_.end() && it->second.file_size == file_size && it->second.mtime == file_mtime) {
       return false;
     }
@@ -949,7 +951,7 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
                        reason);
 
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
-    failed_files_[file_path] = {file_size, file_mtime, reason};
+    failed_files_[normalized_failed_key] = {file_size, file_mtime, reason};
     return false;
   }
 
@@ -959,7 +961,7 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
 
   {
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
-    failed_files_.erase(file_path);
+    failed_files_.erase(normalized_failed_key);
   }
 
   const bool is_partial_ocr = (res.status == TaskStatus::kPartialOcr);
@@ -1073,7 +1075,7 @@ bool IndexOrchestrator::ApplyLiveFileChange(const DebouncedEvent &event, bool fr
         }
         {
           std::lock_guard<std::mutex> flock(failed_files_mutex_);
-          failed_files_.erase(target_path);
+          failed_files_.erase(NormalizeLockPath(target_path));
         }
         if (write_queue_ && write_queue_->is_running()) {
           WriteOp op;
@@ -1304,7 +1306,7 @@ size_t IndexOrchestrator::PruneStaleEntriesByConfigLocked() {
   {
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
     for (const auto &p : stale_paths) {
-      failed_files_.erase(p);
+      failed_files_.erase(NormalizeLockPath(p));
     }
   }
   {

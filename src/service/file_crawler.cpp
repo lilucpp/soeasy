@@ -87,7 +87,8 @@ int64_t FileCrawler::GenerateDocId(const std::string &path) {
   constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
   uint64_t hash = kFnvOffsetBasis;
   for (char c : path) {
-    hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+    const unsigned char normalized = static_cast<unsigned char>(c == '\\' ? '/' : c);
+    hash ^= static_cast<uint64_t>(normalized);
     hash *= kFnvPrime;
   }
   return static_cast<int64_t>(hash & 0x7FFFFFFFFFFFFFFFLL);

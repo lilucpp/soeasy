@@ -36,7 +36,8 @@ int main(int argc, char *argv[]) {
   const std::string dict_dir = soeasy::test::FindDictDir();
 
   // Clean up any leftovers
-  std::filesystem::remove_all(test_dir);
+  std::error_code init_ec;
+  std::filesystem::remove_all(test_dir, init_ec);
   std::filesystem::create_directories(test_dir);
   std::filesystem::create_directories(test_dir + "/node_modules");
   std::filesystem::create_directories(test_dir + "/work");
@@ -341,10 +342,16 @@ int main(int argc, char *argv[]) {
   std::cout << "[+] FEAT-001 端到端目录移除验证通过! (work 目录文件彻底清空，personal 目录完整保留)\n";
 
   pipeline->StopLiveWatch();
+  if (worker_guard) {
+    worker_guard->Shutdown();
+  }
+  pipeline.reset();
+  worker_guard.reset();
   storage->Close();
 
   // Cleanup test filesystem
-  std::filesystem::remove_all(test_dir);
+  std::error_code clean_ec;
+  std::filesystem::remove_all(test_dir, clean_ec);
   std::remove(test_db.c_str());
   std::remove((test_db + "-wal").c_str());
   std::remove((test_db + "-shm").c_str());

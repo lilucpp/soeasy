@@ -83,7 +83,8 @@ class IndexStateMachineTest : public ::testing::Test {
     outside_dir_ = root_ / "outside";
     db_path_ = root_ / "test.db";
 
-    std::filesystem::remove_all(root_);
+    std::error_code ec;
+    std::filesystem::remove_all(root_, ec);
     std::filesystem::create_directories(dir_a_);
     std::filesystem::create_directories(dir_b_);
     std::filesystem::create_directories(outside_dir_);
@@ -92,8 +93,11 @@ class IndexStateMachineTest : public ::testing::Test {
   void TearDown() override {
     if (pipeline_) {
       pipeline_->StopLiveWatch();
-      pipeline_.reset();
     }
+    if (worker_guard_) {
+      worker_guard_->Shutdown();
+    }
+    pipeline_.reset();
     worker_guard_.reset();
     if (storage_) {
       storage_->Close();
@@ -300,7 +304,8 @@ TEST_F(IndexStateMachineTest, WatchExtensionlessDirectoryMoveExcludeAndDelete) {
   ASSERT_TRUE(WaitUntil([&]() { return pipeline_->SearchFulltext("moved_in_fresh_token", 10, 0).size() == 1; }));
 
   // Delete entire extensionless directory incoming/ -> files inside must be removed.
-  std::filesystem::remove_all(dir_a_ / "incoming");
+  std::error_code del_ec;
+  std::filesystem::remove_all(dir_a_ / "incoming", del_ec);
   ASSERT_TRUE(WaitUntil([&]() { return pipeline_->SearchFilename("fresh.txt", 10).empty(); }));
   EXPECT_TRUE(pipeline_->SearchFulltext("moved_in_fresh_token", 10, 0).empty());
   EXPECT_EQ(pipeline_->SearchFilename("stay.txt", 10).size(), 1u);
@@ -680,7 +685,7 @@ TEST_F(IndexStateMachineTest, CollidingHashPathsDoNotBlockAndHeartbeatReportsSlo
   EXPECT_EQ(observed_snapshot.workers.size(), 2u);
   bool found_slow_worker = false;
   for (const auto &ws : observed_snapshot.workers) {
-    if (ws.active && ws.file_path == slow_path.string()) {
+    if (ws.active && norm_path(ws.file_path) == norm_path(slow_path.string())) {
       found_slow_worker = true;
     }
   }
@@ -699,7 +704,7 @@ TEST_F(IndexStateMachineTest, CollidingHashPathsDoNotBlockAndHeartbeatReportsSlo
   // fast_colliding file must already be searchable in storage
   const auto hits = pipeline_->SearchFulltext("FastCollidingToken2026", 10);
   ASSERT_EQ(hits.size(), 1u);
-  EXPECT_EQ(hits[0].file_path, fast_path.string());
+  EXPECT_EQ(hits[0].file_path, norm_path(fast_path.string()));
 }
 
 TEST_F(IndexStateMachineTest, EmptyScanLeavesSnapshotInactiveAndSamePathSerializes) {
