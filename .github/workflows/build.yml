@@ -34,6 +34,7 @@ jobs:
             capnproto \
             libboost-dev \
             libboost-nowide-dev \
+            dpkg-dev \
             zip
 
       - name: Build and Run Automated Test Suite (CTest Quality Gate)
@@ -62,18 +63,58 @@ jobs:
 
       - name: Build and Package Linux Release
         run: |
-          chmod +x scripts/package.sh
+          chmod +x scripts/package.sh scripts/package_deb.sh
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            ./scripts/package.sh "${GITHUB_REF_NAME#v}"
+            VERSION="${GITHUB_REF_NAME#v}"
           else
-            ./scripts/package.sh
+            VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.4.4")"
           fi
+          ./scripts/package.sh "${VERSION}"
+          ./scripts/package_deb.sh "${VERSION}" --stage-dir "dist/soeasy-v${VERSION}-linux-x86_64"
+
+      - name: Smoke Test Linux .deb in Clean Container
+        run: |
+          docker run --rm -v "$(pwd)/dist:/dist:ro" ubuntu:24.04 bash -ec '
+            set -euo pipefail
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              desktop-file-utils \
+              xvfb \
+              /dist/soeasy_*.deb
+
+            desktop-file-validate /usr/share/applications/soeasy.desktop
+
+            # Verify no missing shared libraries for installed binaries and Qt xcb plugin
+            LD_LIBRARY_PATH=/opt/soeasy/lib ldd /opt/soeasy/bin/soeasy-gui /opt/soeasy/bin/soeasy-worker /opt/soeasy/bin/soeasy-cli /opt/soeasy/plugins/platforms/libqxcb.so \
+              | grep "not found" && exit 1 || true
+
+            # Verify CLI works from an arbitrary working directory without --dict
+            (cd /tmp && soeasy-cli stats -v -d /tmp/soeasy_deb_smoke.db)
+            rm -f /tmp/soeasy_deb_smoke.db*
+
+            # Verify GUI starts under virtual X11 display without immediate crash (exit 124 = timeout as expected)
+            set +e
+            xvfb-run -a timeout 4s /usr/bin/soeasy-gui --no-log-console
+            GUI_RC=$?
+            set -e
+            if [ "${GUI_RC}" -ne 0 ] && [ "${GUI_RC}" -ne 124 ]; then
+              echo "Error: soeasy-gui exited unexpectedly with code ${GUI_RC}" >&2
+              exit 1
+            fi
+
+            # Verify clean purge removal
+            DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y -qq soeasy
+            test ! -e /opt/soeasy
+            test ! -e /usr/share/applications/soeasy.desktop
+          '
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
           name: soeasy-linux-x86_64
-          path: dist/soeasy-*.zip
+          path: |
+            dist/soeasy-*.zip
+            dist/soeasy_*.deb
 
   build-windows-x64:
     name: Windows (x64)
@@ -198,70 +239,130 @@ jobs:
           name: windows-ctest-logs
           path: build/Testing/Temporary/
 
+      - name: Install NSIS (Windows Installer Builder)
+        run: |
+          choco.exe install nsis -y --no-progress
+
       - name: Package Windows Artifacts
         run: |
           QT_UNIX_DIR=$(cygpath -u "${QT_ROOT_DIR}")
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
-            VERSION="0.3.0"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.4.4")"
           fi
+          # Extract numeric X.Y.Z for NSIS VIProductVersion (X.Y.Z.0)
+          NUMERIC_VER="$(echo "${VERSION}" | grep -oE '^[0-9]+(\.[0-9]+){0,2}' || echo "0.4.4")"
+          IFS='.' read -r V1 V2 V3 <<< "${NUMERIC_VER}"
+          VI_VERSION="${V1:-0}.${V2:-0}.${V3:-0}.0"
+
           DIST_NAME="soeasy-v${VERSION}-windows-x64"
           STAGE_DIR="dist/${DIST_NAME}"
-          mkdir -p "${STAGE_DIR}/bin" "${STAGE_DIR}/dict" "${STAGE_DIR}/models"
-          
-          # Copy binaries
-          cp -p build/soeasy-gui.exe "${STAGE_DIR}/bin/"
-          cp -p build/soeasy-worker.exe "${STAGE_DIR}/bin/"
-          
-          # Deploy Official Qt dependencies and plugins using windeployqt
-          "${QT_UNIX_DIR}/bin/windeployqt.exe" --release --no-translations --no-opengl-sw "${STAGE_DIR}/bin/soeasy-gui.exe" || true
-          
-          # Ensure jieba_dat.bin exists
-          if [ ! -f "third_party/cppjieba/dict/jieba_dat.bin" ]; then
-            ./build/build_dat_dict.exe "third_party/cppjieba/dict/jieba.dict.utf8" "third_party/cppjieba/dict/jieba_dat.bin"
-          fi
+          rm -rf "${STAGE_DIR}" "dist/${DIST_NAME}.zip" "dist/${DIST_NAME}-setup.exe"
 
-          # Copy required runtime dictionaries (jieba_dat.bin, hmm_model.utf8, user.dict.utf8) and models
-          cp -p third_party/cppjieba/dict/jieba_dat.bin "${STAGE_DIR}/dict/"
-          cp -p third_party/cppjieba/dict/hmm_model.utf8 "${STAGE_DIR}/dict/"
-          cp -p third_party/cppjieba/dict/user.dict.utf8 "${STAGE_DIR}/dict/" 2>/dev/null || touch "${STAGE_DIR}/dict/user.dict.utf8"
-          cp -rp models/ppocr_v6 "${STAGE_DIR}/models/" 2>/dev/null || true
-          cp -p README.md "${STAGE_DIR}/" 2>/dev/null || true
-          mkdir -p "${STAGE_DIR}/icons" && cp -rp resources/icons/* "${STAGE_DIR}/icons/" 2>/dev/null || true
-          
-          # Bundle third-party runtime libraries
-          cp -p third_party/doctotext/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p third_party/onnxruntime/lib/*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          chmod +x scripts/package_win64_stage.sh
+          ./scripts/package_win64_stage.sh \
+            --build-dir build \
+            --stage-dir "${STAGE_DIR}" \
+            --mingw-bin "${MINGW_PREFIX}/bin" \
+            --qt-dir "${QT_UNIX_DIR}" \
+            --windeployqt "${QT_UNIX_DIR}/bin/windeployqt.exe" \
+            --build-dat-dict "./build/build_dat_dict.exe"
 
-          # Ensure Qt plugins are explicitly deployed from Official Qt
-          mkdir -p "${STAGE_DIR}/bin/platforms" "${STAGE_DIR}/bin/styles" "${STAGE_DIR}/bin/imageformats"
-          cp -p "${QT_UNIX_DIR}/plugins/platforms/qwindows.dll" "${STAGE_DIR}/bin/platforms/" 2>/dev/null || true
-          cp -p "${QT_UNIX_DIR}/plugins/styles/"*.dll "${STAGE_DIR}/bin/styles/" 2>/dev/null || true
-          cp -p "${QT_UNIX_DIR}/plugins/imageformats/qico.dll" "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
-          cp -p "${QT_UNIX_DIR}/plugins/imageformats/qjpeg.dll" "${STAGE_DIR}/bin/imageformats/" 2>/dev/null || true
+          (cd dist && zip -r -q "${DIST_NAME}.zip" "${DIST_NAME}")
 
-          # Ensure MSYS2 GCC newer C++ runtime overrides any older runtime copied by windeployqt
-          cp -p ${MINGW_PREFIX}/bin/libgcc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libstdc*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
-          cp -p ${MINGW_PREFIX}/bin/libwinpthread*.dll "${STAGE_DIR}/bin/" 2>/dev/null || true
+          # Build NSIS Setup Installer (.exe)
+          MAKENSIS_BIN="$(command -v makensis || echo "/c/Program Files (x86)/NSIS/makensis.exe")"
+          "${MAKENSIS_BIN}" \
+            "-DVERSION=${VERSION}" \
+            "-DVI_VERSION=${VI_VERSION}" \
+            "-DSTAGE_DIR=$(cygpath -w "$(pwd)/${STAGE_DIR}")" \
+            "-DOUT_FILE=$(cygpath -w "$(pwd)/dist/${DIST_NAME}-setup.exe")" \
+            "packaging/windows/soeasy.nsi"
 
-          # Automated recursive PE dependency convergence for release artifact
-          export PYTHONIOENCODING=utf-8
-          python3 scripts/collect_win64_deps.py \
-            --target-dir "${STAGE_DIR}/bin" \
-            --search-dirs \
-              "${MINGW_PREFIX}/bin" \
-              "${QT_UNIX_DIR}/bin" \
-              third_party/doctotext/lib \
-              third_party/onnxruntime/lib
-          
-          cd dist && zip -r -q "${DIST_NAME}.zip" "${DIST_NAME}"
+      - name: Smoke Test Windows NSIS Installer (.exe)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-Item "dist\soeasy-*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS setup installer not found in dist\" }
+
+          Write-Host "Running silent NSIS install: $($installer.FullName)"
+          $installProc = Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($installProc.ExitCode -ne 0) {
+            throw "Installer failed with exit code $($installProc.ExitCode)"
+          }
+
+          $installDir = "$env:ProgramFiles\SoEasy"
+          $desktopShortcut = "$env:Public\Desktop\SoEasy.lnk"
+          $startMenuShortcut = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\SoEasy\SoEasy.lnk"
+          $uninstallReg = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\SoEasy"
+
+          foreach ($path in @(
+            "$installDir\bin\soeasy-gui.exe",
+            "$installDir\bin\soeasy-worker.exe",
+            "$installDir\bin\soeasy-cli.exe",
+            "$installDir\dict\jieba_dat.bin",
+            "$installDir\Uninstall.exe",
+            $desktopShortcut,
+            $startMenuShortcut,
+            $uninstallReg
+          )) {
+            if (-not (Test-Path $path)) {
+              throw "Expected installed artifact missing: $path"
+            }
+          }
+
+          # Strip MSYS2/Qt from PATH so we verify the installed package is 100% self-contained
+          $origPath = $env:PATH
+          try {
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
+            Push-Location $env:TEMP
+            try {
+              $smokeDb = Join-Path $env:TEMP "soeasy_win_smoke.db"
+              & "$installDir\bin\soeasy-cli.exe" stats -v -d $smokeDb
+              if ($LASTEXITCODE -ne 0) {
+                throw "soeasy-cli.exe failed with exit code $LASTEXITCODE"
+              }
+              Remove-Item "$smokeDb*" -Force -ErrorAction SilentlyContinue
+            } finally {
+              Pop-Location
+            }
+
+            $guiProc = Start-Process -FilePath "$installDir\bin\soeasy-gui.exe" -ArgumentList "--no-log-console" -PassThru
+            Start-Sleep -Seconds 3
+            if ($guiProc.HasExited) {
+              throw "soeasy-gui.exe exited prematurely with code $($guiProc.ExitCode)"
+            }
+            Stop-Process -Id $guiProc.Id -Force -ErrorAction SilentlyContinue
+            Get-Process -Name "soeasy-worker" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          } finally {
+            $env:PATH = $origPath
+          }
+
+          Write-Host "Running silent NSIS uninstall..."
+          Start-Process -FilePath "$installDir\Uninstall.exe" -ArgumentList "/S" | Out-Null
+
+          # NSIS uninstaller spawns a temp copy for self-deletion; poll until cleanup completes
+          $deadline = (Get-Date).AddSeconds(20)
+          while ((Get-Date) -lt $deadline) {
+            if (-not (Test-Path $installDir) -and -not (Test-Path $desktopShortcut) -and -not (Test-Path $uninstallReg)) {
+              break
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if ((Test-Path $installDir) -or (Test-Path $desktopShortcut) -or (Test-Path $uninstallReg)) {
+            throw "Uninstall cleanup incomplete: installDir=$(Test-Path $installDir), shortcut=$(Test-Path $desktopShortcut), reg=$(Test-Path $uninstallReg)"
+          }
+          Write-Host "Windows NSIS install/run/uninstall smoke test passed!"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: soeasy-windows-x64
-          path: dist/soeasy-*.zip
+          path: |
+            dist/soeasy-*.zip
+            dist/soeasy-*-setup.exe
 
   release:
     name: Publish GitHub Release
@@ -277,10 +378,18 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Generate SHA256 Checksums
+        run: |
+          (cd artifacts && sha256sum soeasy* > SHA256SUMS.txt)
+          cat artifacts/SHA256SUMS.txt
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/*.tar.gz
             artifacts/*.zip
+            artifacts/*.deb
+            artifacts/*.exe
+            artifacts/SHA256SUMS.txt
           generate_release_notes: true

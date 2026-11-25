@@ -46,7 +46,7 @@ fi
 # 1. 编译 Release 版本二进制 (不编译或运行测试用例，与开发测试 build 隔离增量缓存)
 echo "[1/6] 编译最新 Release 版本二进制..."
 cmake -B "${BUILD_DIR}" -S "${PROJECT_ROOT}" "${CMAKE_GEN_ARGS[@]}" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
-cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker build_dat_dict -j$(nproc 2>/dev/null || echo 8)
+cmake --build "${BUILD_DIR}" --target soeasy-gui soeasy-worker soeasy-cli build_dat_dict -j$(nproc 2>/dev/null || echo 8)
 
 # 2. 准备打包目录结构
 echo "[2/6] 清理并构建分发目录结构..."
@@ -56,31 +56,32 @@ mkdir -p "${STAGE_DIR}/lib"
 mkdir -p "${STAGE_DIR}/plugins/platforms"
 mkdir -p "${STAGE_DIR}/dict"
 
-# 3. 收集主可执行程序与工作沙箱程序
+# 3. 收集主可执行程序、命令行工具与工作沙箱程序
 echo "[3/6] 收集可执行程序..."
 cp -p "${BUILD_DIR}/soeasy-gui" "${STAGE_DIR}/bin/"
 cp -p "${BUILD_DIR}/soeasy-worker" "${STAGE_DIR}/bin/"
+cp -p "${BUILD_DIR}/soeasy-cli" "${STAGE_DIR}/bin/"
 chmod +x "${STAGE_DIR}/bin/"*
 
-# 4. 收集核心运行时依赖库
+# 4. 收集核心运行时依赖库 (仅收集 .so 动态库与符号链接，剔除 .a 静态库)
 echo "[4/6] 收集动态链接库与 Qt 平台插件..."
 SYSROOT_LIB="${PROJECT_ROOT}/third_party/sysroot/usr/lib/x86_64-linux-gnu"
-cp -d "${SYSROOT_LIB}"/libcapnp* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libkj* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libuchardet* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${SYSROOT_LIB}"/libminizip* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${SYSROOT_LIB}"/libcapnp*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${SYSROOT_LIB}"/libkj*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${SYSROOT_LIB}"/libuchardet*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${SYSROOT_LIB}"/libminizip*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
 
 # 收集 DocToText 及其依赖运行库
 DT_LIB="${PROJECT_ROOT}/third_party/doctotext/lib"
-cp -d "${DT_LIB}"/libdoctotext* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${DT_LIB}"/libwv2* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${DT_LIB}"/libhtmlcxx* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${DT_LIB}"/libmimetic* "${STAGE_DIR}/lib/" 2>/dev/null || true
-cp -d "${DT_LIB}"/libcharsetdetect* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libdoctotext*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libwv2*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libhtmlcxx*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libmimetic*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${DT_LIB}"/libcharsetdetect*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
 
 # 收集 ONNX Runtime 运行库
 ORT_LIB="${PROJECT_ROOT}/third_party/onnxruntime/lib"
-cp -d "${ORT_LIB}"/libonnxruntime* "${STAGE_DIR}/lib/" 2>/dev/null || true
+cp -d "${ORT_LIB}"/libonnxruntime*.so* "${STAGE_DIR}/lib/" 2>/dev/null || true
 
 # 收集 Qt5 xcb 平台插件与 imageformats 图标解析插件
 QT_XCB="/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms/libqxcb.so"
@@ -89,6 +90,7 @@ if [ -f "${QT_XCB}" ]; then
 fi
 mkdir -p "${STAGE_DIR}/plugins/imageformats"
 cp -p /usr/lib/x86_64-linux-gnu/qt5/plugins/imageformats/libqico.so "${STAGE_DIR}/plugins/imageformats/" 2>/dev/null || true
+cp -p /usr/lib/x86_64-linux-gnu/qt5/plugins/imageformats/libqjpeg.so "${STAGE_DIR}/plugins/imageformats/" 2>/dev/null || true
 
 # 5. 收集词典与 OCR 模型文件
 echo "[5/6] 收集结巴词典、PP-OCRv6 模型与启动引导脚本..."
@@ -125,24 +127,63 @@ exec "${APP_DIR}/bin/soeasy-gui" --dict "${APP_DIR}/dict" --worker "${APP_DIR}/b
 EOF
 chmod +x "${STAGE_DIR}/run.sh"
 
-# 创建根目录可执行软链接与桌面启动项 (支持直接在分发根目录下双击运行)
+# 创建根目录可执行软链接与桌面启动项 (支持在解压目录双击或安装桌面菜单)
 ln -sf bin/soeasy-gui "${STAGE_DIR}/soeasy-gui"
 ln -sf bin/soeasy-gui "${STAGE_DIR}/soeasy"
+ln -sf bin/soeasy-cli "${STAGE_DIR}/soeasy-cli"
 
 cat << 'EOF' > "${STAGE_DIR}/SoEasy.desktop"
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=SoEasy
+GenericName=Desktop Full-Text Search
 Comment=SoEasy Desktop Search Engine - 让电脑没有难搜的文件
-Exec=./run.sh
-Icon=./icons/soeasy.png
+Exec=sh -c "exec \"\\$(dirname \"\\$1\")/run.sh\"" _ %k
+Icon=soeasy
 Terminal=false
-Categories=Utility;Office;
+Categories=Utility;
+StartupNotify=true
+StartupWMClass=soeasy-gui
 EOF
 chmod +x "${STAGE_DIR}/SoEasy.desktop"
 
-# 创建命令行版本快速查询引导脚本 soeasy-cli.sh (可选便捷调用)
+# 提供便携包一键安装/卸载用户桌面菜单快捷方式脚本 (使用绝对路径写入 ~/.local/share/applications)
+cat << 'EOF' > "${STAGE_DIR}/install-desktop.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_MENU_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+mkdir -p "${APP_MENU_DIR}"
+cat << DESKTOP > "${APP_MENU_DIR}/soeasy.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SoEasy
+GenericName=Desktop Full-Text Search
+Comment=SoEasy Desktop Search Engine - 让电脑没有难搜的文件
+Exec=${APP_DIR}/run.sh %F
+Icon=${APP_DIR}/icons/soeasy.png
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+StartupWMClass=soeasy-gui
+DESKTOP
+chmod 0644 "${APP_MENU_DIR}/soeasy.desktop"
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "${APP_MENU_DIR}" || true
+echo "Installed desktop shortcut to ${APP_MENU_DIR}/soeasy.desktop"
+EOF
+chmod +x "${STAGE_DIR}/install-desktop.sh"
+
+# 创建命令行版本快速查询引导脚本 soeasy-cli.sh 与 soeasy-worker.sh
+cat << 'EOF' > "${STAGE_DIR}/soeasy-cli.sh"
+#!/usr/bin/env bash
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="${APP_DIR}/lib:${LD_LIBRARY_PATH:-}"
+exec "${APP_DIR}/bin/soeasy-cli" --dict "${APP_DIR}/dict" "$@"
+EOF
+chmod +x "${STAGE_DIR}/soeasy-cli.sh"
+
 cat << 'EOF' > "${STAGE_DIR}/soeasy-worker.sh"
 #!/usr/bin/env bash
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -13,6 +13,14 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
+#include "common/encoding_utils.h"
 #include "common/logger.h"
 #include "common/machine_key_provider.h"
 #include "common/parse_status.h"
@@ -114,16 +122,51 @@ std::string ResolveAppDataDir() {
   return p.string();
 }
 
+fs::path ResolveExecutableDir() {
+  std::error_code ec;
+#ifdef _WIN32
+  std::vector<wchar_t> exe_buf(MAX_PATH);
+  while (exe_buf.size() <= 32768) {
+    DWORD len = GetModuleFileNameW(nullptr, exe_buf.data(), static_cast<DWORD>(exe_buf.size()));
+    if (len == 0) {
+      break;
+    }
+    if (len < exe_buf.size()) {
+      return fs::path(exe_buf.data()).parent_path();
+    }
+    exe_buf.resize(exe_buf.size() * 2);
+  }
+#elif defined(__linux__)
+  fs::path exe_path = fs::read_symlink("/proc/self/exe", ec);
+  if (!ec && !exe_path.empty()) {
+    return exe_path.parent_path();
+  }
+#endif
+  return {};
+}
+
 std::string FindDefaultDictDir() {
-  std::vector<std::string> candidates = {"./dict",
-                                         "../dict",
-                                         "./third_party/cppjieba/dict",
-                                         "../third_party/cppjieba/dict",
-                                         "/usr/local/share/soeasy/dict",
-                                         "/usr/share/soeasy/dict"};
+  std::vector<fs::path> candidates;
+  fs::path exe_dir = ResolveExecutableDir();
+  if (!exe_dir.empty()) {
+    candidates.push_back(exe_dir / "dict");
+    candidates.push_back(exe_dir / ".." / "dict");
+    candidates.push_back(exe_dir / ".." / "third_party" / "cppjieba" / "dict");
+    candidates.push_back(exe_dir / ".." / ".." / "third_party" / "cppjieba" / "dict");
+  }
+
+  candidates.emplace_back("/usr/local/share/soeasy/dict");
+  candidates.emplace_back("/usr/share/soeasy/dict");
+  candidates.emplace_back("./dict");
+  candidates.emplace_back("../dict");
+  candidates.emplace_back("./third_party/cppjieba/dict");
+  candidates.emplace_back("../third_party/cppjieba/dict");
+
+  std::error_code ec;
   for (const auto &c : candidates) {
-    if (fs::exists(c + "/jieba_dat.bin") || fs::exists(c + "/jieba.dict.utf8")) {
-      return c;
+    if (fs::exists(c / "jieba_dat.bin", ec) || fs::exists(c / "jieba.dict.utf8", ec)) {
+      fs::path canonical_dir = fs::weakly_canonical(c, ec);
+      return soeasy::common::EncodingUtils::PathToUtf8(ec ? c : canonical_dir);
     }
   }
   return "./dict";
