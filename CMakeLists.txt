@@ -22,13 +22,16 @@ if(NOT DEFINED OpenCV_DIR OR OpenCV_DIR STREQUAL "")
         set(_SOEASY_OPENCV_PREBUILT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencv/linux-x86_64")
     endif()
     foreach(_OCV_CANDIDATE
-        "${_SOEASY_OPENCV_PREBUILT_ROOT}"
         "${_SOEASY_OPENCV_PREBUILT_ROOT}/lib/cmake/opencv4"
         "${_SOEASY_OPENCV_PREBUILT_ROOT}/x64/mingw/staticlib"
         "${_SOEASY_OPENCV_PREBUILT_ROOT}/x64/mingw/lib"
+        "${_SOEASY_OPENCV_PREBUILT_ROOT}"
     )
         if(EXISTS "${_OCV_CANDIDATE}/OpenCVConfig.cmake")
             set(OpenCV_DIR "${_OCV_CANDIDATE}")
+            if(WIN32 AND NOT DEFINED OpenCV_STATIC)
+                set(OpenCV_STATIC ON)
+            endif()
             message(STATUS "[OpenCV] Using prebuilt minimal static OpenCV from: ${OpenCV_DIR}")
             break()
         endif()
