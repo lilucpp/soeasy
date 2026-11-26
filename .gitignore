@@ -46,6 +46,7 @@ third_party/onnxruntime/lib/*.lib
 third_party/doctotext/include/
 third_party/doctotext/lib/
 third_party/doctotext/.installed_*
+third_party/opencv/
 
 # Database and test artifacts
 *.db

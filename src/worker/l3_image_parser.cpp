@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "common/encoding_utils.h"
+#include "common/format_categories.h"
 #include "common/logger.h"
 #include "common/system_env.h"
 #include "worker/ocr/ocr_engine_factory.h"
@@ -19,8 +20,7 @@ namespace soeasy {
 namespace worker {
 
 L3ImageParser::L3ImageParser(ocr::OcrMode mode, const std::string &models_dir)
-    : supported_exts_{"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg", "pnm", "ppm", "pgm", "tga"},
-      mode_(mode),
+    : mode_(mode),
       models_dir_(models_dir),
       last_ocr_active_time_(std::chrono::steady_clock::now()) {
   // Lazy init: ocr_engine_ remains nullptr until actual image OCR is required.
@@ -51,9 +51,7 @@ void L3ImageParser::CheckIdleUnload(double idle_seconds) {
 }
 
 bool L3ImageParser::IsSupported(const std::string &ext) const {
-  std::string lower_ext = ext;
-  std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
-  return supported_exts_.find(lower_ext) != supported_exts_.end();
+  return common::IsSupportedImageExtension(ext);
 }
 
 void L3ImageParser::SetMode(ocr::OcrMode mode) {

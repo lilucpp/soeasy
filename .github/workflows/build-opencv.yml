@@ -1,0 +1,196 @@
+name: Build Minimal Static OpenCV (third-party-v1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      opencv_version:
+        description: 'OpenCV release version tag to build'
+        required: true
+        default: '4.10.0'
+        type: string
+      release_tag:
+        description: 'Target GitHub Release tag for prebuilt third-party archives'
+        required: true
+        default: 'third-party-v1'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-opencv-linux:
+    name: Build OpenCV Minimal Static (Linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake ninja-build zlib1g-dev zstd curl
+
+      - name: Download and Compile OpenCV ${{ inputs.opencv_version }}
+        run: |
+          VER="${{ inputs.opencv_version }}"
+          mkdir -p /tmp/ocv && cd /tmp/ocv
+          curl -L --fail --retry 3 -o "opencv-${VER}.tar.gz" \
+            "https://github.com/opencv/opencv/archive/refs/tags/${VER}.tar.gz"
+          tar -xzf "opencv-${VER}.tar.gz"
+
+          cmake -B /tmp/ocv/build -S "/tmp/ocv/opencv-${VER}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/tmp/ocv/install \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_LIST=core,imgproc,imgcodecs \
+            -DBUILD_ZLIB=OFF \
+            -DBUILD_JPEG=ON -DWITH_JPEG=ON \
+            -DBUILD_PNG=ON -DWITH_PNG=ON \
+            -DBUILD_TIFF=ON -DWITH_TIFF=ON \
+            -DBUILD_WEBP=ON -DWITH_WEBP=ON \
+            -DWITH_GDAL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_ADE=OFF \
+            -DWITH_PROTOBUF=OFF -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF \
+            -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF -DWITH_OPENJPEG=OFF \
+            -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_V4L=OFF -DWITH_1394=OFF \
+            -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_LAPACK=OFF -DWITH_EIGEN=OFF \
+            -DWITH_TBB=OFF -DWITH_OPENMP=OFF \
+            -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+            -DBUILD_opencv_apps=OFF -DBUILD_DOCS=OFF -DOPENCV_GENERATE_PKGCONFIG=OFF
+
+          cmake --build /tmp/ocv/build -j$(nproc)
+          cmake --install /tmp/ocv/build
+
+          rm -rf /tmp/ocv/install/share/opencv4/haarcascades /tmp/ocv/install/share/opencv4/lbpcascades
+          find /tmp/ocv/install -maxdepth 4 -name "OpenCVConfig.cmake"
+          du -sh /tmp/ocv/install
+
+      - name: Pack Archive (.tar.zst)
+        run: |
+          VER="${{ inputs.opencv_version }}"
+          ARCHIVE="${{ github.workspace }}/opencv-${VER}-minimal-linux-x86_64.tar.zst"
+          tar --zstd -C /tmp/ocv/install -cf "${ARCHIVE}" .
+          ls -lh "${ARCHIVE}"
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencv-minimal-linux-x86_64
+          path: opencv-*-minimal-linux-x86_64.tar.zst
+
+  build-opencv-windows:
+    name: Build OpenCV Minimal Static (Windows x64 MinGW)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      MINGW_PREFIX: D:/msys64/mingw64
+    steps:
+      - name: Download Prebuilt MSYS2 Toolchain (win-env-v1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download win-env-v1 \
+            --repo "$GH_REPO" \
+            --pattern "soeasy-win64-msys2-env.tar.zst" \
+            --dir "D:/"
+          rm -rf "/d/msys64" "/d/msys64_tmp"
+          mkdir -p "/d/msys64_tmp"
+          if command -v zstd >/dev/null 2>&1; then
+            tar --warning=no-unknown-keyword --zstd -xf "/d/soeasy-win64-msys2-env.tar.zst" -C "/d/msys64_tmp"
+          else
+            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar --warning=no-unknown-keyword -xf - -C "/d/msys64_tmp"
+          fi
+          if [ -d "/d/msys64_tmp/msys64/mingw64" ]; then
+            mv "/d/msys64_tmp/msys64" "/d/msys64"
+            rm -rf "/d/msys64_tmp"
+          else
+            mv "/d/msys64_tmp" "/d/msys64"
+          fi
+          rm -f "/d/soeasy-win64-msys2-env.tar.zst"
+          echo "D:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "D:\msys64\usr\bin" >> "$GITHUB_PATH"
+
+      - name: Download and Compile OpenCV ${{ inputs.opencv_version }}
+        run: |
+          VER="${{ inputs.opencv_version }}"
+          mkdir -p D:/ocv && cd /d/ocv
+          curl -L --fail --retry 3 -o "opencv-${VER}.tar.gz" \
+            "https://github.com/opencv/opencv/archive/refs/tags/${VER}.tar.gz"
+          tar -xzf "opencv-${VER}.tar.gz"
+
+          "${MINGW_PREFIX}/bin/cmake.exe" -B D:/ocv/build -S "D:/ocv/opencv-${VER}" -G "Ninja" \
+            -DCMAKE_C_COMPILER="${MINGW_PREFIX}/bin/gcc.exe" \
+            -DCMAKE_CXX_COMPILER="${MINGW_PREFIX}/bin/g++.exe" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=D:/ocv/install \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DZLIB_ROOT="${MINGW_PREFIX}" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_LIST=core,imgproc,imgcodecs \
+            -DBUILD_ZLIB=OFF \
+            -DBUILD_JPEG=ON -DWITH_JPEG=ON \
+            -DBUILD_PNG=ON -DWITH_PNG=ON \
+            -DBUILD_TIFF=ON -DWITH_TIFF=ON \
+            -DBUILD_WEBP=ON -DWITH_WEBP=ON \
+            -DWITH_GDAL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_ADE=OFF \
+            -DWITH_PROTOBUF=OFF -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF \
+            -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF -DWITH_OPENJPEG=OFF \
+            -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_V4L=OFF -DWITH_1394=OFF \
+            -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_LAPACK=OFF -DWITH_EIGEN=OFF \
+            -DWITH_TBB=OFF -DWITH_OPENMP=OFF \
+            -DWITH_MSMF=OFF -DWITH_DSHOW=OFF -DWITH_WIN32UI=OFF -DWITH_DIRECTX=OFF \
+            -DOPENCV_ENABLE_ALLOCATOR_STATS=OFF \
+            -DCMAKE_CXX_FLAGS="-Wno-attributes" \
+            -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+            -DBUILD_opencv_apps=OFF -DBUILD_DOCS=OFF -DOPENCV_GENERATE_PKGCONFIG=OFF
+
+          "${MINGW_PREFIX}/bin/cmake.exe" --build D:/ocv/build -j4
+          "${MINGW_PREFIX}/bin/cmake.exe" --install D:/ocv/build
+
+          rm -rf /d/ocv/install/etc /d/ocv/install/share/opencv4/haarcascades /d/ocv/install/share/opencv4/lbpcascades
+          find /d/ocv/install -maxdepth 4 -name "OpenCVConfig.cmake"
+          du -sh /d/ocv/install
+
+      - name: Pack Archive (.tar.zst)
+        run: |
+          VER="${{ inputs.opencv_version }}"
+          ARCHIVE_UNIX="$(cygpath -u "${{ github.workspace }}")/opencv-${VER}-minimal-windows-x64.tar.zst"
+          /d/msys64/usr/bin/tar.exe --zstd -C /d/ocv/install -cf "${ARCHIVE_UNIX}" .
+          ls -lh "${ARCHIVE_UNIX}"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencv-minimal-windows-x64
+          path: opencv-*-minimal-windows-x64.tar.zst
+
+  publish-third-party:
+    name: Publish to Release (${{ inputs.release_tag }})
+    needs: [build-opencv-linux, build-opencv-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download built OpenCV archives
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to Third-Party Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          ls -lh artifacts/
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/*.tar.zst --repo "$GH_REPO" --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/*.tar.zst \
+              --repo "$GH_REPO" \
+              --target "$TARGET_SHA" \
+              --title "Prebuilt Third-Party Libraries ($RELEASE_TAG)" \
+              --notes "Prebuilt minimal static third-party libraries for SoEasy CI (OpenCV, etc.)." \
+              --prerelease
+          fi

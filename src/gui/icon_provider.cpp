@@ -1,5 +1,7 @@
 #include "gui/icon_provider.h"
 
+#include "common/format_categories.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -184,7 +186,7 @@ QIcon IconProvider::GetFileIcon(const QString &extension_or_filename) {
     icon = RenderFileBadgeIcon("TS", "#2563EB", true);
   } else if (ext == "sql") {
     icon = RenderFileBadgeIcon("SQL", "#7C3AED", true);
-  } else if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp" || ext == "bmp" || ext == "tiff" || ext == "tif" || ext == "jfif" || ext == "pnm") {
+  } else if (soeasy::common::IsSupportedImageExtension(ext.toStdString()) && ext != "svg") {
     icon = RenderFileBadgeIcon("IMG", "#9333EA", true);
   } else if (ext == "eml") {
     icon = RenderFileBadgeIcon("@", "#0284C7", true);

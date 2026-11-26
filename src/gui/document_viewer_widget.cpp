@@ -16,6 +16,7 @@
 #include <exception>
 #include <unordered_set>
 
+#include "common/format_categories.h"
 #include "common/logger.h"
 #include "gui/i18n.h"
 
@@ -378,13 +379,16 @@ bool IsPlainTextFallbackAllowed(const QString &file_path) {
   }
   // Structured documents, images, archives, and native binaries must never fall back to raw disk reads
   // in plain-text preview (prevents leaking raw %PDF-/OLE/ZIP bytes when indexed content is empty).
+  if (soeasy::common::IsSupportedImageExtension(ext.toStdString())) {
+    return false;
+  }
   static const std::unordered_set<std::string> kBlockedBinaryOrParsedExts = {
       "pdf",  "doc",   "docx", "xls",   "xlsx",   "xlsb", "ppt",  "pptx",    "odt",     "ods",  "odp",
       "odg",  "fodt",  "fods", "fodp",  "rtf",    "wps",  "et",   "dps",     "pages",   "key",  "keynote",
-      "numbers", "eml", "jpg", "jpeg",  "png",    "webp", "bmp",  "tiff",    "tif",     "jfif", "pnm",
-      "gif",  "ico",   "svg",  "zip",   "tar",    "rar",  "7z",   "gz",      "bz2",     "xz",   "exe",
-      "dll",  "so",    "dylib", "bin",  "obj",    "o",    "a",    "lib",     "db",      "sqlite", "sqlite3",
-      "class", "pyc",  "wasm", "msi",   "cab",    "iso",  "img",  "dmg",     "deb",     "rpm",
+      "numbers", "eml", "gif",  "ico",   "svg",   "zip",  "tar",  "rar",     "7z",      "gz",   "bz2",
+      "xz",   "exe",   "dll",  "so",    "dylib",  "bin",  "obj",  "o",       "a",       "lib",  "db",
+      "sqlite", "sqlite3", "class", "pyc", "wasm", "msi", "cab",  "iso",     "img",     "dmg",  "deb",
+      "rpm",
   };
   return kBlockedBinaryOrParsedExts.find(ext.toStdString()) == kBlockedBinaryOrParsedExts.end();
 }

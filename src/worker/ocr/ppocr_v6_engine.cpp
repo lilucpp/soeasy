@@ -9,14 +9,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <thread>
-#if __has_include(<opencv2/geometry.hpp>)
-#include <opencv2/geometry.hpp>
-#endif
 
 #include "common/logger.h"
 #include "common/system_env.h"

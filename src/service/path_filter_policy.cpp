@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "common/format_categories.h"
+
 #ifdef _WIN32
 #include <windows.h>
 
@@ -119,9 +121,7 @@ bool PathFilterPolicy::ShouldIndex(const std::string &file_path, const std::stri
   }
 
   // Pre-filter cache and thumbnail paths for images to save indexing overhead
-  if (filter_cache_thumbnails &&
-      (lower_ext == "png" || lower_ext == "jpg" || lower_ext == "jpeg" || lower_ext == "bmp" || lower_ext == "webp" ||
-       lower_ext == "gif" || lower_ext == "tif" || lower_ext == "tiff" || lower_ext == "svg")) {
+  if (filter_cache_thumbnails && common::IsSupportedImageExtension(lower_ext)) {
     static const char *kPathKeywords[] = {"/weappicon/", "/thumb/",     "/thumbs/", "/emoji/",  "/emojis/",
                                           "/emoticon/",  "/emoticons/", "/avatar/", "/avatars/"};
     std::string lower_path = norm_path;

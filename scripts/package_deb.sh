@@ -153,7 +153,7 @@ Maintainer: SoEasy Team <dev@soeasy.local>
 Package: soeasy
 Architecture: any
 EOF
-    # 为随包私有的 /opt/soeasy/lib 动态库生成本地 shlibs 映射，避免 dpkg-shlibdeps 报错缺少系统包归属
+    # 为随包私有的 /opt/soeasy/lib 动态库生成本地 shlibs 映射，避免 dpkg-shlibdeps 报错或误引入系统包依赖 (如 libcapnp-1.0.1)
     : > "${SHLIB_TMP}/debian/shlibs.local"
     for so_file in "${DEB_ROOT}/opt/soeasy/lib/"*.so*; do
         [[ -e "${so_file}" ]] || continue
@@ -161,9 +161,15 @@ EOF
         if [[ -z "${soname}" ]]; then
             soname="$(basename "${so_file}")"
         fi
-        lib_base="${soname%.so*}"
-        so_ver="${soname#*.so.}"
-        if [[ "${so_ver}" == "${soname}" ]]; then
+        # 与 /usr/bin/dpkg-shlibdeps split_soname() 严格对齐两种命名规则
+        if [[ "${soname}" =~ ^(.+)\.so\.(.+)$ ]]; then
+            lib_base="${BASH_REMATCH[1]}"
+            so_ver="${BASH_REMATCH[2]}"
+        elif [[ "${soname}" =~ ^(.+)-([0-9].*)\.so$ ]]; then
+            lib_base="${BASH_REMATCH[1]}"
+            so_ver="${BASH_REMATCH[2]}"
+        else
+            lib_base="${soname%.so*}"
             so_ver="0"
         fi
         echo "${lib_base} ${so_ver}" >> "${SHLIB_TMP}/debian/shlibs.local"

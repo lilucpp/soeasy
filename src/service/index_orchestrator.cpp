@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "common/encoding_utils.h"
+#include "common/format_categories.h"
 #include "common/logger.h"
 #include "common/parse_status.h"
 #include "common/resource_profile.h"
@@ -102,9 +103,7 @@ bool IsEmbeddedOcrCandidateExt(const std::string &ext) {
 }
 
 uint32_t ComputeTaskTimeoutMs(const std::string &ext) {
-  static const std::unordered_set<std::string> kImageExts = {"jpg",  "jpeg", "png", "bmp", "tiff", "tif", "webp",
-                                                             "gif",  "svg",  "pnm", "ppm", "pgm",  "tga"};
-  if (kImageExts.find(ext) != kImageExts.end()) {
+  if (common::IsSupportedImageExtension(ext)) {
     return 180000;
   }
   return 60000;

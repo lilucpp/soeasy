@@ -15,6 +15,25 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt5 5.15 COMPONENTS Core Gui Widgets Network REQUIRED)
+if(NOT DEFINED OpenCV_DIR OR OpenCV_DIR STREQUAL "")
+    if(WIN32)
+        set(_SOEASY_OPENCV_PREBUILT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencv/windows-x64")
+    else()
+        set(_SOEASY_OPENCV_PREBUILT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencv/linux-x86_64")
+    endif()
+    foreach(_OCV_CANDIDATE
+        "${_SOEASY_OPENCV_PREBUILT_ROOT}"
+        "${_SOEASY_OPENCV_PREBUILT_ROOT}/lib/cmake/opencv4"
+        "${_SOEASY_OPENCV_PREBUILT_ROOT}/x64/mingw/staticlib"
+        "${_SOEASY_OPENCV_PREBUILT_ROOT}/x64/mingw/lib"
+    )
+        if(EXISTS "${_OCV_CANDIDATE}/OpenCVConfig.cmake")
+            set(OpenCV_DIR "${_OCV_CANDIDATE}")
+            message(STATUS "[OpenCV] Using prebuilt minimal static OpenCV from: ${OpenCV_DIR}")
+            break()
+        endif()
+    endforeach()
+endif()
 find_package(OpenCV REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 find_package(Boost 1.73 REQUIRED COMPONENTS nowide)

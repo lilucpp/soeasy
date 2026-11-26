@@ -20,6 +20,7 @@
 | **FEAT-010** | **IStorageEngine 角色接口隔离 (ISP) 与 O(1) 冷启动流式游标** | 8 | 6 | 3 | 2 | **4.4** | **P0 (极高)** | 已完成 (已验证) |
 | **FEAT-011** | **IndexOrchestrator 上帝类领域解耦与挂载死循环防护** | 7 | 6 | 4 | 3 | **2.9** | **P1 (中高)** | 已完成 (已验证) |
 | **FEAT-003** | **Linux 监控注册阶段物理剪枝与监控库架构升级** | 7 | 8 | 6 | 5 | **2.0** | **P1 (评估中)**| 调研阶段 |
+| **FEAT-012** | **GIF 静态与动态图像文字识别支持（基于 `stb_image` 多帧抽帧）** | 4 | 2 | 3 | 3 | **1.7** | **P2 (待排期)** | 待排期 |
 | **FEAT-004** | **压缩包格式（zip/7z/tar 等）正文递归检索** | 5 | 3 | 8 | 8 | **0.8** | **P2 (延后)** | 需求待细化 |
 
 ---
@@ -171,6 +172,26 @@
     When 通过 SQLite::Statement 执行带有特殊字符（如 "C++"、"lock-free"）的全文检索
     Then 检索顺利执行或安全进入两阶段容错降级，精准召回目标文档
     And 53 项全量单元测试（包含连接池并发、事务隔离、注入防御）全部 100% 通过
+  ```
+
+---
+
+### [FEAT-012] GIF 静态与动态图像文字识别支持（基于 `stb_image` 多帧抽帧）
+* **需求层级**：功能扩展需求 (Extended Format Capability)
+* **业务背景 (实测驱动)**：
+  * 实测验证 OpenCV `imgcodecs`（含精简静态版与系统动态版）原生不支持解码 `.gif`（与 `.tga`）；当前 `README` 及设置界面均已不列示这两种未支持格式。
+  * 仓库 `third_party/stb/stb_image.h`（v2.30）已内置单帧与多帧 GIF 解码能力（`stbi_load_from_memory` / `stbi_load_gif_from_memory`），`ImageFilter::ProbeBufferDimensions` 也已具备 `GIF87a`/`GIF89a` 文件头宽高探测；
+  * 后续排期需补充：`EncodingUtils::ReadFileBinary` + `stb_image` 兜底解码封装（RGBA→BGRA 转换）、动图上限抽帧与去重（避免数百帧动图拖垮 OCR 吞吐）、内存炸弹防御及设置项默认开关策略（默认建议关闭，避免大量表情包触发无意义 OCR）。
+* **关联模块**：`third_party/stb/stb_image.h`, `src/worker/l3_image_parser.cpp`, `src/worker/l2_office_parser.cpp`, `src/common/format_categories.h`
+* **关联测试**：`tests/test_image_ocr.cpp`
+* **验收准则 (Acceptance Criteria - Gherkin)**：
+  ```gherkin
+  Scenario: 在启用 GIF 索引开关后安全抽帧识别静态与动态 GIF 文本
+    Given 用户在设置中显式启用 ".gif" 图像 OCR 索引
+    When Worker 解析非表情包目录且尺寸合规的静态或多帧动态 GIF 文件
+    Then 系统通过 stb_image 内存解码并完成 RGBA 到 BGRA 转换
+    And 动图按上限抽帧执行 PP-OCRv6 识别并对多帧结果去重后入库
+    And 超大尺寸或微型表情包 GIF 在解码前由 ImageFilter 拦截跳过
   ```
 
 ---

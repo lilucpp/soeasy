@@ -278,13 +278,15 @@ void TestL3ImageParser() {
   L3ImageParser parser(OcrMode::kNormal, soeasy::test::FindModelsDir());
 
   // Check supported extensions
-  std::vector<std::string> exts = {"png", "jpg", "jpeg", "bmp", "webp", "tiff", "tif", "gif", "svg"};
+  std::vector<std::string> exts = {"png", "jpg", "jpeg", "jfif", "bmp", "webp", "tiff", "tif", "pnm", "svg"};
   for (const auto &e : exts) {
     bool supported = parser.IsSupported(e);
     (void)supported;
     assert(supported);
   }
-  std::cout << "  Format support validated: png, jpg, jpeg, bmp, webp, tiff, tif, gif, svg.\n";
+  assert(!parser.IsSupported("gif"));
+  assert(!parser.IsSupported("tga"));
+  std::cout << "  Format support validated: png, jpg, jpeg, jfif, bmp, webp, tiff, tif, pnm, svg (gif/tga excluded).\n";
 
   SyntheticDataset syn;
   std::string img_dataset = soeasy::test::FindTestDatasetDir() + "/img";

@@ -73,7 +73,6 @@ class L3ImageParser : public IDocumentParser {
                      std::string *out_error);
   void EnsureOcrEngineLoaded();
 
-  std::unordered_set<std::string> supported_exts_;
   ocr::ImageFilter filter_;
   std::unique_ptr<ocr::IOcrEngine> ocr_engine_;
   ocr::OcrMode mode_ = ocr::OcrMode::kNormal;

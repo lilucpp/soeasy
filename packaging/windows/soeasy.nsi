@@ -31,6 +31,7 @@ Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+!include "WinVer.nsh"
 !include "FileFunc.nsh"
 
 Name "${APP_NAME} ${VERSION}"
@@ -71,13 +72,28 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 SoEasy Team (Apache-2.0)"
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
+LangString DESC_SecCore ${LANG_ENGLISH} "Install SoEasy GUI, worker sandbox, CLI, Jieba dictionary, and OCR models."
+LangString DESC_SecCore ${LANG_SIMPCHINESE} "安装 SoEasy 桌面主程序、沙箱解析器、CLI 命令行工具、分词词典及 OCR 模型。"
+LangString DESC_SecDesktop ${LANG_ENGLISH} "Create a SoEasy shortcut on the Desktop."
+LangString DESC_SecDesktop ${LANG_SIMPCHINESE} "在桌面创建 SoEasy 快捷方式。"
+LangString MSG_X64Required ${LANG_ENGLISH} "SoEasy requires a 64-bit (x64) version of Windows."
+LangString MSG_X64Required ${LANG_SIMPCHINESE} "SoEasy 需要 64 位（x64）Windows 操作系统。"
+LangString MSG_Win10Required ${LANG_ENGLISH} "SoEasy requires Windows 10 or later (64-bit)."
+LangString MSG_Win10Required ${LANG_SIMPCHINESE} "SoEasy 需要 Windows 10 及以上版本（64 位）操作系统。"
+LangString MSG_AppRunning ${LANG_ENGLISH} "SoEasy is currently running. Click OK to close it and continue, or Cancel to abort."
+LangString MSG_AppRunning ${LANG_SIMPCHINESE} "SoEasy 正在运行中。点击“确定”将自动关闭程序并继续，点击“取消”中止操作。"
+LangString MSG_AppCloseFailed ${LANG_ENGLISH} "Unable to close running SoEasy process. Please exit SoEasy from the system tray and try again."
+LangString MSG_AppCloseFailed ${LANG_SIMPCHINESE} "无法关闭运行中的 SoEasy 进程，请先从系统托盘手动退出后再试。"
+LangString MSG_RemoveUserData ${LANG_ENGLISH} "Do you also want to remove your personal SoEasy index database, configuration, and logs (%APPDATA%\SoEasy)?$\r$\nChoose No to keep your existing index when upgrading or reinstalling."
+LangString MSG_RemoveUserData ${LANG_SIMPCHINESE} "是否同时删除个人索引数据库、配置及日志（%APPDATA%\SoEasy）？$\r$\n选择“否”可在重装或升级时保留现有索引。"
+
 !macro ENSURE_NOT_RUNNING
   ${If} ${FileExists} "$INSTDIR\${APP_EXE}"
     ClearErrors
     FileOpen $0 "$INSTDIR\${APP_EXE}" a
     ${If} ${Errors}
       ${IfNot} ${Silent}
-        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "SoEasy is currently running. Click OK to close it and continue, or Cancel to abort." IDOK +2
+        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(MSG_AppRunning)" IDOK +2
         Abort
       ${EndIf}
       nsExec::ExecToLog 'taskkill.exe /F /IM soeasy-gui.exe'
@@ -87,7 +103,7 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 SoEasy Team (Apache-2.0)"
       FileOpen $0 "$INSTDIR\${APP_EXE}" a
       ${If} ${Errors}
         ${IfNot} ${Silent}
-          MessageBox MB_OK|MB_ICONSTOP "Unable to close running SoEasy process. Please exit SoEasy from the system tray and try again."
+          MessageBox MB_OK|MB_ICONSTOP "$(MSG_AppCloseFailed)"
         ${EndIf}
         Abort
       ${EndIf}
@@ -100,7 +116,11 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 SoEasy Team (Apache-2.0)"
 
 Function .onInit
   ${IfNot} ${RunningX64}
-    MessageBox MB_OK|MB_ICONSTOP "SoEasy requires a 64-bit (x64) version of Windows."
+    MessageBox MB_OK|MB_ICONSTOP "$(MSG_X64Required)"
+    Abort
+  ${EndIf}
+  ${IfNot} ${AtLeastWin10}
+    MessageBox MB_OK|MB_ICONSTOP "$(MSG_Win10Required)"
     Abort
   ${EndIf}
   SetRegView 64
@@ -155,13 +175,6 @@ Section "Desktop Shortcut" SecDesktop
   SetOutPath "$INSTDIR"
   CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\icons\soeasy.ico" 0
 SectionEnd
-
-LangString DESC_SecCore ${LANG_ENGLISH} "Install SoEasy GUI, worker sandbox, CLI, Jieba dictionary, and OCR models."
-LangString DESC_SecCore ${LANG_SIMPCHINESE} "安装 SoEasy 桌面主程序、沙箱解析器、CLI 命令行工具、分词词典及 OCR 模型。"
-LangString DESC_SecDesktop ${LANG_ENGLISH} "Create a SoEasy shortcut on the Desktop."
-LangString DESC_SecDesktop ${LANG_SIMPCHINESE} "在桌面创建 SoEasy 快捷方式。"
-LangString MSG_RemoveUserData ${LANG_ENGLISH} "Do you also want to remove your personal SoEasy index database, configuration, and logs (%APPDATA%\SoEasy)?$\r$\nChoose No to keep your existing index when upgrading or reinstalling."
-LangString MSG_RemoveUserData ${LANG_SIMPCHINESE} "是否同时删除个人索引数据库、配置及日志（%APPDATA%\SoEasy）？$\r$\n选择“否”可在重装或升级时保留现有索引。"
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} $(DESC_SecCore)

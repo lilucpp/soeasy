@@ -4,6 +4,8 @@
 #ifndef SOEASY_SRC_COMMON_FORMAT_CATEGORIES_H_
 #define SOEASY_SRC_COMMON_FORMAT_CATEGORIES_H_
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -201,6 +203,20 @@ inline std::unordered_set<std::string> GetDefaultSupportedExtensions() {
     }
   }
   return defaults;
+}
+
+inline const std::unordered_set<std::string> &GetSupportedImageExtensions() {
+  static const std::unordered_set<std::string> kImageExts = {
+      "png", "jpg", "jpeg", "jfif", "bmp", "webp", "tiff", "tif", "svg", "pnm", "ppm", "pgm"};
+  return kImageExts;
+}
+
+inline bool IsSupportedImageExtension(const std::string &ext) {
+  std::string lower = ext;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  const auto &exts = GetSupportedImageExtensions();
+  return exts.find(lower) != exts.end();
 }
 
 }  // namespace common

@@ -35,7 +35,28 @@ jobs:
             libboost-dev \
             libboost-nowide-dev \
             dpkg-dev \
+            zstd \
             zip
+
+      - name: Download Prebuilt Minimal Static OpenCV (third-party-v1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view third-party-v1 --repo "$GH_REPO" --json assets --jq '.assets[].name' 2>/dev/null \
+              | grep -q '^opencv-.*-minimal-linux-x86_64\.tar\.zst$'; then
+            mkdir -p /tmp/ocv_dl third_party/opencv/linux-x86_64
+            gh release download third-party-v1 \
+              --repo "$GH_REPO" \
+              --pattern "opencv-*-minimal-linux-x86_64.tar.zst" \
+              --dir /tmp/ocv_dl
+            ARCHIVE=$(ls -1v /tmp/ocv_dl/opencv-*-minimal-linux-x86_64.tar.zst | tail -n 1)
+            tar --zstd -xf "$ARCHIVE" -C third_party/opencv/linux-x86_64
+            rm -rf /tmp/ocv_dl
+            echo "Installed prebuilt minimal static OpenCV for Linux."
+          else
+            echo "::notice::Prebuilt OpenCV archive not yet published in third-party-v1; falling back to system libopencv-dev."
+          fi
 
       - name: Build and Run Automated Test Suite (CTest Quality Gate)
         env:
@@ -159,6 +180,30 @@ jobs:
           ls -la "/d/msys64" "/d/msys64/opt/qt5/lib/cmake/Qt5/Qt5Config.cmake"
           echo "D:\msys64\mingw64\bin" >> "$GITHUB_PATH"
           echo "D:\msys64\usr\bin" >> "$GITHUB_PATH"
+
+      - name: Download Prebuilt Minimal Static OpenCV (third-party-v1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view third-party-v1 --repo "$GH_REPO" --json assets --jq '.assets[].name' 2>/dev/null \
+              | grep -q '^opencv-.*-minimal-windows-x64\.tar\.zst$'; then
+            mkdir -p /d/ocv_dl third_party/opencv/windows-x64
+            gh release download third-party-v1 \
+              --repo "$GH_REPO" \
+              --pattern "opencv-*-minimal-windows-x64.tar.zst" \
+              --dir "D:/ocv_dl"
+            ARCHIVE=$(ls -1v /d/ocv_dl/opencv-*-minimal-windows-x64.tar.zst | tail -n 1)
+            if command -v zstd >/dev/null 2>&1; then
+              tar --warning=no-unknown-keyword --zstd -xf "$ARCHIVE" -C third_party/opencv/windows-x64
+            else
+              7z x "$(cygpath -w "$ARCHIVE")" -so | tar --warning=no-unknown-keyword -xf - -C third_party/opencv/windows-x64
+            fi
+            rm -rf /d/ocv_dl
+            echo "Installed prebuilt minimal static OpenCV for Windows."
+          else
+            echo "::notice::Prebuilt OpenCV archive not yet published in third-party-v1; falling back to MSYS2 OpenCV."
+          fi
 
       - name: Build SoEasy and Test Suite (Windows x64)
         run: |
