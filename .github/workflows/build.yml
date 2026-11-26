@@ -19,14 +19,22 @@ jobs:
           submodules: recursive
 
       - name: Install system dependencies
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          APT_OPTS=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+            -o Acquire::ForceIPv4=true
+          )
+          sudo apt-get "${APT_OPTS[@]}" update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y -qq --no-install-recommends \
+            -o Dpkg::Options::="--force-confdef" \
+            -o Dpkg::Options::="--force-confold" \
             build-essential \
             cmake \
             ninja-build \
             qtbase5-dev \
-            libopencv-dev \
             libxml2-dev \
             zlib1g-dev \
             libuchardet-dev \
@@ -56,6 +64,12 @@ jobs:
             echo "Installed prebuilt minimal static OpenCV for Linux."
           else
             echo "::notice::Prebuilt OpenCV archive not yet published in third-party-v1; falling back to system libopencv-dev."
+            sudo DEBIAN_FRONTEND=noninteractive apt-get \
+              -o Acquire::Retries=3 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30 \
+              -o Acquire::ForceIPv4=true \
+              install -y -qq --no-install-recommends libopencv-dev
           fi
 
       - name: Build and Run Automated Test Suite (CTest Quality Gate)
