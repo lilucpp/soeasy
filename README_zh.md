@@ -3,7 +3,7 @@
 > **让电脑没有难搜的文件**  
 > *Make every file searchable on your computer.*
 
-[English](README.md) | [简体中文](README_zh.md) | [最新版本 (Latest Release)](https://github.com/lilucpp/soeasy/releases/latest)
+[English](README.md) | [简体中文](README_zh.md) | [更新日志 (v0.4.6)](CHANGELOG.md) | [最新版本 (Latest Release)](https://github.com/lilucpp/soeasy/releases/latest)
 
 ---
 
@@ -185,6 +185,15 @@ soeasy-cli stats --json
 # 5. 快速对单个文件或目录建立索引
 soeasy-cli index /path/to/documents -v
 ```
+
+---
+
+## 下载安装与发行包
+
+每个正式版本均在 [GitHub Releases](https://github.com/lilucpp/soeasy/releases) 提供 **Linux (x86_64)** 与 **Windows (x64)** 预编译发行包及 `SHA256SUMS.txt` 校验文件（详细变更见 [CHANGELOG.md](CHANGELOG.md)）：
+
+- **Ubuntu / Debian (x86_64)**：推荐下载 `soeasy_<version>_amd64.deb`（安装至 `/opt/soeasy`，自动配置桌面启动器以及系统 `soeasy-gui` / `soeasy-cli` 命令），也可下载便携 `.zip` 解压后运行 `./run.sh`。
+- **Windows 10 / 11（64 位）**：推荐运行 `soeasy-v<version>-windows-x64-setup.exe` 安装向导（支持开始菜单、桌面快捷方式及卸载时可选清理个人索引数据），也可解压便携包 `soeasy-v<version>-windows-x64.zip` 直接运行 `soeasy-gui.exe`。（*因内置 ONNX Runtime v1.20.0 依赖 Windows 10+ 64 位系统接口，不支持 Windows 7 / 8 / 8.1。*）
 
 ---
 

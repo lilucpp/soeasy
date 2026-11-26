@@ -2,9 +2,12 @@ cmake_minimum_required(VERSION 3.16)
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
-project(soeasy LANGUAGES C CXX)
+project(soeasy VERSION 0.4.6 LANGUAGES C CXX)
 
-add_compile_definitions(SOEASY_PROJECT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+add_compile_definitions(
+    SOEASY_PROJECT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    SOEASY_VERSION="${PROJECT_VERSION}"
+)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

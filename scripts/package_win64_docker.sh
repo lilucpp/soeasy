@@ -7,9 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-RAW_TAG="$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null || true)"
+RAW_TAG="$(git -C "${PROJECT_ROOT}" describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
 VERSION="${1:-${VERSION:-${RAW_TAG#v}}}"
-VERSION="${VERSION:-0.4.5}"
+VERSION="${VERSION:-0.4.6}"
 PLATFORM="windows-x64"
 DIST_NAME="soeasy-v${VERSION}-${PLATFORM}"
 DIST_DIR="${PROJECT_ROOT}/dist"

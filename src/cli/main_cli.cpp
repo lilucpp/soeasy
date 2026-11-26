@@ -29,12 +29,16 @@
 #include "service/search_coordinator.h"
 #include "storage/storage_engine.h"
 
+#ifndef SOEASY_VERSION
+#define SOEASY_VERSION "0.4.6"
+#endif
+
 namespace fs = std::filesystem;
 
 namespace {
 
 void PrintUsage(const char *prog_name) {
-  std::cerr << "SoEasy Desktop Search Engine - Command Line Interface\n\n"
+  std::cerr << "SoEasy Desktop Search Engine - Command Line Interface (v" << SOEASY_VERSION << ")\n\n"
             << "Usage:\n"
             << "  " << prog_name << " <command> [options]\n\n"
             << "Commands:\n"
@@ -47,6 +51,7 @@ void PrintUsage(const char *prog_name) {
             << "      --key <key>     Database encryption key (default: machine-bound DEK)\n"
             << "      --dict <path>   Path to Jieba dictionary directory\n"
             << "  -v, --verbose       Enable verbose diagnostic output to stderr\n"
+            << "      --version       Show version information\n"
             << "  -h, --help          Show help message\n\n"
             << "Search Options:\n"
             << "  -l, --limit <n>     Maximum number of results to return (default: 50)\n"
@@ -452,6 +457,9 @@ int main(int argc, char *argv[]) {
     std::string arg = argv[i];
     if (arg == "-h" || arg == "--help" || arg == "help") {
       PrintUsage(argv[0]);
+      return 0;
+    } else if (arg == "--version") {
+      std::cout << "soeasy-cli " << SOEASY_VERSION << "\n";
       return 0;
     } else if (arg == "-v" || arg == "--verbose") {
       verbose = true;

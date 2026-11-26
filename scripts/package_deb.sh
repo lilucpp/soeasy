@@ -36,13 +36,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-RAW_TAG="$(git -C "${PROJECT_ROOT}" describe --tags --abbrev=0 2>/dev/null || true)"
+RAW_TAG="$(git -C "${PROJECT_ROOT}" describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
 VERSION="${VERSION:-${RAW_TAG#v}}"
-VERSION="${VERSION:-0.4.5}"
+VERSION="${VERSION:-0.4.6}"
 # Debian package versions must start with a digit and should not contain spaces
 DEB_VERSION="$(echo "${VERSION}" | sed 's/^[^0-9]*//; s/-/~/g')"
 if [[ -z "${DEB_VERSION}" ]]; then
-    DEB_VERSION="0.4.5"
+    DEB_VERSION="0.4.6"
 fi
 
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo "amd64")"

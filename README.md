@@ -3,7 +3,7 @@
 > **Make Every File Searchable On Your Desktop**  
 > *让电脑没有难搜的文件*
 
-[English](README.md) | [简体中文](README_zh.md) | [Latest Release](https://github.com/lilucpp/soeasy/releases/latest)
+[English](README.md) | [简体中文](README_zh.md) | [Changelog (v0.4.6)](CHANGELOG.md) | [Latest Release](https://github.com/lilucpp/soeasy/releases/latest)
 
 ---
 
@@ -185,6 +185,15 @@ soeasy-cli stats --json
 # 5. Index a directory or standalone file
 soeasy-cli index /path/to/documents -v
 ```
+
+---
+
+## Installation & Releases
+
+Prebuilt release packages for **Linux (x86_64)** and **Windows (x64)** are published on [GitHub Releases](https://github.com/lilucpp/soeasy/releases) with `SHA256SUMS.txt` verification (see [CHANGELOG.md](CHANGELOG.md) for version notes):
+
+- **Ubuntu / Debian (x86_64)**: Install the `.deb` package (`soeasy_<version>_amd64.deb`, installed under `/opt/soeasy` with `soeasy-gui` desktop entry and `soeasy-cli` on `PATH`), or extract the portable `.zip` archive and run `./run.sh`.
+- **Windows 10 / 11 (64-bit)**: Run `soeasy-v<version>-windows-x64-setup.exe` (guided installer with Start Menu / Desktop shortcuts and optional user data cleanup on uninstall), or extract `soeasy-v<version>-windows-x64.zip` and run `soeasy-gui.exe` directly. *(Windows 7 / 8 / 8.1 are not supported because bundled ONNX Runtime v1.20.0 requires Windows 10+ 64-bit APIs.)*
 
 ---
 

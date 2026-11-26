@@ -79,11 +79,15 @@ int main(int argc, char *argv[]) {
   QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 #endif
 
+#ifndef SOEASY_VERSION
+#define SOEASY_VERSION "0.4.6"
+#endif
+
   QApplication app(argc, argv);
   app.setQuitOnLastWindowClosed(false);
   app.setApplicationName("SoEasy");
   app.setApplicationDisplayName("SoEasy | 让电脑没有难搜的文件");
-  app.setApplicationVersion("1.0.0");
+  app.setApplicationVersion(SOEASY_VERSION);
   app.setWindowIcon(soeasy::gui::IconProvider::GetAppIcon());
 
   // Configure modern, anti-aliased sans-serif fonts across platforms
@@ -247,7 +251,7 @@ int main(int argc, char *argv[]) {
   soeasy::common::Logger::SetSyncMode(enable_sync);
 
   LOG_INFO("========================================================");
-  LOG_INFO("   SoEasy Desktop Search Engine Starting (v1.0.0)");
+  LOG_INFO("   SoEasy Desktop Search Engine Starting (v{})", SOEASY_VERSION);
   LOG_INFO("   AppData Directory: {}", app_data_dir.toStdString());
   LOG_INFO("   Rolling Log File:  {} (3 files x 10MB)", log_path.toStdString());
   LOG_INFO("   Logging Level:     {} | Console: {} | Sync Flush: {}", soeasy::common::Logger::LevelToString(level_enum),

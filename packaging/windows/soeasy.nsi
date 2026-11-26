@@ -1,16 +1,16 @@
 ; Copyright 2026 SoEasy Team. All rights reserved.
 ; NSIS Installer Script for SoEasy Desktop Search Engine (Windows x64)
 ; Build example:
-;   makensis -DVERSION=0.4.4 -DSTAGE_DIR=..\..\dist\soeasy-v0.4.4-windows-x64 -DOUT_FILE=..\..\dist\soeasy-v0.4.4-windows-x64-setup.exe packaging\windows\soeasy.nsi
+;   makensis -DVERSION=0.4.6 -DSTAGE_DIR=..\..\dist\soeasy-v0.4.6-windows-x64 -DOUT_FILE=..\..\dist\soeasy-v0.4.6-windows-x64-setup.exe packaging\windows\soeasy.nsi
 
 Unicode true
 
 !ifndef VERSION
-  !define VERSION "0.4.4"
+  !define VERSION "0.4.6"
 !endif
 
 !ifndef VI_VERSION
-  !define VI_VERSION "0.4.4.0"
+  !define VI_VERSION "0.4.6.0"
 !endif
 
 !ifndef STAGE_DIR
