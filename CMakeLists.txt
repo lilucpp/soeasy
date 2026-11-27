@@ -501,12 +501,38 @@ endif()
 # -------------------------------------------------------------
 # 10. GUI Subsystem (Qt5 Widgets Desktop Frontend)
 # -------------------------------------------------------------
+add_library(soeasy_unibreak STATIC
+    third_party/libunibreak/unibreakbase.c
+    third_party/libunibreak/unibreakdef.c
+    third_party/libunibreak/linebreak.c
+    third_party/libunibreak/linebreakdata.c
+    third_party/libunibreak/linebreakdef.c
+    third_party/libunibreak/eastasianwidthdef.c
+    third_party/libunibreak/emojidef.c
+)
+target_include_directories(soeasy_unibreak PUBLIC
+    third_party/libunibreak
+)
+
+add_library(soeasy_hyphen STATIC
+    third_party/hyphen/hyphen.c
+    third_party/hyphen/hnjalloc.c
+)
+target_include_directories(soeasy_hyphen PUBLIC
+    third_party/hyphen
+)
+
 add_library(soeasy_gui STATIC
     src/gui/gui_utils.h
     src/gui/i18n.cpp
     src/gui/icon_provider.cpp
     src/gui/hover_preview_popup.cpp
     src/gui/document_viewer_widget.cpp
+    src/gui/knuth_plass_viewer.cpp
+    src/gui/typography_popover.cpp
+    src/gui/typesetting/kp_engine.cpp
+    src/gui/typesetting/cjk_typesetter.cpp
+    src/gui/typesetting/preview_typography.cpp
     src/gui/content_preview_dialog.cpp
     src/gui/index_progress_dialog.cpp
     src/gui/parse_issues_dialog.cpp
@@ -532,6 +558,8 @@ target_link_libraries(soeasy_gui PUBLIC
     Qt5::Core
     Qt5::Network
     soeasy_service
+    soeasy_unibreak
+    soeasy_hyphen
 )
 
 set(SOEASY_GUI_WIN32_RESOURCES "")
@@ -889,6 +917,31 @@ if(BUILD_TESTS)
       TIMEOUT 60
       ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
   )
+
+  # Knuth-Plass Line-Breaking & CJK/Latin Typesetting Unit Tests
+  add_executable(test_knuth_plass
+      tests/test_knuth_plass.cpp
+  )
+  target_link_libraries(test_knuth_plass PRIVATE
+      soeasy_gui
+      Qt5::Widgets
+      Qt5::Gui
+      Qt5::Core
+  )
+  add_soeasy_test(test_knuth_plass 30)
+
+  # Knuth-Plass Viewer Widget, Mode Routing & Performance Tests
+  add_executable(test_knuth_plass_viewer
+      tests/test_knuth_plass_viewer.cpp
+  )
+  target_link_libraries(test_knuth_plass_viewer PRIVATE
+      soeasy_gui
+      soeasy_common
+      Qt5::Widgets
+      Qt5::Gui
+      Qt5::Core
+  )
+  add_soeasy_test(test_knuth_plass_viewer 30)
 endif()
 
 # -------------------------------------------------------------

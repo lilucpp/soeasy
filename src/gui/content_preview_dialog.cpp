@@ -109,7 +109,7 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
     return;
   }
 
-  viewer_->LoadContent(DocumentViewerWidget::FormatPreviewText(preview), keywords_);
+  viewer_->LoadContent(DocumentViewerWidget::FormatPreviewText(preview), keywords_, file_path_);
 }
 
 void ContentPreviewDialog::OnOpenFolder() {

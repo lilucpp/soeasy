@@ -256,6 +256,18 @@ ctest --test-dir build --output-on-failure
 
 ---
 
+## 内置字体与排版致谢
+
+SoEasy 的文档正文预览内置 C++17 Knuth-Plass 段落断行精排引擎（支持一键取消切回纯文本及排版参数自定义），采用以下开源字体与基础库：
+
+- **文渊黑体 (`WenYuanSansSC-Regular.otf`)** — 来源：[takushun-wu/WenYuanFonts](https://github.com/takushun-wu/WenYuanFonts)（详见 `resources/fonts/WenYuanFonts-README.md`）
+- **霞鹜文楷轻便版 (`LXGWWenKaiLite-Regular.ttf`)** — 来源：[lxgw/LxgwWenKai-Lite](https://github.com/lxgw/LxgwWenKai-Lite)，基于 SIL Open Font License 1.1 协议分发（详见 `resources/fonts/OFL-LxgwWenKaiLite.txt`）
+- **libunibreak**（`third_party/libunibreak`）— Unicode UAX #14 断行与东亚字符宽度表（`zlib/libpng` 协议）
+- **Hyphen（`hunspell/hyphen` + `hyph_en_US.dic`）**（`third_party/hyphen`）— Knuth-Liang 英文连字符断词引擎与美式英语规则词典（`GPL-2.0` / `LGPL-2.1` / `MPL-1.1` 三重许可）
+- **Knuth-Plass 中英混排算法参考** — 参考 [chenshuo/typeset](https://github.com/chenshuo/typeset)（`simple.py` / `typeset.py`）核心逻辑实现
+
+---
+
 ## 开源许可
 
 本项目遵循 [Apache-2.0 License](LICENSE) 开源协议。

@@ -212,7 +212,7 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
     }
     QMetaObject::invokeMethod(
         app,
-        [self, token_holder, req_id, preview = std::move(preview), keywords]() {
+        [self, token_holder, req_id, preview = std::move(preview), keywords, file_path]() {
           if (!self || req_id != token_holder->load(std::memory_order_relaxed)) {
             return;
           }
@@ -220,7 +220,7 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
             self->viewer_->SetHtml(DocumentViewerWidget::BuildStatusNoticeHtml(preview));
             return;
           }
-          self->viewer_->LoadContent(DocumentViewerWidget::FormatPreviewText(preview), keywords);
+          self->viewer_->LoadContent(DocumentViewerWidget::FormatPreviewText(preview), keywords, file_path);
         },
         Qt::QueuedConnection);
   });

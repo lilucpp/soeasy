@@ -7,6 +7,8 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QScrollBar>
+#include <QSignalBlocker>
+#include <QTextBlockFormat>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QVBoxLayout>
@@ -19,6 +21,9 @@
 #include "common/format_categories.h"
 #include "common/logger.h"
 #include "gui/i18n.h"
+#include "gui/knuth_plass_viewer.h"
+#include "gui/typesetting/preview_typography.h"
+#include "gui/typography_popover.h"
 
 namespace soeasy {
 namespace gui {
@@ -86,6 +91,41 @@ void DocumentViewerWidget::SetupUi() {
   match_count_label_ = new QLabel("匹配: 0 / 0", this);
   match_count_label_->setStyleSheet("font-size: 11px; color: #64748B;");
 
+  btn_kp_toggle_ = new QPushButton("KP 精排", this);
+  btn_kp_toggle_->setCheckable(true);
+  btn_kp_toggle_->setChecked(typesetting::PreviewTypographyStore::Instance().config().kp_enabled);
+  btn_kp_toggle_->setEnabled(false);
+  btn_kp_toggle_->setStyleSheet(
+      "QPushButton {"
+      "  font-size: 11px;"
+      "  padding: 3px 8px;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 4px;"
+      "  background-color: #F8FAFC;"
+      "  color: #475569;"
+      "}"
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:checked {"
+      "  background-color: #EFF6FF;"
+      "  border-color: #93C5FD;"
+      "  color: #1D4ED8;"
+      "  font-weight: 600;"
+      "}"
+      "QPushButton:disabled { color: #94A3B8; background-color: #F8FAFC; border-color: #E2E8F0; }");
+
+  btn_typography_ = new QPushButton("⚙ 排版", this);
+  btn_typography_->setStyleSheet(
+      "QPushButton {"
+      "  font-size: 11px;"
+      "  padding: 3px 8px;"
+      "  border: 1px solid #CBD5E1;"
+      "  border-radius: 4px;"
+      "  background-color: #F8FAFC;"
+      "  color: #334155;"
+      "}"
+      "QPushButton:hover { background-color: #F1F5F9; border-color: #94A3B8; color: #0F172A; }"
+      "QPushButton:pressed { background-color: #E2E8F0; }");
+
   nav_layout->addWidget(label_jump_);
   nav_layout->addWidget(keyword_tag_label_);
   nav_layout->addStretch();
@@ -94,18 +134,90 @@ void DocumentViewerWidget::SetupUi() {
   nav_layout->addWidget(match_count_label_);
   layout->addLayout(nav_layout);
 
-  // 2. Document Content Viewer
+  auto *kp_toolbar_layout = new QHBoxLayout();
+  kp_toolbar_layout->setContentsMargins(0, 0, 0, 0);
+  kp_toolbar_layout->setSpacing(6);
+  kp_toolbar_layout->addWidget(btn_kp_toggle_);
+  kp_toolbar_layout->addWidget(btn_typography_);
+  kp_toolbar_layout->addStretch();
+  layout->addLayout(kp_toolbar_layout);
+
+  // 2. Document Content Viewer Stack (QTextBrowser + KnuthPlassViewer)
+  viewer_stack_ = new QStackedWidget(this);
+
   text_viewer_ = new QTextBrowser(this);
   text_viewer_->setReadOnly(true);
-  text_viewer_->setStyleSheet(
+  ApplyBrowserStyle(true);
+
+  kp_viewer_ = new KnuthPlassViewer(this);
+  kp_viewer_->SetTypographyConfig(typesetting::PreviewTypographyStore::Instance().config());
+
+  viewer_stack_->addWidget(text_viewer_);
+  viewer_stack_->addWidget(kp_viewer_);
+  viewer_stack_->setCurrentWidget(text_viewer_);
+  layout->addWidget(viewer_stack_, 1);
+
+  connect(btn_next_, &QPushButton::clicked, this, &DocumentViewerWidget::FindNext);
+  connect(btn_prev_, &QPushButton::clicked, this, &DocumentViewerWidget::FindPrev);
+  connect(btn_kp_toggle_, &QPushButton::clicked, this, [this](bool checked) {
+    if (!has_plain_text_ || html_mode_) {
+      return;
+    }
+    if (is_code_document_) {
+      ApplyActiveViewerMode(checked);
+      return;
+    }
+    auto cfg = typesetting::PreviewTypographyStore::Instance().config();
+    cfg.kp_enabled = checked;
+    typesetting::PreviewTypographyStore::Instance().UpdateConfig(cfg);
+  });
+  connect(btn_typography_, &QPushButton::clicked, this, [this]() {
+    if (!typography_popover_) {
+      typography_popover_ = new TypographyPopover(this);
+    }
+    typography_popover_->ShowBelow(btn_typography_);
+  });
+  connect(&typesetting::PreviewTypographyStore::Instance(),
+          &typesetting::PreviewTypographyStore::ConfigChanged, this,
+          [this](const typesetting::PreviewTypographyConfig &cfg) {
+            if (kp_viewer_) {
+              kp_viewer_->SetTypographyConfig(cfg);
+            }
+            if (!has_plain_text_ || html_mode_) {
+              QSignalBlocker blocker(btn_kp_toggle_);
+              btn_kp_toggle_->setChecked(cfg.kp_enabled);
+              return;
+            }
+            if (!is_code_document_) {
+              if (cfg.kp_enabled != kp_active_for_doc_) {
+                ApplyActiveViewerMode(cfg.kp_enabled);
+              } else if (kp_active_for_doc_) {
+                UpdateMatchCountLabel();
+                const int total = kp_viewer_ ? kp_viewer_->MatchCount() : 0;
+                if (btn_prev_) btn_prev_->setEnabled(total > 0);
+                if (btn_next_) btn_next_->setEnabled(total > 0);
+              }
+            }
+          });
+
+  RetranslateUi();
+}
+
+void DocumentViewerWidget::ApplyBrowserStyle(bool code_mode) {
+  if (!text_viewer_) return;
+  const QString font_family =
+      code_mode ? "'Consolas', 'JetBrains Mono', 'Noto Sans Mono CJK SC', 'Courier New', monospace"
+                : "'WenYuan Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif";
+  const QString font_size = code_mode ? "12px" : "13px";
+  const QString padding = code_mode ? "10px 12px" : "14px 18px";
+  text_viewer_->setStyleSheet(QString(
       "QTextBrowser {"
-      "  font-family: 'Consolas', 'Courier New', 'Noto Sans CJK SC', monospace;"
-      "  font-size: 12px;"
-      "  line-height: 1.5;"
+      "  font-family: %1;"
+      "  font-size: %2;"
       "  background-color: #FFFFFF;"
       "  border: 1px solid #CBD5E1;"
       "  border-radius: 6px;"
-      "  padding: 8px;"
+      "  padding: %3;"
       "  color: #1E293B;"
       "}"
       "QScrollBar:vertical {"
@@ -128,19 +240,48 @@ void DocumentViewerWidget::SetupUi() {
       "}"
       "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
       "  background: transparent;"
-      "}");
-  layout->addWidget(text_viewer_, 1);
+      "}").arg(font_family, font_size, padding));
+}
 
-  connect(btn_next_, &QPushButton::clicked, this, &DocumentViewerWidget::FindNext);
-  connect(btn_prev_, &QPushButton::clicked, this, &DocumentViewerWidget::FindPrev);
+void DocumentViewerWidget::ApplyBrowserBlockSpacing(double line_height_pct) {
+  if (!text_viewer_ || !text_viewer_->document()) return;
+  QTextCursor cursor(text_viewer_->document());
+  cursor.select(QTextCursor::Document);
+  QTextBlockFormat fmt;
+  fmt.setLineHeight(line_height_pct, QTextBlockFormat::ProportionalHeight);
+  cursor.mergeBlockFormat(fmt);
+}
 
-  RetranslateUi();
+bool DocumentViewerWidget::IsCodeOrStructuredFile(const QString &file_path) {
+  if (file_path.isEmpty()) return false;
+  const QString suffix = QFileInfo(file_path).suffix().toLower();
+  if (suffix.isEmpty()) return false;
+  static const std::unordered_set<std::string> kCodeExts = {
+      "c",     "cpp",  "cc",   "cxx",  "h",    "hpp",  "hxx",  "py",    "java",
+      "go",    "rs",   "js",   "ts",   "jsx",  "tsx",  "sh",   "bat",   "cmd",
+      "ps1",   "sql",  "php",  "rb",   "swift","kt",   "scala","lua",   "r",
+      "pl",    "perl", "asm",  "asp",  "aspx", "bas",  "cmake","cs",    "d",
+      "f",     "fpp",  "fs",   "jsp",  "pas",  "tcl",  "vb",   "vbs",   "ws",
+      "css",   "xml",  "xsd",  "xsl",  "csv",  "json", "yml",  "yaml",  "toml",
+      "ini",   "conf", "cfg",  "rss",  "log"};
+  return kCodeExts.find(suffix.toStdString()) != kCodeExts.end();
 }
 
 void DocumentViewerWidget::RetranslateUi() {
   if (label_jump_) label_jump_->setText(Tr("keyword_label"));
   if (btn_prev_) btn_prev_->setText(Tr("btn_prev"));
   if (btn_next_) btn_next_->setText(Tr("btn_next"));
+  if (btn_kp_toggle_) {
+    btn_kp_toggle_->setText(Tr("btn_kp_toggle"));
+    btn_kp_toggle_->setToolTip(Tr("tip_kp_toggle"));
+  }
+  if (btn_typography_) {
+    btn_typography_->setText(Tr("btn_kp_settings"));
+    btn_typography_->setToolTip(Tr("tip_kp_settings"));
+  }
+  if (typography_popover_) {
+    typography_popover_->RetranslateUi();
+  }
 
   if (current_keywords_.empty()) {
     if (keyword_tag_label_) keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
@@ -148,8 +289,27 @@ void DocumentViewerWidget::RetranslateUi() {
   UpdateMatchCountLabel();
 }
 
+int DocumentViewerWidget::match_count() const {
+  if (kp_active_for_doc_ && kp_viewer_) {
+    return kp_viewer_->MatchCount();
+  }
+  return static_cast<int>(match_ranges_.size());
+}
+
 void DocumentViewerWidget::UpdateMatchCountLabel() {
   if (!match_count_label_) {
+    return;
+  }
+  if (kp_active_for_doc_ && kp_viewer_) {
+    const int count = kp_viewer_->MatchCount();
+    if (count <= 0) {
+      match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+      return;
+    }
+    const int cur = (kp_viewer_->CurrentMatchIndex() >= 0) ? kp_viewer_->CurrentMatchIndex() + 1 : 1;
+    const QString total_text =
+        QString("%1%2").arg(count).arg(kp_viewer_->HighlightsTruncated() ? "+" : "");
+    match_count_label_->setText(Tr("match_count").arg(cur).arg(total_text));
     return;
   }
   if (match_ranges_.empty()) {
@@ -161,48 +321,10 @@ void DocumentViewerWidget::UpdateMatchCountLabel() {
   match_count_label_->setText(Tr("match_count").arg(cur).arg(total_text));
 }
 
-void DocumentViewerWidget::Clear() {
-  current_keywords_.clear();
-  match_ranges_.clear();
-  current_match_idx_ = -1;
-  highlights_truncated_ = false;
-
-  if (text_viewer_) {
-    text_viewer_->clear();
-    text_viewer_->setExtraSelections({});
+void DocumentViewerWidget::UpdateKeywordBadge(const std::vector<std::string> &keywords) {
+  if (!keyword_tag_label_) {
+    return;
   }
-
-  if (keyword_tag_label_) {
-    keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
-    keyword_tag_label_->setStyleSheet(
-        "QLabel {"
-        "  font-size: 12px;"
-        "  font-weight: normal;"
-        "  color: #64748B;"
-        "  background-color: #F1F5F9;"
-        "  border: 1px solid #E2E8F0;"
-        "  border-radius: 4px;"
-        "  padding: 3px 8px;"
-        "}");
-  }
-
-  if (btn_prev_) btn_prev_->setEnabled(false);
-  if (btn_next_) btn_next_->setEnabled(false);
-  if (match_count_label_) match_count_label_->setText(Tr("match_count").arg(0).arg(0));
-}
-
-void DocumentViewerWidget::SetHtml(const QString &html) {
-  Clear();
-  if (text_viewer_) {
-    text_viewer_->setHtml(html);
-  }
-}
-
-void DocumentViewerWidget::LoadContent(const QString &text, const std::vector<std::string> &keywords) {
-  current_keywords_ = keywords;
-  match_ranges_.clear();
-  current_match_idx_ = -1;
-
   if (!keywords.empty()) {
     QString joined_kw;
     for (size_t i = 0; i < keywords.size(); ++i) {
@@ -220,22 +342,123 @@ void DocumentViewerWidget::LoadContent(const QString &text, const std::vector<st
         "  border-radius: 4px;"
         "  padding: 3px 8px;"
         "}");
-  } else {
-    keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
-    keyword_tag_label_->setStyleSheet(
-        "QLabel {"
-        "  font-size: 12px;"
-        "  font-weight: normal;"
-        "  color: #64748B;"
-        "  background-color: #F1F5F9;"
-        "  border: 1px solid #E2E8F0;"
-        "  border-radius: 4px;"
-        "  padding: 3px 8px;"
-        "}");
+    return;
+  }
+  keyword_tag_label_->SetFullText(Tr("no_keywords"), false);
+  keyword_tag_label_->setStyleSheet(
+      "QLabel {"
+      "  font-size: 12px;"
+      "  font-weight: normal;"
+      "  color: #64748B;"
+      "  background-color: #F1F5F9;"
+      "  border: 1px solid #E2E8F0;"
+      "  border-radius: 4px;"
+      "  padding: 3px 8px;"
+      "}");
+}
+
+void DocumentViewerWidget::Clear() {
+  current_keywords_.clear();
+  match_ranges_.clear();
+  current_match_idx_ = -1;
+  highlights_truncated_ = false;
+  current_plain_text_.clear();
+  current_file_path_.clear();
+  has_plain_text_ = false;
+  html_mode_ = false;
+  is_code_document_ = false;
+  kp_active_for_doc_ = false;
+
+  if (kp_viewer_) {
+    kp_viewer_->Clear();
+  }
+  if (text_viewer_) {
+    ApplyBrowserStyle(true);
+    text_viewer_->clear();
+    text_viewer_->setExtraSelections({});
+  }
+  if (viewer_stack_ && text_viewer_) {
+    viewer_stack_->setCurrentWidget(text_viewer_);
   }
 
-  text_viewer_->setPlainText(text);
+  if (btn_kp_toggle_) {
+    QSignalBlocker blocker(btn_kp_toggle_);
+    btn_kp_toggle_->setEnabled(false);
+    btn_kp_toggle_->setChecked(typesetting::PreviewTypographyStore::Instance().config().kp_enabled);
+  }
+
+  UpdateKeywordBadge({});
+
+  if (btn_prev_) btn_prev_->setEnabled(false);
+  if (btn_next_) btn_next_->setEnabled(false);
+  if (match_count_label_) match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+}
+
+void DocumentViewerWidget::SetHtml(const QString &html) {
+  Clear();
+  html_mode_ = true;
+  if (text_viewer_) {
+    text_viewer_->setHtml(html);
+  }
+}
+
+void DocumentViewerWidget::ApplyActiveViewerMode(bool use_kp) {
+  kp_active_for_doc_ = use_kp;
+  if (btn_kp_toggle_) {
+    QSignalBlocker blocker(btn_kp_toggle_);
+    btn_kp_toggle_->setEnabled(has_plain_text_);
+    btn_kp_toggle_->setChecked(use_kp);
+  }
+
+  if (use_kp && kp_viewer_) {
+    match_ranges_.clear();
+    current_match_idx_ = -1;
+    highlights_truncated_ = false;
+    if (text_viewer_) {
+      text_viewer_->clear();
+      text_viewer_->setExtraSelections({});
+    }
+    kp_viewer_->SetTypographyConfig(typesetting::PreviewTypographyStore::Instance().config());
+    kp_viewer_->SetContent(current_plain_text_, current_keywords_);
+    if (viewer_stack_) viewer_stack_->setCurrentWidget(kp_viewer_);
+
+    const bool has_matches = kp_viewer_->MatchCount() > 0;
+    if (btn_prev_) btn_prev_->setEnabled(has_matches);
+    if (btn_next_) btn_next_->setEnabled(has_matches);
+    UpdateMatchCountLabel();
+    return;
+  }
+
+  if (kp_viewer_) {
+    kp_viewer_->Clear();
+  }
+  ApplyBrowserStyle(is_code_document_);
+  if (text_viewer_) {
+    text_viewer_->setPlainText(current_plain_text_);
+    ApplyBrowserBlockSpacing(is_code_document_ ? 145.0 : 160.0);
+  }
+  if (viewer_stack_ && text_viewer_) {
+    viewer_stack_->setCurrentWidget(text_viewer_);
+  }
   HighlightOccurrences();
+}
+
+void DocumentViewerWidget::LoadContent(const QString &text, const std::vector<std::string> &keywords,
+                                       const QString &file_path) {
+  current_keywords_ = keywords;
+  current_plain_text_ = text;
+  current_file_path_ = file_path;
+  has_plain_text_ = true;
+  html_mode_ = false;
+  is_code_document_ = IsCodeOrStructuredFile(file_path);
+  match_ranges_.clear();
+  current_match_idx_ = -1;
+
+  UpdateKeywordBadge(keywords);
+
+  const bool want_kp =
+      !is_code_document_ && typesetting::PreviewTypographyStore::Instance().config().kp_enabled;
+  ApplyActiveViewerMode(want_kp);
 }
 
 void DocumentViewerWidget::HighlightOccurrences() {
@@ -330,6 +553,16 @@ void DocumentViewerWidget::UpdateHighlightSelections() {
 }
 
 void DocumentViewerWidget::JumpToMatch(int index) {
+  if (kp_active_for_doc_ && kp_viewer_) {
+    if (kp_viewer_->MatchCount() <= 0) {
+      match_count_label_->setText(Tr("match_count").arg(0).arg(0));
+      return;
+    }
+    kp_viewer_->JumpToMatch(index);
+    UpdateMatchCountLabel();
+    return;
+  }
+
   if (match_ranges_.empty()) {
     match_count_label_->setText(Tr("match_count").arg(0).arg(0));
     return;
@@ -355,6 +588,13 @@ void DocumentViewerWidget::JumpToMatch(int index) {
 }
 
 void DocumentViewerWidget::FindNext() {
+  if (kp_active_for_doc_ && kp_viewer_) {
+    const int count = kp_viewer_->MatchCount();
+    if (count <= 0) return;
+    const int next_idx = (kp_viewer_->CurrentMatchIndex() + 1) % count;
+    JumpToMatch(next_idx);
+    return;
+  }
   if (match_ranges_.empty()) return;
   const int count = static_cast<int>(match_ranges_.size());
   const int next_idx = (current_match_idx_ + 1) % count;
@@ -362,6 +602,13 @@ void DocumentViewerWidget::FindNext() {
 }
 
 void DocumentViewerWidget::FindPrev() {
+  if (kp_active_for_doc_ && kp_viewer_) {
+    const int count = kp_viewer_->MatchCount();
+    if (count <= 0) return;
+    const int prev_idx = (kp_viewer_->CurrentMatchIndex() - 1 + count) % count;
+    JumpToMatch(prev_idx);
+    return;
+  }
   if (match_ranges_.empty()) return;
   const int count = static_cast<int>(match_ranges_.size());
   const int prev_idx = (current_match_idx_ - 1 + count) % count;

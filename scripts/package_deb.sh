@@ -83,6 +83,9 @@ cp -a "${STAGE_DIR}/bin" "${DEB_ROOT}/opt/soeasy/"
 cp -a "${STAGE_DIR}/lib" "${DEB_ROOT}/opt/soeasy/"
 cp -a "${STAGE_DIR}/plugins" "${DEB_ROOT}/opt/soeasy/"
 cp -a "${STAGE_DIR}/dict" "${DEB_ROOT}/opt/soeasy/"
+if [[ -d "${STAGE_DIR}/fonts" ]]; then
+    cp -a "${STAGE_DIR}/fonts" "${DEB_ROOT}/opt/soeasy/"
+fi
 cp -a "${STAGE_DIR}/models" "${DEB_ROOT}/opt/soeasy/"
 cp -a "${STAGE_DIR}/icons" "${DEB_ROOT}/opt/soeasy/"
 cp -p "${STAGE_DIR}/run.sh" "${DEB_ROOT}/opt/soeasy/"
@@ -106,8 +109,11 @@ exec /opt/soeasy/bin/soeasy-cli "$@"
 EOF
 chmod 0755 "${DEB_ROOT}/usr/bin/soeasy-cli"
 
-# 软链接词典到标准共享路径，确保 soeasy-cli 在任意工作目录下无需 --dict 即可自动发现
+# 软链接词典与字体到标准共享路径，确保在任意工作目录下均可自动发现
 ln -s /opt/soeasy/dict "${DEB_ROOT}/usr/share/soeasy/dict"
+if [[ -d "${DEB_ROOT}/opt/soeasy/fonts" ]]; then
+    ln -s /opt/soeasy/fonts "${DEB_ROOT}/usr/share/soeasy/fonts"
+fi
 
 # 安装标准桌面菜单项与主题图标
 if [[ -f "${PROJECT_ROOT}/resources/icons/soeasy.png" ]]; then

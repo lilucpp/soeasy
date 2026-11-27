@@ -6,6 +6,7 @@
 
 #include <QLabel>
 #include <QPushButton>
+#include <QStackedWidget>
 #include <QString>
 #include <QTextBrowser>
 #include <QWidget>
@@ -19,6 +20,9 @@
 
 namespace soeasy {
 namespace gui {
+
+class KnuthPlassViewer;
+class TypographyPopover;
 
 struct DocumentPreviewResult {
   bool has_content = false;
@@ -40,13 +44,19 @@ class DocumentViewerWidget : public QWidget {
   explicit DocumentViewerWidget(QWidget *parent = nullptr);
   ~DocumentViewerWidget() override = default;
 
-  void LoadContent(const QString &text, const std::vector<std::string> &keywords);
+  void LoadContent(const QString &text, const std::vector<std::string> &keywords,
+                   const QString &file_path = QString());
   void SetHtml(const QString &html);
   void Clear();
   void RetranslateUi();
 
   [[nodiscard]] QTextBrowser *text_viewer() const { return text_viewer_; }
-  [[nodiscard]] int match_count() const { return static_cast<int>(match_ranges_.size()); }
+  [[nodiscard]] KnuthPlassViewer *kp_viewer() const { return kp_viewer_; }
+  [[nodiscard]] bool is_kp_active() const { return kp_active_for_doc_; }
+  [[nodiscard]] bool is_code_document() const { return is_code_document_; }
+  [[nodiscard]] int match_count() const;
+
+  static bool IsCodeOrStructuredFile(const QString &file_path);
 
   /**
    * @brief Load document content and parse-status metadata via CQRS query coordinator,
@@ -80,6 +90,10 @@ class DocumentViewerWidget : public QWidget {
 
  private:
   void SetupUi();
+  void ApplyActiveViewerMode(bool use_kp);
+  void ApplyBrowserStyle(bool code_mode);
+  void ApplyBrowserBlockSpacing(double line_height_pct);
+  void UpdateKeywordBadge(const std::vector<std::string> &keywords);
   void HighlightOccurrences();
   void UpdateHighlightSelections();
   void UpdateMatchCountLabel();
@@ -95,12 +109,23 @@ class DocumentViewerWidget : public QWidget {
   QPushButton *btn_prev_ = nullptr;
   QPushButton *btn_next_ = nullptr;
   QLabel *match_count_label_ = nullptr;
+  QPushButton *btn_kp_toggle_ = nullptr;
+  QPushButton *btn_typography_ = nullptr;
+  QStackedWidget *viewer_stack_ = nullptr;
   QTextBrowser *text_viewer_ = nullptr;
+  KnuthPlassViewer *kp_viewer_ = nullptr;
+  TypographyPopover *typography_popover_ = nullptr;
 
   std::vector<std::string> current_keywords_;
   std::vector<MatchRange> match_ranges_;
   int current_match_idx_ = -1;
   bool highlights_truncated_ = false;
+  QString current_plain_text_;
+  QString current_file_path_;
+  bool has_plain_text_ = false;
+  bool html_mode_ = false;
+  bool is_code_document_ = false;
+  bool kp_active_for_doc_ = false;
 };
 
 }  // namespace gui

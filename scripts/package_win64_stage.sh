@@ -63,6 +63,7 @@ mkdir -p \
     "${STAGE_DIR}/imageformats" \
     "${STAGE_DIR}/styles" \
     "${STAGE_DIR}/dict" \
+    "${STAGE_DIR}/fonts" \
     "${STAGE_DIR}/models" \
     "${STAGE_DIR}/icons"
 
@@ -85,6 +86,11 @@ fi
 cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/jieba_dat.bin" "${STAGE_DIR}/dict/"
 cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/hmm_model.utf8" "${STAGE_DIR}/dict/"
 cp -p "${PROJECT_ROOT}/third_party/cppjieba/dict/user.dict.utf8" "${STAGE_DIR}/dict/" 2>/dev/null || touch "${STAGE_DIR}/dict/user.dict.utf8"
+cp -p "${PROJECT_ROOT}/third_party/hyphen/hyph_en_US.dic" "${STAGE_DIR}/dict/"
+cp -p "${PROJECT_ROOT}/resources/fonts/"*.otf "${STAGE_DIR}/fonts/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/resources/fonts/"*.ttf "${STAGE_DIR}/fonts/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/resources/fonts/"*.txt "${STAGE_DIR}/fonts/" 2>/dev/null || true
+cp -p "${PROJECT_ROOT}/resources/fonts/"*.md "${STAGE_DIR}/fonts/" 2>/dev/null || true
 cp -rp "${PROJECT_ROOT}/models/ppocr_v6" "${STAGE_DIR}/models/" 2>/dev/null || true
 cp -rp "${PROJECT_ROOT}/resources/icons/"* "${STAGE_DIR}/icons/" 2>/dev/null || true
 

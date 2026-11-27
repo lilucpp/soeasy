@@ -256,6 +256,18 @@ ctest --test-dir build --output-on-failure
 
 ---
 
+## Bundled Fonts & Typesetting Credits
+
+SoEasy's prose preview uses an in-house C++17 Knuth-Plass line-breaking renderer (with optional one-click toggle back to plain text) powered by the following open-source assets and libraries:
+
+- **WenYuan Sans SC (`WenYuanSansSC-Regular.otf`)** — Source: [takushun-wu/WenYuanFonts](https://github.com/takushun-wu/WenYuanFonts) (see `resources/fonts/WenYuanFonts-README.md`)
+- **LXGW WenKai Lite (`LXGWWenKaiLite-Regular.ttf`)** — Source: [lxgw/LxgwWenKai-Lite](https://github.com/lxgw/LxgwWenKai-Lite), licensed under SIL Open Font License 1.1 (`resources/fonts/OFL-LxgwWenKaiLite.txt`)
+- **libunibreak** (`third_party/libunibreak`) — Unicode UAX #14 line breaking & East Asian Width (`zlib/libpng` license)
+- **Hyphen (`hunspell/hyphen` + `hyph_en_US.dic`)** (`third_party/hyphen`) — Knuth-Liang hyphenation engine & US English patterns (`GPL-2.0` / `LGPL-2.1` / `MPL-1.1` tri-license)
+- **Knuth-Plass CJK/Latin algorithm reference** — Adapted from [chenshuo/typeset](https://github.com/chenshuo/typeset) (`simple.py` / `typeset.py`)
+
+---
+
 ## License
 
 SoEasy is distributed under the [Apache-2.0 License](LICENSE).
