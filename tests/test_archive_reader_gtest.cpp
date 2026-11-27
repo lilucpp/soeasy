@@ -167,9 +167,17 @@ TEST_F(ArchiveReaderIntegrationTest, DetectsEncryptedZipEntryCleanly) {
   const std::filesystem::path src = root_ / "secret.txt";
   WriteBinaryFile(src, "TopSecretPayload");
   const std::filesystem::path enc_zip = root_ / "encrypted.zip";
-  const std::string cmd =
-      "7z a -y -tzip -pSoEasyPass123 \"" + enc_zip.string() + "\" \"" + src.string() + "\" >/dev/null 2>&1";
-  ASSERT_EQ(std::system(cmd.c_str()), 0);
+  const std::string py = R"PY(
+import subprocess
+subprocess.check_call(
+    ["7z", "a", "-y", "-tzip", "-pSoEasyPass123", r")PY" +
+                         enc_zip.generic_string() + R"PY(", r")PY" + src.generic_string() +
+                         R"PY("],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
+)PY";
+  ASSERT_EQ(RunPythonScript(py), "");
 
   soeasy::worker::ArchiveReader reader;
   soeasy::worker::ArchiveExtractOptions opts;
