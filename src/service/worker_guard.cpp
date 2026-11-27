@@ -20,6 +20,14 @@
 namespace soeasy {
 namespace service {
 
+namespace {
+
+int64_t SteadyEpochMs(std::chrono::steady_clock::time_point tp) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
+}
+
+}  // namespace
+
 DetachedWorkerResources &DetachedWorkerResources::operator=(DetachedWorkerResources &&other) noexcept {
   if (this != &other) {
     Reset();
@@ -129,9 +137,14 @@ bool WorkerGuard::Init(const std::string &worker_bin_path, size_t worker_count, 
       inst->idle_start_time = now;
       workers_.push_back(std::move(inst));
     }
+    unpacker_worker_ = std::make_unique<WorkerInstance>();
+    unpacker_worker_->idle_start_time = now;
+    unpacker_last_activity_ms_.store(SteadyEpochMs(now), std::memory_order_release);
+    unpacker_in_callback_.store(false, std::memory_order_release);
     {
       std::lock_guard<std::mutex> stdio_lock(stdio_mutex_);
       recent_stdio_.assign(worker_count, {});
+      unpacker_recent_stdio_.clear();
     }
     is_running_.store(true, std::memory_order_release);
   }
@@ -163,6 +176,10 @@ std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_par
 
 void WorkerGuard::ClearWorkerStdio(size_t index) {
   std::lock_guard<std::mutex> lock(stdio_mutex_);
+  if (index == kUnpackerWorkerIndex) {
+    unpacker_recent_stdio_.clear();
+    return;
+  }
   if (index < recent_stdio_.size()) {
     recent_stdio_[index].clear();
   }
@@ -170,6 +187,13 @@ void WorkerGuard::ClearWorkerStdio(size_t index) {
 
 void WorkerGuard::RecordWorkerStdio(size_t index, const std::string &line) {
   std::lock_guard<std::mutex> lock(stdio_mutex_);
+  if (index == kUnpackerWorkerIndex) {
+    if (unpacker_recent_stdio_.size() >= 30) {
+      unpacker_recent_stdio_.pop_front();
+    }
+    unpacker_recent_stdio_.push_back(line);
+    return;
+  }
   if (index >= recent_stdio_.size()) {
     recent_stdio_.resize(index + 1);
   }
@@ -181,17 +205,36 @@ void WorkerGuard::RecordWorkerStdio(size_t index, const std::string &line) {
 
 std::string WorkerGuard::GetRecentWorkerStdio(size_t index) const {
   std::lock_guard<std::mutex> lock(stdio_mutex_);
-  if (index >= recent_stdio_.size()) return {};
+  const std::deque<std::string> *buf = nullptr;
+  if (index == kUnpackerWorkerIndex) {
+    buf = &unpacker_recent_stdio_;
+  } else if (index < recent_stdio_.size()) {
+    buf = &recent_stdio_[index];
+  } else {
+    return {};
+  }
   std::string out;
-  for (const auto &l : recent_stdio_[index]) {
+  for (const auto &l : *buf) {
     if (!out.empty()) out += "\n  ";
     out += l;
   }
   return out;
 }
 
+std::string WorkerGuard::BuildCrashErrorMessage(size_t index, const std::string &rpc_error,
+                                                const char *default_msg) const {
+  const std::string label = (index == kUnpackerWorkerIndex) ? "Unpacker" : ("Worker " + std::to_string(index));
+  const std::string diag = GetRecentWorkerStdio(index);
+  if (!diag.empty()) {
+    LOG_WARN("[WorkerGuard] {} crash diagnosis (last stdio):\n  {}", label, diag);
+    return std::string(default_msg) + ": " + diag;
+  }
+  return rpc_error.empty() ? std::string(default_msg) : rpc_error;
+}
+
 void WorkerGuard::DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t index, bool log_as_info) {
   if (!stream) return;
+  const std::string tag = (index == kUnpackerWorkerIndex) ? "Unpacker" : ("Worker " + std::to_string(index));
   char buf[4096];
   while (std::fgets(buf, sizeof(buf), stream) != nullptr) {
     size_t len = std::strlen(buf);
@@ -203,9 +246,9 @@ void WorkerGuard::DrainWorkerStdio(WorkerGuard *guard, FILE *stream, size_t inde
       guard->RecordWorkerStdio(index, buf);
     }
     if (log_as_info) {
-      LOG_INFO("[Worker {} stdio] {}", index, buf);
+      LOG_INFO("[{} stdio] {}", tag, buf);
     } else {
-      LOG_DEBUG("[Worker {} stdio] {}", index, buf);
+      LOG_DEBUG("[{} stdio] {}", tag, buf);
     }
   }
 }
@@ -272,6 +315,13 @@ bool WorkerGuard::SpawnWorkerProcess(size_t index, DetachedWorkerResources *out_
   return true;
 }
 
+WorkerInstance *WorkerGuard::GetSlotLocked(size_t index) {
+  if (index == kUnpackerWorkerIndex) {
+    return unpacker_worker_.get();
+  }
+  return index < workers_.size() ? workers_[index].get() : nullptr;
+}
+
 void WorkerGuard::ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation,
                                        bool clear_watchdog_pending) {
   if (!indices || count == 0) {
@@ -285,20 +335,91 @@ void WorkerGuard::ReleaseRecycledSlots(const size_t *indices, size_t count, uint
   bool released_any = false;
   for (size_t k = 0; k < count; ++k) {
     const size_t idx = indices[k];
-    if (idx >= workers_.size()) {
+    WorkerInstance *slot = GetSlotLocked(idx);
+    if (!slot) {
       continue;
     }
     if (clear_watchdog_pending) {
-      workers_[idx]->watchdog_cleanup_pending = false;
+      slot->watchdog_cleanup_pending = false;
     }
-    if (workers_[idx]->state == WorkerState::kRecycling && !workers_[idx]->watchdog_cleanup_pending) {
-      workers_[idx]->state = WorkerState::kIdle;
-      workers_[idx]->idle_start_time = idle_now;
+    if (slot->state == WorkerState::kRecycling && !slot->watchdog_cleanup_pending) {
+      slot->state = WorkerState::kIdle;
+      slot->idle_start_time = idle_now;
       released_any = true;
     }
   }
   if (released_any) {
     worker_available_cv_.notify_all();
+  }
+}
+
+void WorkerGuard::MonitorSlotLocked(size_t slot_idx, WorkerInstance &inst, std::chrono::steady_clock::time_point now,
+                                    int64_t now_epoch_ms, bool should_check_idle_mem,
+                                    std::vector<DetachedWorkerResources> *to_cleanup,
+                                    std::vector<size_t> *recycled_indices) {
+  if (!inst.process || inst.pid <= 0) {
+    return;
+  }
+  const bool is_unpacker = (slot_idx == kUnpackerWorkerIndex);
+  const std::string label = is_unpacker ? "Unpacker" : ("Worker " + std::to_string(slot_idx));
+
+  // 1. Check if child crashed or exited unexpectedly
+  if (!subprocess_alive(inst.process.get())) {
+    int exit_code = 0;
+    subprocess_join(inst.process.get(), &exit_code);
+    LOG_WARN("[WorkerGuard] {} (pid {}) died unexpectedly: exit_code={}", label, inst.pid, exit_code);
+    const bool was_busy = inst.is_busy();
+    if (was_busy) {
+      inst.watchdog_cleanup_pending = true;
+    }
+    to_cleanup->push_back(inst.Detach(was_busy ? WorkerState::kCrashed : WorkerState::kRecycling));
+    recycled_indices->push_back(slot_idx);
+    return;
+  }
+
+  // 2. Check for task timeout (Unpacker uses inactivity watchdog and pauses while parent handles backpressure)
+  if (inst.state == WorkerState::kBusy) {
+    int64_t elapsed = 0;
+    if (is_unpacker) {
+      if (unpacker_in_callback_.load(std::memory_order_acquire)) {
+        elapsed = 0;
+      } else {
+        elapsed = now_epoch_ms - unpacker_last_activity_ms_.load(std::memory_order_acquire);
+      }
+    } else {
+      elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.task_start_time).count();
+    }
+    if (elapsed > static_cast<int64_t>(inst.current_timeout_ms) + 1000) {
+      LOG_WARN("[WorkerGuard] Watchdog killing {}: elapsed={}ms, timeout={}ms", label, elapsed,
+               inst.current_timeout_ms);
+      inst.watchdog_cleanup_pending = true;
+      to_cleanup->push_back(inst.Detach(WorkerState::kKilledByWatchdog));
+      recycled_indices->push_back(slot_idx);
+      return;
+    }
+  }
+
+  // 3. Check idle eviction or memory limit when idle
+  if (inst.state == WorkerState::kIdle && inst.pid > 0) {
+    auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.idle_start_time).count();
+    if (idle_ms >= static_cast<int64_t>(idle_evict_ms_.load(std::memory_order_relaxed))) {
+      LOG_INFO("[WorkerGuard] {} idle for {:.1f}s. Evicted to reclaim memory.", label, idle_ms / 1000.0);
+      to_cleanup->push_back(inst.Detach(WorkerState::kRecycling));
+      recycled_indices->push_back(slot_idx);
+      return;
+    }
+
+    const size_t max_mem = max_memory_bytes_.load(std::memory_order_relaxed);
+    if (should_check_idle_mem && max_mem > 0) {
+      const size_t rss = GetProcessRssBytes(inst.pid);
+      if (rss > max_mem) {
+        LOG_WARN("[WorkerGuard] {} (pid {}) exceeded memory limit while idle ({:.1f} MiB > {:.1f} MiB); recycling",
+                 label, inst.pid, rss / (1024.0 * 1024.0), max_mem / (1024.0 * 1024.0));
+        memory_recycle_count_.fetch_add(1, std::memory_order_relaxed);
+        to_cleanup->push_back(inst.Detach(WorkerState::kRecycling));
+        recycled_indices->push_back(slot_idx);
+      }
+    }
   }
 }
 
@@ -323,6 +444,7 @@ void WorkerGuard::WatchdogLoop() {
       std::unique_lock<std::mutex> lock(pool_mutex_);
       generation = pool_generation_;
       auto now = std::chrono::steady_clock::now();
+      const int64_t now_epoch_ms = SteadyEpochMs(now);
       const bool should_check_idle_mem =
           (last_idle_mem_check_time == std::chrono::steady_clock::time_point{}) ||
           ((now - last_idle_mem_check_time) >= kIdleMemoryCheckInterval);
@@ -331,60 +453,11 @@ void WorkerGuard::WatchdogLoop() {
       }
 
       for (size_t i = 0; i < workers_.size(); ++i) {
-        WorkerInstance &inst = *workers_[i];
-        if (!inst.process || inst.pid <= 0) {
-          continue;
-        }
-
-        // 1. Check if child crashed or exited unexpectedly
-        if (!subprocess_alive(inst.process.get())) {
-          int exit_code = 0;
-          subprocess_join(inst.process.get(), &exit_code);
-          LOG_WARN("[WorkerGuard] Worker {} (pid {}) died unexpectedly: exit_code={}", i, inst.pid, exit_code);
-          const bool was_busy = inst.is_busy();
-          if (was_busy) {
-            inst.watchdog_cleanup_pending = true;
-          }
-          to_cleanup.push_back(inst.Detach(was_busy ? WorkerState::kCrashed : WorkerState::kRecycling));
-          recycled_indices.push_back(i);
-          continue;
-        }
-
-        // 2. Check for task timeout
-        if (inst.state == WorkerState::kBusy) {
-          auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.task_start_time).count();
-          if (elapsed > static_cast<int64_t>(inst.current_timeout_ms) + 1000) {
-            LOG_WARN("[WorkerGuard] Watchdog killing worker {}: elapsed={}ms, timeout={}ms", i, elapsed,
-                     inst.current_timeout_ms);
-            inst.watchdog_cleanup_pending = true;
-            to_cleanup.push_back(inst.Detach(WorkerState::kKilledByWatchdog));
-            recycled_indices.push_back(i);
-            continue;
-          }
-        }
-
-        // 3. Check idle eviction or memory limit when idle
-        if (inst.state == WorkerState::kIdle && inst.pid > 0) {
-          auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - inst.idle_start_time).count();
-          if (idle_ms >= static_cast<int64_t>(idle_evict_ms_.load(std::memory_order_relaxed))) {
-            LOG_INFO("[WorkerGuard] Worker {} idle for {:.1f}s. Evicted to reclaim memory.", i, idle_ms / 1000.0);
-            to_cleanup.push_back(inst.Detach(WorkerState::kRecycling));
-            recycled_indices.push_back(i);
-            continue;
-          }
-
-          const size_t max_mem = max_memory_bytes_.load(std::memory_order_relaxed);
-          if (should_check_idle_mem && max_mem > 0) {
-            const size_t rss = GetProcessRssBytes(inst.pid);
-            if (rss > max_mem) {
-              LOG_WARN("[WorkerGuard] Worker {} (pid {}) exceeded memory limit while idle ({:.1f} MiB > {:.1f} MiB); recycling",
-                       i, inst.pid, rss / (1024.0 * 1024.0), max_mem / (1024.0 * 1024.0));
-              memory_recycle_count_.fetch_add(1, std::memory_order_relaxed);
-              to_cleanup.push_back(inst.Detach(WorkerState::kRecycling));
-              recycled_indices.push_back(i);
-            }
-          }
-        }
+        MonitorSlotLocked(i, *workers_[i], now, now_epoch_ms, should_check_idle_mem, &to_cleanup, &recycled_indices);
+      }
+      if (unpacker_worker_) {
+        MonitorSlotLocked(kUnpackerWorkerIndex, *unpacker_worker_, now, now_epoch_ms, should_check_idle_mem,
+                          &to_cleanup, &recycled_indices);
       }
     }
     // Join detached worker processes and drain threads outside pool_mutex_ before unlocking slots.
@@ -533,15 +606,8 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
       need_release_slot = !worker.watchdog_cleanup_pending;
     } else if (!rpc_success || rpc_res.status == TaskStatus::kCrashed) {
       out_result->status = TaskStatus::kCrashed;
-      std::string diag = GetRecentWorkerStdio(assigned_worker_idx);
-      if (!diag.empty()) {
-        LOG_WARN("[WorkerGuard] Worker {} crash diagnosis (last stdio):\n  {}", assigned_worker_idx, diag);
-        out_result->error_message = "Worker crashed (SIGSEGV/abort) during file parsing: " + diag;
-      } else {
-        out_result->error_message = rpc_res.error_message.empty()
-                                       ? "Worker crashed (SIGSEGV/abort) during file parsing"
-                                       : rpc_res.error_message;
-      }
+      out_result->error_message = BuildCrashErrorMessage(
+          assigned_worker_idx, rpc_res.error_message, "Worker crashed (SIGSEGV/abort) during file parsing");
       to_cleanup = worker.Detach(WorkerState::kRecycling);
       slot_held_for_cleanup = true;
       need_release_slot = !worker.watchdog_cleanup_pending;
@@ -592,6 +658,181 @@ bool WorkerGuard::ExecuteTask(const ParseTask &task, ParseTaskResult *out_result
   return true;
 }
 
+bool WorkerGuard::ExecuteArchiveStream(const ArchiveExtractTask &task, const ArchiveItemCallback &on_item,
+                                       ArchiveExtractResult *out_result) {
+  if (!out_result) {
+    return false;
+  }
+  out_result->status = TaskStatus::kFailed;
+  out_result->error_message.clear();
+
+  uint64_t generation = 0;
+  std::shared_ptr<WorkerRpcChannel> chan;
+  bool need_spawn = false;
+  std::vector<std::string> spawn_args;
+  bool spawn_log_as_info = false;
+  const uint32_t effective_idle_timeout_ms = task.idle_heartbeat_timeout_ms > 0
+                                                 ? task.idle_heartbeat_timeout_ms
+                                                 : timeout_ms_.load(std::memory_order_relaxed);
+  auto exec_start_time = std::chrono::steady_clock::now();
+
+  {
+    std::unique_lock<std::mutex> lock(pool_mutex_);
+    worker_available_cv_.wait(lock, [this]() {
+      return !is_running_.load(std::memory_order_acquire) ||
+             (unpacker_worker_ && unpacker_worker_->state == WorkerState::kIdle);
+    });
+    if (!is_running_.load(std::memory_order_acquire) || !unpacker_worker_) {
+      out_result->status = TaskStatus::kCrashed;
+      out_result->error_message = "WorkerGuard is not running";
+      return false;
+    }
+
+    generation = pool_generation_;
+    WorkerInstance &unpacker = *unpacker_worker_;
+    unpacker.state = WorkerState::kBusy;
+    unpacker.current_timeout_ms = effective_idle_timeout_ms;
+    unpacker.task_start_time = exec_start_time;
+    unpacker_last_activity_ms_.store(SteadyEpochMs(exec_start_time), std::memory_order_release);
+    unpacker_in_callback_.store(false, std::memory_order_release);
+
+    need_spawn = (unpacker.pid <= 0 || !unpacker.rpc_channel);
+    if (need_spawn) {
+      spawn_args = BuildWorkerArgs("", kUnpackerWorkerIndex);
+      spawn_log_as_info = log_console_;
+    } else {
+      chan = unpacker.rpc_channel;
+    }
+  }
+
+  if (need_spawn) {
+    DetachedWorkerResources spawned;
+    WorkerPid spawned_pid = 0;
+    bool ok = SpawnWorkerProcess(kUnpackerWorkerIndex, &spawned, &spawned_pid, spawn_args, spawn_log_as_info);
+    if (!ok) {
+      std::lock_guard<std::mutex> lock(pool_mutex_);
+      const bool same_pool = is_running_.load(std::memory_order_acquire) && pool_generation_ == generation;
+      if (same_pool && unpacker_worker_) {
+        unpacker_worker_->state = WorkerState::kIdle;
+      }
+      out_result->status = TaskStatus::kFailed;
+      out_result->error_message = "Failed to spawn Unpacker worker on demand";
+      worker_available_cv_.notify_all();
+      return same_pool;
+    }
+
+    DetachedWorkerResources stale_resources;
+    {
+      std::lock_guard<std::mutex> lock(pool_mutex_);
+      if (!is_running_.load(std::memory_order_acquire) || pool_generation_ != generation || !unpacker_worker_) {
+        return false;
+      }
+      WorkerInstance &unpacker = *unpacker_worker_;
+      if (unpacker.HasResources()) {
+        stale_resources = unpacker.Detach(WorkerState::kBusy);
+      }
+#ifdef _WIN32
+      if (job_handle_ && spawned.process && spawned.process->hProcess) {
+        AssignProcessToJobObject(job_handle_, spawned.process->hProcess);
+      }
+#endif
+      auto now = std::chrono::steady_clock::now();
+      unpacker.rpc_channel = std::move(spawned.rpc_channel);
+      unpacker.process = std::move(spawned.process);
+      unpacker.stdio_drain_thread = std::move(spawned.stdio_drain_thread);
+      unpacker.pid = spawned_pid;
+      unpacker.idle_start_time = now;
+      unpacker.task_start_time = now;
+      unpacker_last_activity_ms_.store(SteadyEpochMs(now), std::memory_order_release);
+      chan = unpacker.rpc_channel;
+    }
+  }
+
+  ArchiveExtractResult rpc_res;
+  bool rpc_success = false;
+  if (chan) {
+    auto on_activity = [this]() {
+      unpacker_last_activity_ms_.store(SteadyEpochMs(std::chrono::steady_clock::now()), std::memory_order_release);
+    };
+    ArchiveItemCallback guarded_on_item = [this, &on_item](ArchiveStreamItem &&item) -> bool {
+      unpacker_in_callback_.store(true, std::memory_order_release);
+      bool keep = on_item ? on_item(std::move(item)) : true;
+      unpacker_last_activity_ms_.store(SteadyEpochMs(std::chrono::steady_clock::now()), std::memory_order_release);
+      unpacker_in_callback_.store(false, std::memory_order_release);
+      return keep;
+    };
+    ArchiveExtractTask effective_task = task;
+    effective_task.idle_heartbeat_timeout_ms = effective_idle_timeout_ms;
+    rpc_res = chan->CallArchiveStream(effective_task, guarded_on_item, on_activity);
+    rpc_success = true;
+  }
+
+  auto finish_time = std::chrono::steady_clock::now();
+  DetachedWorkerResources to_cleanup;
+  bool slot_held_for_cleanup = false;
+  bool need_release_slot = false;
+  {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    if (!is_running_.load(std::memory_order_acquire) || pool_generation_ != generation || !unpacker_worker_) {
+      out_result->status = TaskStatus::kCrashed;
+      out_result->error_message = "WorkerGuard shut down during archive extraction";
+      return false;
+    }
+    WorkerInstance &unpacker = *unpacker_worker_;
+
+    if (unpacker.state == WorkerState::kKilledByWatchdog || rpc_res.status == TaskStatus::kTimeout) {
+      out_result->status = TaskStatus::kTimeout;
+      out_result->error_message =
+          rpc_res.error_message.empty() ? "Archive Unpacker timed out (stalled)" : rpc_res.error_message;
+      to_cleanup = unpacker.Detach(WorkerState::kRecycling);
+      slot_held_for_cleanup = true;
+      need_release_slot = !unpacker.watchdog_cleanup_pending;
+    } else if (!rpc_success || rpc_res.status == TaskStatus::kCrashed) {
+      out_result->status = TaskStatus::kCrashed;
+      out_result->error_message = BuildCrashErrorMessage(
+          kUnpackerWorkerIndex, rpc_res.error_message, "Unpacker crashed during archive extraction");
+      to_cleanup = unpacker.Detach(WorkerState::kRecycling);
+      slot_held_for_cleanup = true;
+      need_release_slot = !unpacker.watchdog_cleanup_pending;
+    } else {
+      *out_result = std::move(rpc_res);
+      unpacker.idle_start_time = finish_time;
+      const size_t max_mem = max_memory_bytes_.load(std::memory_order_relaxed);
+      bool recycled = false;
+      if (max_mem > 0 && unpacker.pid > 0) {
+        const size_t rss = GetProcessRssBytes(unpacker.pid);
+        if (rss > max_mem) {
+          LOG_WARN("[WorkerGuard] Unpacker (pid {}) exceeded memory limit ({:.1f} MiB > {:.1f} MiB); recycling",
+                   unpacker.pid, rss / (1024.0 * 1024.0), max_mem / (1024.0 * 1024.0));
+          memory_recycle_count_.fetch_add(1, std::memory_order_relaxed);
+          to_cleanup = unpacker.Detach(WorkerState::kRecycling);
+          recycled = true;
+          slot_held_for_cleanup = true;
+          need_release_slot = true;
+        }
+      }
+      if (!recycled) {
+        if (unpacker.watchdog_cleanup_pending) {
+          unpacker.state = WorkerState::kRecycling;
+          slot_held_for_cleanup = true;
+        } else {
+          unpacker.state = WorkerState::kIdle;
+        }
+      }
+    }
+    if (!slot_held_for_cleanup) {
+      worker_available_cv_.notify_all();
+    }
+  }
+
+  if (need_release_slot) {
+    to_cleanup.Reset();
+    const size_t unpacker_slot = kUnpackerWorkerIndex;
+    ReleaseRecycledSlots(&unpacker_slot, 1, generation);
+  }
+  return true;
+}
+
 void WorkerGuard::Shutdown() {
   std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
   ShutdownLocked();
@@ -614,11 +855,13 @@ void WorkerGuard::ShutdownLocked() {
   }
 
   std::vector<std::unique_ptr<WorkerInstance>> old_workers;
+  std::unique_ptr<WorkerInstance> old_unpacker;
   {
     std::lock_guard<std::mutex> lock(pool_mutex_);
     pool_generation_++;
     target_worker_count_ = 0;
     old_workers = std::move(workers_);
+    old_unpacker = std::move(unpacker_worker_);
 #ifdef _WIN32
     if (job_handle_) {
       CloseHandle(job_handle_);
@@ -628,6 +871,7 @@ void WorkerGuard::ShutdownLocked() {
   }
   worker_available_cv_.notify_all();
   old_workers.clear();
+  old_unpacker.reset();
 }
 
 void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
@@ -657,6 +901,11 @@ void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
           to_cleanup.push_back(workers_[i]->Detach(WorkerState::kRecycling));
           recycled_indices.push_back(i);
         }
+      }
+      if (unpacker_worker_ && unpacker_worker_->state == WorkerState::kIdle && unpacker_worker_->HasResources()) {
+        LOG_WARN("[WorkerGuard] Recycling idle Unpacker due to logging options change");
+        to_cleanup.push_back(unpacker_worker_->Detach(WorkerState::kRecycling));
+        recycled_indices.push_back(kUnpackerWorkerIndex);
       }
     }
   }

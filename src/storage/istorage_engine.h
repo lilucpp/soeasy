@@ -169,6 +169,14 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
     return DoDeleteDirectory(dir_path, out_deleted_doc_ids);
   }
 
+  bool UpsertArchiveContainer(const ArchiveContainerMeta &meta) override {
+    return DoUpsertArchiveContainer(meta);
+  }
+
+  bool DeleteArchiveContainer(int64_t container_id, std::vector<int64_t> *out_deleted_doc_ids = nullptr) override {
+    return DoDeleteArchiveContainer(container_id, out_deleted_doc_ids);
+  }
+
   /**
    * @brief Clear all indexed files, contents, and FTS tables to prepare for rebuild (Write channel).
    */
@@ -218,6 +226,21 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
     return DoGetParseIssues(filter_status, limit, offset);
   }
 
+  bool GetArchiveContainerMeta(int64_t container_id, ArchiveContainerMeta *out_meta) override {
+    return DoGetArchiveContainerMeta(container_id, out_meta);
+  }
+
+  std::vector<int64_t> GetArchiveChildDocIds(int64_t container_id) override {
+    return DoGetArchiveChildDocIds(container_id);
+  }
+
+  std::vector<ArchiveContainerMeta> ListArchiveContainers() override { return DoListArchiveContainers(); }
+
+  std::unordered_map<int64_t, std::string> GetContainerPathsByDocIds(
+      const std::vector<int64_t> &doc_ids) override {
+    return DoGetContainerPathsByDocIds(doc_ids);
+  }
+
   /**
    * @brief Acquire a dedicated read-only connection handle from the pool (Zero-lock read lease).
    */
@@ -265,6 +288,11 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
     return all_ok;
   }
   virtual int64_t DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) = 0;
+  virtual bool DoUpsertArchiveContainer(const ArchiveContainerMeta & /*meta*/) { return false; }
+  virtual bool DoDeleteArchiveContainer(int64_t /*container_id*/,
+                                        std::vector<int64_t> * /*out_deleted_doc_ids*/) {
+    return false;
+  }
   virtual bool DoClearAll() = 0;
   virtual bool DoSetMetaValue(const std::string & /*key*/, const std::string & /*value*/) { return false; }
   virtual bool DoGetMetaValue(const std::string & /*key*/, std::string * /*out_value*/) { return false; }
@@ -297,6 +325,15 @@ class IStorageEngine : public IDocumentSearchReader, public IDocumentIndexWriter
   virtual common::ParseStatusSummary DoGetParseStatusSummary() { return {}; }
   virtual std::vector<common::ParseIssueRecord> DoGetParseIssues(std::optional<common::ParseStatus> /*filter_status*/,
                                                                  size_t /*limit*/, size_t /*offset*/) {
+    return {};
+  }
+  virtual bool DoGetArchiveContainerMeta(int64_t /*container_id*/, ArchiveContainerMeta * /*out_meta*/) {
+    return false;
+  }
+  virtual std::vector<int64_t> DoGetArchiveChildDocIds(int64_t /*container_id*/) { return {}; }
+  virtual std::vector<ArchiveContainerMeta> DoListArchiveContainers() { return {}; }
+  virtual std::unordered_map<int64_t, std::string> DoGetContainerPathsByDocIds(
+      const std::vector<int64_t> & /*doc_ids*/) {
     return {};
   }
   virtual bool DoRekey(const std::string &new_key) = 0;

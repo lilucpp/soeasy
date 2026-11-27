@@ -79,6 +79,7 @@ std::vector<DisplayResultItem> BuildFulltextDisplayItems(const std::vector<servi
     item.doc_id = hit.doc_id;
     item.file_name = QString::fromStdString(hit.file_name);
     item.file_path = QString::fromStdString(hit.file_path);
+    item.container_path = QString::fromStdString(hit.container_path);
     item.ext = QString::fromStdString(hit.ext);
     item.file_size = hit.file_size;
     item.mtime = hit.mtime;
@@ -107,6 +108,7 @@ std::vector<DisplayResultItem> BuildFilenameDisplayItems(const std::vector<servi
     item.doc_id = nh.doc_id;
     item.file_name = QString::fromStdString(nh.file_name);
     item.file_path = QString::fromStdString(nh.file_path);
+    item.container_path = QString::fromStdString(nh.container_path);
     item.ext = QString::fromStdString(nh.ext);
     item.file_size = nh.file_size;
     item.mtime = nh.mtime;
@@ -866,10 +868,11 @@ void MainWindow::OnLoadMoreRequested() {
   is_loading_more_ = false;
 }
 
-void MainWindow::OnFileSelected(int64_t doc_id, const QString &file_name, const QString &file_path) {
+void MainWindow::OnFileSelected(int64_t doc_id, const QString &file_name, const QString &file_path,
+                                const QString &container_path) {
   if (preview_panel_ && preview_panel_->isVisible()) {
     auto keywords = SplitQueryKeywords(current_query_.toStdString());
-    preview_panel_->LoadDocument(doc_id, file_name, file_path, keywords);
+    preview_panel_->LoadDocument(doc_id, file_name, file_path, keywords, container_path);
   }
 }
 
@@ -883,8 +886,17 @@ void MainWindow::OnTogglePreview() {
   }
 }
 
-void MainWindow::OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path) {
-  OnFileSelected(doc_id, file_name, file_path);
+void MainWindow::OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path,
+                                     const QString &container_path) {
+  OnFileSelected(doc_id, file_name, file_path, container_path);
+
+  if (!container_path.isEmpty()) {
+    auto keywords = SplitQueryKeywords(current_query_.toStdString());
+    auto coordinator = pipeline_ ? pipeline_->search_coordinator() : nullptr;
+    ContentPreviewDialog dlg(doc_id, file_name, file_path, keywords, coordinator, this, container_path);
+    dlg.exec();
+    return;
+  }
 
   // Modern desktop search standard: double click directly opens with OS default program
   bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(file_path));

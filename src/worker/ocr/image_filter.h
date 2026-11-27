@@ -56,6 +56,11 @@ class ImageFilter {
   FilterDecision PrecheckFile(const std::string &file_path, uint64_t file_size = 0) const;
 
   /**
+   * @brief Tier 1 fast probe on an in-memory image buffer without disk access.
+   */
+  FilterDecision PrecheckBuffer(const std::string &file_path, const uint8_t *buf, size_t bytes) const;
+
+  /**
    * @brief Tier 2 variance probe: check if decoded image is solid color / blank canvas.
    */
   FilterDecision CheckDecodedImage(const cv::Mat &bgr_image) const;

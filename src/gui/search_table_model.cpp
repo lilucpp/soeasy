@@ -47,6 +47,9 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const {
       case kColFileName:
         return item.file_name;
       case kColPath:
+        if (!item.container_path.isEmpty()) {
+          return FormatArchiveBreadcrumb(QFileInfo(item.file_path).path(), item.container_path);
+        }
         return QFileInfo(item.file_path).absolutePath();
       case kColSize:
         return FormatFileSize(item.file_size);
@@ -69,13 +72,19 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const {
 
   if (role == Qt::UserRole + 1) {
     if (col == kColFileName || col == kColPath) {
-      return item.file_path;
+      return FormatArchiveBreadcrumb(item.file_path, item.container_path);
+    }
+  }
+
+  if (role == Qt::UserRole + 2) {
+    if (col == kColFileName || col == kColPath) {
+      return item.container_path;
     }
   }
 
   if (role == Qt::ToolTipRole) {
     if (col == kColFileName || col == kColPath) {
-      return item.file_path;
+      return FormatArchiveBreadcrumb(item.file_path, item.container_path);
     }
   }
 

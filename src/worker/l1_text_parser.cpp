@@ -293,6 +293,34 @@ bool L1TextParser::Parse(const ParseContext &ctx, ExtractedDocument *out_doc) {
   return true;
 }
 
+bool L1TextParser::ParseBuffer(const char *raw_bytes, size_t raw_size, const ParseContext &ctx,
+                               ExtractedDocument *out_doc) {
+  if (!out_doc) {
+    return false;
+  }
+  out_doc->utf8_text.clear();
+  out_doc->is_scanned_pdf = false;
+  out_doc->page_count = 1;
+  out_doc->metadata_json.clear();
+  out_doc->outcome = ParseOutcome::kOk;
+  out_doc->error_message.clear();
+
+  if (raw_size > 0 && !raw_bytes) {
+    out_doc->outcome = ParseOutcome::kFailed;
+    out_doc->error_message = "Null buffer provided to L1TextParser";
+    return false;
+  }
+  if (!Parse(raw_bytes ? raw_bytes : "", raw_size, ctx.ext, &out_doc->utf8_text)) {
+    out_doc->outcome = ParseOutcome::kFailed;
+    out_doc->error_message = "Failed to decode text buffer";
+    return false;
+  }
+  if (out_doc->utf8_text.empty()) {
+    out_doc->outcome = ParseOutcome::kEmptyContent;
+  }
+  return true;
+}
+
 bool L1TextParser::ParseStream(std::istream &stream, const ParseContext &ctx, ExtractedDocument *out_doc) {
   if (!out_doc) {
     return false;

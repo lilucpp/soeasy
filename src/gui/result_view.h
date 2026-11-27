@@ -59,8 +59,9 @@ class ResultView : public QTableView {
   [[nodiscard]] std::unique_ptr<CompatItemProxy> horizontalHeaderItem(int section) const;
 
  signals:
-  void FileSelected(int64_t doc_id, const QString &file_name, const QString &file_path);
-  void FileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path);
+  void FileSelected(int64_t doc_id, const QString &file_name, const QString &file_path, const QString &container_path);
+  void FileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path,
+                         const QString &container_path);
   void LoadMoreRequested();
 
  protected:

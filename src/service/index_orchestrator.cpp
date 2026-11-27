@@ -12,12 +12,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -452,11 +454,55 @@ void IndexOrchestrator::SweepOfflineDeletedFiles(const std::unordered_set<int64_
     return;
   }
 
+  std::unordered_set<int64_t> active_archive_child_ids;
+  std::vector<std::pair<int64_t, std::string>> deleted_containers;
+  if (storage_engine_) {
+    const auto containers = storage_engine_->ListArchiveContainers();
+    for (const auto &c : containers) {
+      bool under_traversed_root = false;
+      for (const auto &root_slash : traversed_root_prefixes) {
+        if (PathStartsWithNormalizedDir(c.container_path, root_slash)) {
+          under_traversed_root = true;
+          break;
+        }
+      }
+      if (!under_traversed_root) {
+        const auto children = storage_engine_->GetArchiveChildDocIds(c.container_id);
+        active_archive_child_ids.insert(children.begin(), children.end());
+        continue;
+      }
+      const bool container_visited = (visited_doc_ids.find(c.container_id) != visited_doc_ids.end());
+      std::error_code ec;
+      const bool container_exists =
+          container_visited || std::filesystem::exists(common::EncodingUtils::PathFromUtf8(c.container_path), ec);
+      if (!container_exists && !ec) {
+        deleted_containers.emplace_back(c.container_id, c.container_path);
+      } else {
+        const auto children = storage_engine_->GetArchiveChildDocIds(c.container_id);
+        active_archive_child_ids.insert(children.begin(), children.end());
+      }
+    }
+  }
+
   std::vector<int64_t> offline_deleted_ids;
   std::vector<std::string> offline_deleted_paths;
+  if (storage_engine_) {
+    for (const auto &[cid, cpath] : deleted_containers) {
+      std::vector<int64_t> child_ids;
+      storage_engine_->DeleteArchiveContainer(cid, &child_ids);
+      offline_deleted_ids.push_back(cid);
+      offline_deleted_paths.push_back(cpath);
+      PurgeFailedFilesUnder(cpath);
+      for (int64_t child_id : child_ids) {
+        offline_deleted_ids.push_back(child_id);
+      }
+    }
+  }
+
   const auto summaries = name_index_->SnapshotFileSummaries();
   for (const auto &item : summaries) {
-    if (visited_doc_ids.find(item.doc_id) != visited_doc_ids.end()) {
+    if (visited_doc_ids.find(item.doc_id) != visited_doc_ids.end() ||
+        active_archive_child_ids.find(item.doc_id) != active_archive_child_ids.end()) {
       continue;
     }
     bool under_traversed_root = false;
@@ -553,8 +599,22 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
     return 0;
   }
 
-  size_t total_files = files_to_index.size();
-  LOG_INFO("[IndexOrchestrator] Found {} candidate files to inspect/index.", total_files);
+  const size_t total_files = files_to_index.size();
+  std::vector<std::string> regular_files;
+  std::vector<std::string> archive_files;
+  regular_files.reserve(total_files);
+  for (auto &path : files_to_index) {
+    const std::string ext = ExtractExtension(ExtractFileName(path));
+    if (common::IsSupportedArchiveExtension(ext)) {
+      archive_files.push_back(std::move(path));
+    } else {
+      regular_files.push_back(std::move(path));
+    }
+  }
+  std::vector<std::string>().swap(files_to_index);
+
+  LOG_INFO("[IndexOrchestrator] Found {} candidate files to inspect/index (regular={}, archives={}).", total_files,
+           regular_files.size(), archive_files.size());
 
   if (storage_engine_) {
     storage_engine_->SetBulkMode(true);
@@ -564,12 +624,9 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
   const size_t guard_capacity = worker_guard_ ? worker_guard_->worker_count() : 0;
   const size_t worker_concurrency =
       guard_capacity > 0 ? std::min(configured_concurrency, guard_capacity) : configured_concurrency;
-  const size_t num_threads = total_files > 0 ? std::min<size_t>(worker_concurrency, total_files) : 0;
-  std::atomic<size_t> file_idx{0};
   std::mutex progress_report_mutex;
   size_t max_reported_processed = 0;
   auto last_progress_report = std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
-  size_t finished_workers = 0;
 
   IndexTaskKind scan_kind = IndexTaskKind::kInitial;
   {
@@ -583,20 +640,18 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
 
   {
     std::lock_guard<std::mutex> lock(active_scan_mutex_);
-    active_scan_running_ = (num_threads > 0);
+    active_scan_running_ = (total_files > 0);
     active_scan_kind_ = scan_kind;
     active_scan_indexed_ = 0;
     active_scan_processed_ = 0;
     active_scan_total_ = total_files;
-    if (num_threads > 0) {
+    active_scan_slots_.clear();
+    if (total_files > 0) {
       active_scan_started_at_ = std::chrono::steady_clock::now();
-      active_scan_slots_.assign(num_threads, ActiveScanSlotState{});
-    } else {
-      active_scan_slots_.clear();
     }
   }
 
-  if (num_threads > 0) {
+  if (total_files > 0) {
     struct ActiveScanResetGuard {
       IndexOrchestrator *self;
       ~ActiveScanResetGuard() {
@@ -606,101 +661,120 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
       }
     } active_scan_guard{this};
 
-    std::vector<std::thread> workers;
-    workers.reserve(num_threads);
-    for (size_t t = 0; t < num_threads; ++t) {
-      workers.emplace_back([&, t]() {
-        while (!cancel_scan_.load(std::memory_order_acquire)) {
-          const size_t idx = file_idx.fetch_add(1, std::memory_order_relaxed);
-          if (idx >= total_files) {
-            break;
-          }
-          const auto &file_path = files_to_index[idx];
-          {
-            std::lock_guard<std::mutex> lock(active_scan_mutex_);
-            active_scan_slots_[t].active = true;
-            active_scan_slots_[t].file_path = file_path;
-            active_scan_slots_[t].started_at = std::chrono::steady_clock::now();
-          }
-          const bool force_file =
-              force_ocr_reindex && IsEmbeddedOcrCandidateExt(ExtractExtension(ExtractFileName(file_path)));
-          const bool file_ok = IndexSingleFile(file_path, force_file);
+    auto run_stage = [&](const std::vector<std::string> &stage_files, size_t max_concurrency) {
+      if (stage_files.empty() || cancel_scan_.load(std::memory_order_acquire)) {
+        return;
+      }
+      const size_t num_threads = std::min<size_t>(std::max<size_t>(1, max_concurrency), stage_files.size());
+      {
+        std::lock_guard<std::mutex> lock(active_scan_mutex_);
+        active_scan_slots_.assign(num_threads, ActiveScanSlotState{});
+      }
 
-          size_t report_processed = 0;
-          bool should_report = false;
-          {
-            std::lock_guard<std::mutex> lock(active_scan_mutex_);
-            active_scan_slots_[t].active = false;
-            active_scan_slots_[t].file_path.clear();
-            if (file_ok) {
-              ++active_scan_indexed_;
+      std::atomic<size_t> stage_idx{0};
+      size_t finished_workers = 0;
+      std::vector<std::thread> workers;
+      workers.reserve(num_threads);
+      for (size_t t = 0; t < num_threads; ++t) {
+        workers.emplace_back([&, t]() {
+          while (!cancel_scan_.load(std::memory_order_acquire)) {
+            const size_t idx = stage_idx.fetch_add(1, std::memory_order_relaxed);
+            if (idx >= stage_files.size()) {
+              break;
             }
-            const size_t processed = ++active_scan_processed_;
-            report_processed = processed;
-            if (progress_cb) {
-              const auto now = std::chrono::steady_clock::now();
-              if (processed == total_files ||
-                  std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 80) {
-                last_progress_report = now;
-                should_report = true;
+            const auto &file_path = stage_files[idx];
+            {
+              std::lock_guard<std::mutex> lock(active_scan_mutex_);
+              active_scan_slots_[t].active = true;
+              active_scan_slots_[t].file_path = file_path;
+              active_scan_slots_[t].started_at = std::chrono::steady_clock::now();
+            }
+            const bool force_file =
+                force_ocr_reindex && IsEmbeddedOcrCandidateExt(ExtractExtension(ExtractFileName(file_path)));
+            const bool file_ok = IndexSingleFile(file_path, force_file);
+
+            size_t report_processed = 0;
+            bool should_report = false;
+            {
+              std::lock_guard<std::mutex> lock(active_scan_mutex_);
+              active_scan_slots_[t].active = false;
+              active_scan_slots_[t].file_path.clear();
+              if (file_ok) {
+                ++active_scan_indexed_;
+              }
+              const size_t processed = ++active_scan_processed_;
+              report_processed = processed;
+              if (progress_cb) {
+                const auto now = std::chrono::steady_clock::now();
+                if (processed == total_files ||
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 80) {
+                  last_progress_report = now;
+                  should_report = true;
+                }
               }
             }
-          }
-          if (should_report) {
-            std::lock_guard<std::mutex> report_lock(progress_report_mutex);
-            max_reported_processed = std::max(max_reported_processed, report_processed);
-            progress_cb(max_reported_processed, total_files, file_path);
-          }
-        }
-        {
-          std::lock_guard<std::mutex> lock(active_scan_mutex_);
-          ++finished_workers;
-        }
-        active_scan_cv_.notify_one();
-      });
-    }
-
-    if (progress_cb) {
-      std::unique_lock<std::mutex> lock(active_scan_mutex_);
-      while (finished_workers < num_threads) {
-        active_scan_cv_.wait_for(lock, std::chrono::milliseconds(250),
-                                 [&]() { return finished_workers >= num_threads; });
-        if (finished_workers >= num_threads) {
-          break;
-        }
-        const auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 250) {
-          std::string oldest_active_path;
-          std::chrono::steady_clock::time_point oldest_start;
-          for (const auto &slot : active_scan_slots_) {
-            if (slot.active && !slot.file_path.empty() &&
-                (oldest_active_path.empty() || slot.started_at < oldest_start)) {
-              oldest_active_path = slot.file_path;
-              oldest_start = slot.started_at;
-            }
-          }
-          if (!oldest_active_path.empty()) {
-            const size_t report_processed = active_scan_processed_;
-            last_progress_report = now;
-            lock.unlock();
-            {
+            if (should_report) {
               std::lock_guard<std::mutex> report_lock(progress_report_mutex);
               max_reported_processed = std::max(max_reported_processed, report_processed);
-              progress_cb(max_reported_processed, total_files, oldest_active_path);
+              progress_cb(max_reported_processed, total_files, file_path);
             }
-            lock.lock();
+          }
+          {
+            std::lock_guard<std::mutex> lock(active_scan_mutex_);
+            ++finished_workers;
+          }
+          active_scan_cv_.notify_one();
+        });
+      }
+
+      if (progress_cb) {
+        std::unique_lock<std::mutex> lock(active_scan_mutex_);
+        while (finished_workers < num_threads) {
+          active_scan_cv_.wait_for(lock, std::chrono::milliseconds(250),
+                                   [&]() { return finished_workers >= num_threads; });
+          if (finished_workers >= num_threads) {
+            break;
+          }
+          const auto now = std::chrono::steady_clock::now();
+          if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_progress_report).count() >= 250) {
+            std::string oldest_active_path;
+            std::chrono::steady_clock::time_point oldest_start;
+            for (const auto &slot : active_scan_slots_) {
+              if (slot.active && !slot.file_path.empty() &&
+                  (oldest_active_path.empty() || slot.started_at < oldest_start)) {
+                oldest_active_path = slot.file_path;
+                oldest_start = slot.started_at;
+              }
+            }
+            if (!oldest_active_path.empty()) {
+              const size_t report_processed = active_scan_processed_;
+              last_progress_report = now;
+              lock.unlock();
+              {
+                std::lock_guard<std::mutex> report_lock(progress_report_mutex);
+                max_reported_processed = std::max(max_reported_processed, report_processed);
+                progress_cb(max_reported_processed, total_files, oldest_active_path);
+              }
+              lock.lock();
+            }
           }
         }
       }
-    }
 
-    for (auto &th : workers) {
-      if (th.joinable()) {
-        th.join();
+      for (auto &th : workers) {
+        if (th.joinable()) {
+          th.join();
+        }
       }
-    }
+    };
+
+    // Phase 1: Regular files in parallel across all parser workers.
+    run_stage(regular_files, worker_concurrency);
+    // Phase 2: Archive containers strictly one-by-one serially (leaves within each archive parse in parallel).
+    run_stage(archive_files, 1);
   }
-  std::vector<std::string>().swap(files_to_index);
+  std::vector<std::string>().swap(regular_files);
+  std::vector<std::string>().swap(archive_files);
 
   size_t final_indexed = 0;
   size_t final_processed = 0;
@@ -735,7 +809,7 @@ size_t IndexOrchestrator::PerformScanInternal(ScanProgressCallback progress_cb, 
 
   common::SystemEnv::TrimHeap();
   LOG_INFO("[IndexOrchestrator] Initial scan completed. Indexed {}/{} files (concurrency={}).", final_indexed,
-           total_files, num_threads);
+           total_files, worker_concurrency);
   return final_indexed;
 }
 
@@ -877,6 +951,10 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
 
   int64_t doc_id = GenerateDocId(file_path);
 
+  if (common::IsSupportedArchiveExtension(ext)) {
+    return IndexArchiveContainerLocked(file_path, filename, ext, file_size, file_mtime, force_reindex);
+  }
+
   // Fast incremental check
   uint64_t db_size = 0;
   int64_t db_mtime = 0;
@@ -900,15 +978,28 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
   auto parse_end = std::chrono::high_resolution_clock::now();
   double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
 
+  return FinalizeAndPersistTaskResult(doc_id, /*parent_id=*/0, /*parse_level=*/1, file_path, filename, ext, file_size,
+                                      file_mtime, ok, &res, parse_cost_ms, start_time);
+}
+
+bool IndexOrchestrator::FinalizeAndPersistTaskResult(int64_t doc_id, int64_t parent_id, int parse_level,
+                                                     const std::string &file_path, const std::string &filename,
+                                                     const std::string &ext, uint64_t file_size, int64_t file_mtime,
+                                                     bool exec_ok, ParseTaskResult *res, double parse_cost_ms,
+                                                     std::chrono::high_resolution_clock::time_point start_time) {
+  if (!res) {
+    return false;
+  }
+  const std::string normalized_failed_key = NormalizeLockPath(file_path);
   const bool content_extracted =
-      ok && (res.status == TaskStatus::kSuccess || res.status == TaskStatus::kPartialOcr ||
-             res.status == TaskStatus::kEmptyContent);
+      exec_ok && (res->status == TaskStatus::kSuccess || res->status == TaskStatus::kPartialOcr ||
+                  res->status == TaskStatus::kEmptyContent);
   if (!content_extracted) {
     common::ParseStatus issue_stat = common::ParseStatus::kFailed;
-    std::string reason = res.error_message;
+    std::string reason = res->error_message;
     {
       std::lock_guard<std::mutex> lock(stats_mutex_);
-      switch (res.status) {
+      switch (res->status) {
         case TaskStatus::kEncrypted:
           issue_stat = common::ParseStatus::kEncrypted;
           stats_.total_encrypted_files++;
@@ -942,20 +1033,18 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
       LOG_ERROR(
           "[IndexOrchestrator] FAILED to parse '{}' (ext: '{}', size: {} B) in {:.2f} ms | "
           "status: {} | err: {}",
-          file_path, ext, file_size, parse_cost_ms, static_cast<int>(res.status), reason);
+          file_path, ext, file_size, parse_cost_ms, static_cast<int>(res->status), reason);
     }
 
-    // Index filename into NameIndex and StorageEngine, and persist status + reason into parse_issues
     PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, "", static_cast<int>(issue_stat),
-                       reason);
+                       reason, parent_id, parse_level);
 
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
     failed_files_[normalized_failed_key] = {file_size, file_mtime, reason};
     return false;
   }
 
-  // Read extracted plain text directly from Cap'n Proto RPC response
-  std::string parsed_text = std::move(res.extracted_text);
+  std::string parsed_text = std::move(res->extracted_text);
   size_t extracted_bytes = parsed_text.size();
 
   {
@@ -963,21 +1052,21 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     failed_files_.erase(normalized_failed_key);
   }
 
-  const bool is_partial_ocr = (res.status == TaskStatus::kPartialOcr);
-  const bool is_empty_content = (res.status == TaskStatus::kEmptyContent);
+  const bool is_partial_ocr = (res->status == TaskStatus::kPartialOcr);
+  const bool is_empty_content = (res->status == TaskStatus::kEmptyContent);
   common::ParseStatus final_stat = common::ParseStatus::kOk;
   std::string final_reason;
   if (is_partial_ocr) {
     final_stat = common::ParseStatus::kPartialOcr;
-    final_reason = res.error_message;
+    final_reason = res->error_message;
   } else if (is_empty_content) {
     final_stat = common::ParseStatus::kEmptyContent;
-    final_reason = !res.error_message.empty() ? res.error_message : "Document contains no extractable text";
+    final_reason = !res->error_message.empty() ? res->error_message : "Document contains no extractable text";
     parsed_text.clear();
     extracted_bytes = 0;
   }
   PersistIndexedFile(doc_id, file_path, filename, ext, file_size, file_mtime, std::move(parsed_text),
-                     static_cast<int>(final_stat), std::move(final_reason));
+                     static_cast<int>(final_stat), std::move(final_reason), parent_id, parse_level);
 
   auto total_end = std::chrono::high_resolution_clock::now();
   double total_cost_ms = std::chrono::duration<double, std::milli>(total_end - start_time).count();
@@ -997,48 +1086,370 @@ bool IndexOrchestrator::IndexSingleFileLocked(const std::string &file_path, bool
     LOG_WARN(
         "[IndexOrchestrator] PARTIAL_OCR parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
         "parse: {:.2f} ms, total: {:.2f} ms | {}",
-        file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms, res.error_message);
+        file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms, res->error_message);
   } else if (is_empty_content) {
     LOG_INFO(
         "[IndexOrchestrator] EMPTY_CONTENT indexed metadata '{}' (ext: '{}', size: {} B) | "
         "parse: {:.2f} ms, total: {:.2f} ms | {}",
-        file_path, ext, file_size, parse_cost_ms, total_cost_ms, res.error_message);
+        file_path, ext, file_size, parse_cost_ms, total_cost_ms, res->error_message);
   } else {
     LOG_INFO(
         "[IndexOrchestrator] SUCCESS parsed & enqueued '{}' (ext: '{}', size: {} B, extracted: {} B) | "
         "parse: {:.2f} ms, total: {:.2f} ms",
         file_path, ext, file_size, extracted_bytes, parse_cost_ms, total_cost_ms);
   }
-
   return true;
+}
+
+void IndexOrchestrator::CleanupExistingArchiveChildrenLocked(int64_t container_id,
+                                                             const std::string &container_path, bool force_pause) {
+  if (!storage_engine_) {
+    return;
+  }
+  if (!force_pause && storage_engine_->GetArchiveChildDocIds(container_id).empty()) {
+    return;
+  }
+  if (write_queue_) {
+    write_queue_->Pause();
+  }
+  std::vector<int64_t> deleted_ids;
+  storage_engine_->DeleteArchiveContainer(container_id, &deleted_ids);
+  if (name_index_ && !deleted_ids.empty()) {
+    name_index_->RemoveBatch(deleted_ids);
+  }
+  PurgeFailedFilesUnder(container_path);
+  if (write_queue_) {
+    write_queue_->Resume();
+  }
+}
+
+bool IndexOrchestrator::ProcessArchiveStreamWithPool(int64_t container_id, const std::string &norm_archive_path,
+                                                     const std::string &file_path, int64_t file_mtime,
+                                                     ArchiveExtractResult *out_res, int *out_item_count,
+                                                     bool *out_aborted_by_cancel, bool *out_saw_top_issue,
+                                                     common::ParseStatus *out_top_status,
+                                                     std::string *out_top_reason) {
+  if (out_aborted_by_cancel) {
+    *out_aborted_by_cancel = false;
+  }
+  ArchiveExtractTask extract_task;
+  extract_task.archive_path = file_path;
+  extract_task.max_entry_bytes = config_->max_file_size();
+  extract_task.idle_heartbeat_timeout_ms = worker_guard_->timeout_ms();
+  for (const auto &supported_ext : config_->GetSupportedExtensions()) {
+    if (!common::IsSupportedArchiveExtension(supported_ext)) {
+      extract_task.enabled_exts.push_back(supported_ext);
+    }
+  }
+
+  const size_t pool_size = std::clamp<size_t>(worker_guard_->worker_count(), 1, 8);
+  const size_t max_in_flight = std::min<size_t>(pool_size * 2, 6);
+  constexpr size_t kMaxQueuedBytes = 64ULL * 1024ULL * 1024ULL;
+  std::mutex queue_mutex;
+  std::condition_variable queue_cv;
+  std::deque<ArchiveStreamItem> leaf_queue;
+  size_t queued_bytes = 0;
+  bool queue_closed = false;
+  std::atomic<int> item_count{0};
+  std::atomic<bool> saw_top_issue{false};
+  std::atomic<bool> aborted_by_cancel{false};
+  std::mutex issue_mutex;
+
+  std::once_flag start_pool_once;
+  std::vector<std::thread> parse_threads;
+  auto ensure_pool_started = [&]() {
+    std::call_once(start_pool_once, [&]() {
+      parse_threads.reserve(pool_size);
+      for (size_t i = 0; i < pool_size; ++i) {
+        parse_threads.emplace_back([&]() {
+          while (true) {
+            ArchiveStreamItem item;
+            {
+              std::unique_lock<std::mutex> lock(queue_mutex);
+              queue_cv.wait(lock, [&]() { return queue_closed || !leaf_queue.empty(); });
+              if (leaf_queue.empty()) {
+                break;
+              }
+              item = std::move(leaf_queue.front());
+              const size_t item_bytes = item.raw_bytes.size();
+              queued_bytes = (queued_bytes >= item_bytes) ? (queued_bytes - item_bytes) : 0;
+              leaf_queue.pop_front();
+            }
+            queue_cv.notify_all();
+
+            const auto leaf_start = std::chrono::high_resolution_clock::now();
+            const int64_t leaf_doc_id = GenerateDocId(item.virtual_path);
+            const int64_t leaf_mtime = item.entry_mtime > 0 ? item.entry_mtime : file_mtime;
+            auto bytes_ptr = std::make_shared<const std::string>(std::move(item.raw_bytes));
+            const uint64_t leaf_size = item.entry_size > 0 ? item.entry_size : bytes_ptr->size();
+
+            ParseTask task{leaf_doc_id, item.virtual_path, item.ext,
+                           1,           ComputeTaskTimeoutMs(item.ext), std::move(bytes_ptr)};
+            ParseTaskResult res;
+            const auto parse_start = std::chrono::high_resolution_clock::now();
+            const bool ok = worker_guard_->ExecuteTask(task, &res);
+            const auto parse_end = std::chrono::high_resolution_clock::now();
+            const double parse_cost_ms = std::chrono::duration<double, std::milli>(parse_end - parse_start).count();
+
+            FinalizeAndPersistTaskResult(leaf_doc_id, container_id, /*parse_level=*/1, item.virtual_path,
+                                         item.file_name, item.ext, leaf_size, leaf_mtime, ok, &res, parse_cost_ms,
+                                         leaf_start);
+            item_count.fetch_add(1, std::memory_order_relaxed);
+          }
+        });
+      }
+    });
+  };
+
+  const bool extract_ok = worker_guard_->ExecuteArchiveStream(
+      extract_task,
+      [&](ArchiveStreamItem &&item) -> bool {
+        if (cancel_scan_.load(std::memory_order_acquire) || bg_stopping_.load(std::memory_order_acquire)) {
+          aborted_by_cancel.store(true, std::memory_order_release);
+          return false;
+        }
+        if (item.event != ArchiveStreamEvent::kData) {
+          if (item.event == ArchiveStreamEvent::kSkippedTooLarge) {
+            LOG_INFO("[IndexOrchestrator] Skipping oversized archive entry '{}' ({} bytes > max_file_size {} bytes): {}",
+                     item.virtual_path, item.entry_size, config_->max_file_size(), item.message);
+            return true;
+          }
+          const bool is_top_container = (NormalizeLockPath(item.virtual_path) == norm_archive_path);
+          const common::ParseStatus st = (item.event == ArchiveStreamEvent::kEncrypted)
+                                             ? common::ParseStatus::kEncrypted
+                                             : common::ParseStatus::kFailed;
+          if (is_top_container) {
+            std::lock_guard<std::mutex> lock(issue_mutex);
+            saw_top_issue.store(true, std::memory_order_release);
+            *out_top_status = st;
+            *out_top_reason = item.message;
+            return true;
+          }
+          {
+            std::lock_guard<std::mutex> lock(stats_mutex_);
+            if (st == common::ParseStatus::kEncrypted) {
+              stats_.total_encrypted_files++;
+            } else {
+              stats_.total_parse_failures++;
+            }
+          }
+          const int64_t child_id = GenerateDocId(item.virtual_path);
+          const int64_t child_mtime = item.entry_mtime > 0 ? item.entry_mtime : file_mtime;
+          PersistIndexedFile(child_id, item.virtual_path, item.file_name, item.ext, item.entry_size, child_mtime, "",
+                             static_cast<int>(st), item.message, container_id, /*parse_level=*/1);
+          item_count.fetch_add(1, std::memory_order_relaxed);
+          return true;
+        }
+
+        const uint64_t effective_size = item.entry_size > 0 ? item.entry_size : item.raw_bytes.size();
+        if (effective_size > config_->max_file_size() ||
+            !config_->ShouldIndex(item.virtual_path, item.ext, effective_size)) {
+          return true;
+        }
+
+        ensure_pool_started();
+        const size_t item_bytes = item.raw_bytes.size();
+        std::unique_lock<std::mutex> lock(queue_mutex);
+        queue_cv.wait(lock, [&]() {
+          return queue_closed ||
+                 (leaf_queue.size() < max_in_flight &&
+                  (leaf_queue.empty() || queued_bytes + item_bytes <= kMaxQueuedBytes)) ||
+                 cancel_scan_.load(std::memory_order_acquire) || bg_stopping_.load(std::memory_order_acquire);
+        });
+        if (queue_closed || cancel_scan_.load(std::memory_order_acquire) ||
+            bg_stopping_.load(std::memory_order_acquire)) {
+          aborted_by_cancel.store(true, std::memory_order_release);
+          return false;
+        }
+        queued_bytes += item_bytes;
+        leaf_queue.push_back(std::move(item));
+        lock.unlock();
+        queue_cv.notify_one();
+        return true;
+      },
+      out_res);
+
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    queue_closed = true;
+  }
+  queue_cv.notify_all();
+  for (auto &t : parse_threads) {
+    if (t.joinable()) t.join();
+  }
+
+  if (out_aborted_by_cancel) {
+    *out_aborted_by_cancel = aborted_by_cancel.load(std::memory_order_acquire) ||
+                             cancel_scan_.load(std::memory_order_acquire) ||
+                             bg_stopping_.load(std::memory_order_acquire);
+  }
+  *out_item_count = item_count.load(std::memory_order_relaxed);
+  *out_saw_top_issue = saw_top_issue.load(std::memory_order_acquire);
+  return extract_ok;
+}
+
+bool IndexOrchestrator::RecordArchiveContainerOutcome(int64_t container_id, const std::string &norm_archive_path,
+                                                      const std::string &file_path, const std::string &filename,
+                                                      const std::string &ext, uint64_t file_size, int64_t file_mtime,
+                                                      bool extract_ok, const ArchiveExtractResult &extract_res,
+                                                      int item_count, bool aborted_by_cancel, bool saw_top_issue,
+                                                      common::ParseStatus top_status, const std::string &top_reason) {
+  auto persist_container_meta = [&](common::ParseStatus status_to_save) {
+    storage::ArchiveContainerMeta meta;
+    meta.container_id = container_id;
+    meta.container_path = norm_archive_path;
+    meta.file_size = file_size;
+    meta.mtime = file_mtime;
+    meta.status = static_cast<int>(status_to_save);
+    meta.item_count = item_count;
+
+    if (write_queue_ && write_queue_->is_running()) {
+      WriteOp op;
+      op.type = WriteOpType::kUpsertArchiveContainer;
+      op.doc_id = meta.container_id;
+      op.file_path = meta.container_path;
+      op.file_size = meta.file_size;
+      op.mtime = meta.mtime;
+      op.parse_stat = meta.status;
+      op.parse_level = meta.item_count;
+      if (write_queue_->Enqueue(&op)) {
+        return;
+      }
+    }
+    if (storage_engine_) {
+      storage_engine_->UpsertArchiveContainer(meta);
+    }
+  };
+
+  if (aborted_by_cancel) {
+    // Do not record kOk when aborted mid-archive; status kUnknown forces a full re-scan next time
+    // while retaining the container row so SweepOfflineDeletedFiles does not prune already-flushed children.
+    persist_container_meta(common::ParseStatus::kUnknown);
+    return false;
+  }
+
+  common::ParseStatus container_stat = common::ParseStatus::kOk;
+  std::string container_err = extract_res.error_message;
+  if (saw_top_issue) {
+    container_stat = top_status;
+    container_err = top_reason;
+  } else if (!extract_ok || extract_res.status != TaskStatus::kSuccess) {
+    switch (extract_res.status) {
+      case TaskStatus::kEncrypted:
+        container_stat = common::ParseStatus::kEncrypted;
+        break;
+      case TaskStatus::kTimeout:
+        container_stat = common::ParseStatus::kTimeout;
+        break;
+      case TaskStatus::kCrashed:
+        container_stat = common::ParseStatus::kCrashed;
+        break;
+      default:
+        container_stat = common::ParseStatus::kFailed;
+        break;
+    }
+  }
+
+  if (container_stat != common::ParseStatus::kOk) {
+    {
+      std::lock_guard<std::mutex> lock(stats_mutex_);
+      if (container_stat == common::ParseStatus::kEncrypted) {
+        stats_.total_encrypted_files++;
+      } else {
+        stats_.total_parse_failures++;
+        if (container_stat == common::ParseStatus::kTimeout) stats_.total_parse_timeouts++;
+        if (container_stat == common::ParseStatus::kCrashed) stats_.total_parse_crashes++;
+      }
+    }
+    PersistIndexedFile(container_id, file_path, filename, ext, file_size, file_mtime, "",
+                       static_cast<int>(container_stat), container_err, /*parent_id=*/0, /*parse_level=*/0);
+    std::lock_guard<std::mutex> flock(failed_files_mutex_);
+    failed_files_[norm_archive_path] = {file_size, file_mtime, container_err};
+  } else {
+    {
+      std::lock_guard<std::mutex> flock(failed_files_mutex_);
+      failed_files_.erase(norm_archive_path);
+    }
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    stats_.total_files_indexed++;
+  }
+
+  persist_container_meta(container_stat);
+  return container_stat == common::ParseStatus::kOk;
+}
+
+bool IndexOrchestrator::IndexArchiveContainerLocked(const std::string &file_path, const std::string &filename,
+                                                    const std::string &ext, uint64_t file_size, int64_t file_mtime,
+                                                    bool force_reindex) {
+  std::lock_guard<std::mutex> archive_lock(archive_process_mutex_);
+  const std::string norm_archive_path = NormalizeLockPath(file_path);
+  const int64_t container_id = GenerateDocId(file_path);
+  const bool must_rescan = force_reindex || force_archive_rescan_.load(std::memory_order_acquire);
+
+  storage::ArchiveContainerMeta existing_meta;
+  const bool meta_found = storage_engine_ && storage_engine_->GetArchiveContainerMeta(container_id, &existing_meta);
+  if (!must_rescan && meta_found && existing_meta.file_size == file_size && existing_meta.mtime == file_mtime &&
+      existing_meta.status == static_cast<int>(common::ParseStatus::kOk)) {
+    if (name_index_) {
+      name_index_->Upsert(NameRecord{container_id, filename, file_path, ext, file_size, file_mtime});
+    }
+    return true;
+  }
+
+  CleanupExistingArchiveChildrenLocked(container_id, file_path, meta_found);
+
+  // Retain searchable filename-only record for the host archive container itself.
+  PersistIndexedFile(container_id, file_path, filename, ext, file_size, file_mtime, "",
+                     static_cast<int>(common::ParseStatus::kOk), "", /*parent_id=*/0, /*parse_level=*/0);
+
+  ArchiveExtractResult extract_res;
+  int item_count = 0;
+  bool aborted_by_cancel = false;
+  bool saw_top_issue = false;
+  common::ParseStatus top_status = common::ParseStatus::kOk;
+  std::string top_reason;
+  const bool extract_ok = ProcessArchiveStreamWithPool(container_id, norm_archive_path, file_path, file_mtime,
+                                                       &extract_res, &item_count, &aborted_by_cancel, &saw_top_issue,
+                                                       &top_status, &top_reason);
+  return RecordArchiveContainerOutcome(container_id, norm_archive_path, file_path, filename, ext, file_size,
+                                       file_mtime, extract_ok, extract_res, item_count, aborted_by_cancel,
+                                       saw_top_issue, top_status, top_reason);
 }
 
 void IndexOrchestrator::PersistIndexedFile(int64_t doc_id, const std::string &file_path, const std::string &filename,
                                            const std::string &ext, uint64_t file_size, int64_t file_mtime,
-                                           std::string content, int parse_stat, std::string error_reason) {
+                                           std::string content, int parse_stat, std::string error_reason,
+                                           int64_t parent_id, int parse_level) {
   if (name_index_) {
-    NameRecord rec{doc_id, filename, file_path, ext, file_size, file_mtime};
-    name_index_->Upsert(rec);
+    name_index_->Upsert(NameRecord{doc_id, filename, file_path, ext, file_size, file_mtime});
   }
 
   if (write_queue_ && write_queue_->is_running()) {
-    WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext, file_size, file_mtime, 1, std::move(content),
-               parse_stat, std::move(error_reason)};
+    WriteOp op{WriteOpType::kIndex, doc_id, file_path, filename, ext, file_size, file_mtime, parse_level,
+               std::move(content), parse_stat, std::move(error_reason), parent_id};
     if (write_queue_->Enqueue(&op)) {
       return;
     }
     LOG_WARN("[IndexOrchestrator] Write queue rejected '{}' during shutdown, falling back to synchronous write",
              file_path);
-    if (storage_engine_) {
-      storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                     op.parse_level, op.content, op.parse_stat, op.error_reason);
-    }
-    return;
+    content = std::move(op.content);
+    error_reason = std::move(op.error_reason);
   }
 
   if (storage_engine_) {
-    storage_engine_->IndexDocument(doc_id, file_path, filename, ext, file_size, file_mtime, 1, content, parse_stat,
-                                   error_reason);
+    storage::DocumentIndexEntry entry;
+    entry.doc_id = doc_id;
+    entry.parent_id = parent_id;
+    entry.file_path = file_path;
+    entry.file_name = filename;
+    entry.ext = ext;
+    entry.file_size = file_size;
+    entry.mtime = file_mtime;
+    entry.parse_level = parse_level;
+    entry.utf8_content = std::move(content);
+    entry.parse_stat = parse_stat;
+    entry.error_reason = std::move(error_reason);
+    storage_engine_->IndexDocument(entry);
   }
 }
 
@@ -1069,26 +1480,54 @@ bool IndexOrchestrator::ApplyLiveFileChange(const DebouncedEvent &event, bool fr
       if (!is_subtree) {
         handled_as_single_file = true;
         LOG_INFO("[IndexOrchestrator] File delete event: '{}' | removing from index", target_path);
-        if (name_index_) {
-          name_index_->Remove(doc_id);
-        }
-        {
-          std::lock_guard<std::mutex> flock(failed_files_mutex_);
-          failed_files_.erase(NormalizeLockPath(target_path));
-        }
-        if (write_queue_ && write_queue_->is_running()) {
-          WriteOp op;
-          op.type = WriteOpType::kDelete;
-          op.doc_id = doc_id;
-          if (!write_queue_->Enqueue(&op) && storage_engine_) {
+        const std::string target_ext = ExtractExtension(ExtractFileName(target_path));
+        if (common::IsSupportedArchiveExtension(target_ext) && storage_engine_) {
+          if (write_queue_) {
+            write_queue_->Pause();
+          } else {
+            DoFlushWriteQueue();
+          }
+          std::vector<int64_t> child_ids;
+          storage_engine_->DeleteArchiveContainer(doc_id, &child_ids);
+          if (name_index_ && !child_ids.empty()) {
+            name_index_->RemoveBatch(child_ids);
+          }
+          PurgeFailedFilesUnder(target_path);
+          {
+            std::lock_guard<std::mutex> flock(failed_files_mutex_);
+            failed_files_.erase(NormalizeLockPath(target_path));
+          }
+          if (name_index_) {
+            name_index_->Remove(doc_id);
+          }
+          storage_engine_->DeleteDocument(doc_id);
+          if (write_queue_) {
+            write_queue_->Resume();
+          }
+          std::lock_guard<std::mutex> lock(stats_mutex_);
+          stats_.total_files_deleted += 1 + child_ids.size();
+        } else {
+          if (name_index_) {
+            name_index_->Remove(doc_id);
+          }
+          {
+            std::lock_guard<std::mutex> flock(failed_files_mutex_);
+            failed_files_.erase(NormalizeLockPath(target_path));
+          }
+          if (write_queue_ && write_queue_->is_running()) {
+            WriteOp op;
+            op.type = WriteOpType::kDelete;
+            op.doc_id = doc_id;
+            if (!write_queue_->Enqueue(&op) && storage_engine_) {
+              storage_engine_->DeleteDocument(doc_id);
+            }
+          } else if (storage_engine_) {
             storage_engine_->DeleteDocument(doc_id);
           }
-        } else if (storage_engine_) {
-          storage_engine_->DeleteDocument(doc_id);
-        }
 
-        std::lock_guard<std::mutex> lock(stats_mutex_);
-        stats_.total_files_deleted++;
+          std::lock_guard<std::mutex> lock(stats_mutex_);
+          stats_.total_files_deleted++;
+        }
       }
     }
 
@@ -1267,6 +1706,23 @@ size_t IndexOrchestrator::PruneStaleEntriesByConfigLocked() {
     }
   }
 
+  std::vector<std::pair<int64_t, std::string>> stale_containers;
+  if (storage_engine_) {
+    for (const auto &c : storage_engine_->ListArchiveContainers()) {
+      bool inside_dir = false;
+      for (const auto &prefix : dir_prefixes) {
+        if (PathStartsWithNormalizedDir(c.container_path, prefix)) {
+          inside_dir = true;
+          break;
+        }
+      }
+      const std::string c_ext = ExtractExtension(ExtractFileName(c.container_path));
+      if (!inside_dir || !config_->ShouldIndex(c.container_path, c_ext, c.file_size)) {
+        stale_containers.emplace_back(c.container_id, c.container_path);
+      }
+    }
+  }
+
   std::vector<int64_t> stale_doc_ids;
   std::vector<std::string> stale_paths;
   for (const auto &item : summaries) {
@@ -1283,7 +1739,7 @@ size_t IndexOrchestrator::PruneStaleEntriesByConfigLocked() {
     }
   }
 
-  if (stale_doc_ids.empty()) {
+  if (stale_containers.empty() && stale_doc_ids.empty()) {
     return 0;
   }
 
@@ -1293,28 +1749,54 @@ size_t IndexOrchestrator::PruneStaleEntriesByConfigLocked() {
     DoFlushWriteQueue();
   }
 
+  std::vector<int64_t> extra_child_ids;
   if (storage_engine_) {
+    for (const auto &[cid, cpath] : stale_containers) {
+      (void)cpath;
+      std::vector<int64_t> child_ids;
+      storage_engine_->DeleteArchiveContainer(cid, &child_ids);
+      extra_child_ids.insert(extra_child_ids.end(), child_ids.begin(), child_ids.end());
+    }
+  }
+  std::unordered_set<int64_t> deleted_child_set(extra_child_ids.begin(), extra_child_ids.end());
+  if (!deleted_child_set.empty()) {
+    stale_doc_ids.erase(
+        std::remove_if(stale_doc_ids.begin(), stale_doc_ids.end(),
+                       [&](int64_t id) { return deleted_child_set.find(id) != deleted_child_set.end(); }),
+        stale_doc_ids.end());
+  }
+  if (storage_engine_ && !stale_doc_ids.empty()) {
     storage_engine_->DeleteDocumentsBatch(stale_doc_ids);
   }
-  name_index_->RemoveBatch(stale_doc_ids);
+  if (!extra_child_ids.empty()) {
+    name_index_->RemoveBatch(extra_child_ids);
+  }
+  if (!stale_doc_ids.empty()) {
+    name_index_->RemoveBatch(stale_doc_ids);
+  }
 
   if (write_queue_) {
     write_queue_->Resume();
   }
 
+  for (const auto &[cid, cpath] : stale_containers) {
+    (void)cid;
+    PurgeFailedFilesUnder(cpath);
+  }
   {
     std::lock_guard<std::mutex> flock(failed_files_mutex_);
     for (const auto &p : stale_paths) {
       failed_files_.erase(NormalizeLockPath(p));
     }
   }
+  const size_t total_pruned = stale_doc_ids.size() + deleted_child_set.size();
   {
     std::lock_guard<std::mutex> lock(stats_mutex_);
-    stats_.total_files_deleted += static_cast<uint64_t>(stale_doc_ids.size());
+    stats_.total_files_deleted += static_cast<uint64_t>(total_pruned);
   }
   DoTriggerAsyncSpaceReclaim();
-  LOG_INFO("[IndexOrchestrator] Pruned {} stale index entries matching updated config rules.", stale_doc_ids.size());
-  return stale_doc_ids.size();
+  LOG_INFO("[IndexOrchestrator] Pruned {} stale index entries matching updated config rules.", total_pruned);
+  return total_pruned;
 }
 
 void IndexOrchestrator::DoSyncWatchedDirectories() {
@@ -1541,6 +2023,13 @@ void IndexOrchestrator::BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t 
       const bool needs_scan = force_rescan || !diff.added_dirs.empty() || diff.rules_expanded ||
                               persisted_index_state_.load(std::memory_order_acquire) != PersistedIndexState::kReady;
       if (needs_scan && !cancel_scan_.load() && !bg_stopping_.load()) {
+        struct ScopedArchiveRescanFlag {
+          std::atomic<bool> &flag;
+          explicit ScopedArchiveRescanFlag(std::atomic<bool> &f, bool active) : flag(f) {
+            if (active) flag.store(true, std::memory_order_release);
+          }
+          ~ScopedArchiveRescanFlag() { flag.store(false, std::memory_order_release); }
+        } rescan_guard(force_archive_rescan_, diff.rules_expanded);
         std::lock_guard<std::mutex> scan_lock(scan_mutex_);
         PerformScanInternal(std::move(progress_forwarder), /*manage_buffering=*/true, /*manage_phase=*/false,
                             /*force_ocr_reindex=*/diff.ocr_expanded);

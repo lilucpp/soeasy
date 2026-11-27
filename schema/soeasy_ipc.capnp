@@ -21,19 +21,12 @@ enum ParseStatusCode {
   emptyContent @7;
 }
 
-struct ParseResult {
-  docId           @0 :Int64;
-  statusCode      @1 :ParseStatusCode;
-  extractedBytes  @2 :UInt64;
-  pageCount       @3 :UInt32;
-  isScannedPdf    @4 :Bool;
-  message         @5 :Text;
-  extractedText   @6 :Text;
-}
-
-struct WorkerPingResponse {
-  rssBytes  @0 :UInt64;
-  isBusy    @1 :Bool;
+enum ArchiveItemEvent {
+  data            @0;
+  encrypted       @1;
+  skippedTooLarge @2;
+  failed          @3;
+  heartbeat       @4;
 }
 
 interface TextStreamReceiver {
@@ -41,10 +34,30 @@ interface TextStreamReceiver {
   finish    @1 (totalBytes :UInt64, isScannedPdf :Bool, statusCode :ParseStatusCode, errorMsg :Text) -> ();
 }
 
+interface ArchiveStreamReceiver {
+  onItemMeta  @0 (virtualPath :Text,
+                  fileName    :Text,
+                  ext         :Text,
+                  entrySize   :UInt64,
+                  entryMtime  :Int64,
+                  event       :ArchiveItemEvent,
+                  message     :Text) -> (keepGoing :Bool);
+  onItemChunk @1 (chunk :Data) -> ();
+  onItemEnd   @2 () -> (keepGoing :Bool);
+  finish      @3 (statusCode :ParseStatusCode, message :Text) -> ();
+}
+
+interface BufferParseSession {
+  sendChunk @0 (chunk :Data) -> ();
+  finish    @1 (receiver :TextStreamReceiver) -> ();
+}
+
 interface WorkerAgent {
-  parseFile       @0 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, timeoutMs :UInt32)
-                  -> (result :ParseResult);
-  parseFileStream @1 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, receiver :TextStreamReceiver, timeoutMs :UInt32)
-                  -> ();
-  ping            @2 () -> (rssBytes :UInt64, isBusy :Bool);
+  parseFileStream      @0 (docId :Int64, filePath :Text, ext :Text, level :ParseLevel, receiver :TextStreamReceiver, timeoutMs :UInt32)
+                       -> ();
+  ping                 @1 () -> (rssBytes :UInt64, isBusy :Bool);
+  beginBufferParse     @2 (docId :Int64, filePath :Text, ext :Text, totalBytes :UInt64, level :ParseLevel, timeoutMs :UInt32)
+                       -> (session :BufferParseSession);
+  extractArchiveStream @3 (archivePath :Text, enabledExts :List(Text), maxEntryBytes :UInt64, receiver :ArchiveStreamReceiver)
+                       -> ();
 }

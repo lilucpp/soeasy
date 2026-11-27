@@ -47,6 +47,7 @@ third_party/doctotext/include/
 third_party/doctotext/lib/
 third_party/doctotext/.installed_*
 third_party/opencv/
+third_party/libarchive/
 
 # Database and test artifacts
 *.db

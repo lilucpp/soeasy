@@ -649,7 +649,7 @@ bool StorageEngine::ExecutePragmas(sqlite3 *db, const std::string &key) {
 }
 
 bool StorageEngine::InitTables() {
-  const char *schema_sql = R"SQL(
+  const char *tables_sql = R"SQL(
     -- 1. Metadata and quick file name lookup
     CREATE TABLE IF NOT EXISTS files (
         doc_id      INTEGER PRIMARY KEY,
@@ -663,9 +663,16 @@ bool StorageEngine::InitTables() {
         parse_level INTEGER NOT NULL DEFAULT 0,
         parse_stat  INTEGER NOT NULL DEFAULT 0
     );
-    CREATE INDEX IF NOT EXISTS idx_files_ext_mtime ON files(ext, mtime);
-    CREATE INDEX IF NOT EXISTS idx_files_name ON files(file_name COLLATE NOCASE);
-    CREATE INDEX IF NOT EXISTS idx_files_path ON files(file_path);
+
+    -- 1b. Host archive container tracking (mtime/size incremental & cascade deletes)
+    CREATE TABLE IF NOT EXISTS archive_containers (
+        container_id   INTEGER PRIMARY KEY,
+        container_path TEXT NOT NULL UNIQUE,
+        file_size      INTEGER NOT NULL DEFAULT 0,
+        mtime          INTEGER NOT NULL DEFAULT 0,
+        status         INTEGER NOT NULL DEFAULT 0,
+        item_count     INTEGER NOT NULL DEFAULT 0
+    );
 
     -- 2. Compressed original content storage
     CREATE TABLE IF NOT EXISTS doc_contents (
@@ -708,13 +715,64 @@ bool StorageEngine::InitTables() {
         reason      TEXT NOT NULL DEFAULT '',
         updated_at  INTEGER NOT NULL DEFAULT 0
     );
-    CREATE INDEX IF NOT EXISTS idx_parse_issues_status ON parse_issues(status, updated_at DESC);
   )SQL";
 
   char *err_msg = nullptr;
-  int rc = sqlite3_exec(writer_db_, schema_sql, nullptr, nullptr, &err_msg);
+  int rc = sqlite3_exec(writer_db_, tables_sql, nullptr, nullptr, &err_msg);
   if (rc != SQLITE_OK) {
-    SetLastError(err_msg ? err_msg : "Schema initialization failed");
+    SetLastError(err_msg ? err_msg : "Schema table initialization failed");
+    sqlite3_free(err_msg);
+    return false;
+  }
+
+  // Upgrade pre-archive databases whose existing `files` table lacks `parent_id` or `root_dir_id`
+  // before creating dependent indexes.
+  bool has_root_dir_id = false;
+  bool has_parent_id = false;
+  {
+    SqliteStmtScope pragma_stmt;
+    if (sqlite3_prepare_v2(writer_db_, "PRAGMA table_info(files);", -1, pragma_stmt.address(), nullptr) != SQLITE_OK) {
+      SetLastError(sqlite3_errmsg(writer_db_));
+      return false;
+    }
+    while (sqlite3_step(pragma_stmt) == SQLITE_ROW) {
+      const char *col = reinterpret_cast<const char *>(sqlite3_column_text(pragma_stmt, 1));
+      if (!col) continue;
+      if (std::strcmp(col, "root_dir_id") == 0) has_root_dir_id = true;
+      if (std::strcmp(col, "parent_id") == 0) has_parent_id = true;
+    }
+  }
+  if (!has_root_dir_id) {
+    rc = sqlite3_exec(writer_db_, "ALTER TABLE files ADD COLUMN root_dir_id INTEGER NOT NULL DEFAULT 0;", nullptr,
+                      nullptr, &err_msg);
+    if (rc != SQLITE_OK) {
+      SetLastError(err_msg ? err_msg : "Failed migrating files.root_dir_id");
+      sqlite3_free(err_msg);
+      return false;
+    }
+  }
+  if (!has_parent_id) {
+    rc = sqlite3_exec(writer_db_, "ALTER TABLE files ADD COLUMN parent_id INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr,
+                      &err_msg);
+    if (rc != SQLITE_OK) {
+      SetLastError(err_msg ? err_msg : "Failed migrating files.parent_id");
+      sqlite3_free(err_msg);
+      return false;
+    }
+  }
+
+  const char *indexes_sql = R"SQL(
+    CREATE INDEX IF NOT EXISTS idx_files_ext_mtime ON files(ext, mtime);
+    CREATE INDEX IF NOT EXISTS idx_files_name ON files(file_name COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_files_path ON files(file_path);
+    CREATE INDEX IF NOT EXISTS idx_files_parent ON files(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_archive_containers_path ON archive_containers(container_path);
+    CREATE INDEX IF NOT EXISTS idx_parse_issues_status ON parse_issues(status, updated_at DESC);
+  )SQL";
+
+  rc = sqlite3_exec(writer_db_, indexes_sql, nullptr, nullptr, &err_msg);
+  if (rc != SQLITE_OK) {
+    SetLastError(err_msg ? err_msg : "Schema index initialization failed");
     sqlite3_free(err_msg);
     return false;
   }
@@ -763,9 +821,10 @@ bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   // 2. Insert into files table
   if (!stmt_files_insert_) {
     const char *files_sql = R"SQL(
-      INSERT INTO files (doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      INSERT INTO files (doc_id, parent_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat)
+      VALUES (?1, ?9, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
       ON CONFLICT(doc_id) DO UPDATE SET
+          parent_id=excluded.parent_id,
           file_name=excluded.file_name,
           file_path=excluded.file_path,
           ext=excluded.ext,
@@ -795,6 +854,7 @@ bool StorageEngine::DoIndexDocument(const DocumentIndexEntry &entry) {
   sqlite3_bind_int64(stmt_files_insert_, 6, entry.mtime);
   sqlite3_bind_int(stmt_files_insert_, 7, entry.parse_level);
   sqlite3_bind_int(stmt_files_insert_, 8, effective_parse_stat);
+  sqlite3_bind_int64(stmt_files_insert_, 9, entry.parent_id);
 
   if (sqlite3_step(stmt_files_insert_) != SQLITE_DONE) {
     SetLastError(sqlite3_errmsg(writer_db_));
@@ -1247,6 +1307,17 @@ int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vecto
     sqlite3_step(stmt_del_files);
   }
 
+  const char *del_containers_sql =
+      "DELETE FROM archive_containers WHERE container_path = ?1 OR container_path LIKE ?2 ESCAPE '^' OR "
+      "container_path LIKE ?3 ESCAPE '^';";
+  SqliteStmtScope stmt_del_containers;
+  if (sqlite3_prepare_v2(writer_db_, del_containers_sql, -1, stmt_del_containers.address(), nullptr) == SQLITE_OK) {
+    sqlite3_bind_text(stmt_del_containers, 1, normalized.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_del_containers, 2, prefix_slash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt_del_containers, 3, prefix_bslash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt_del_containers);
+  }
+
   if (is_outer_tx) {
     uncommitted_count_ += doc_ids.size();
   } else {
@@ -1258,6 +1329,109 @@ int64_t StorageEngine::DoDeleteDirectory(const std::string &dir_path, std::vecto
     return static_cast<int64_t>(out_deleted_doc_ids->size());
   }
   return static_cast<int64_t>(doc_ids.size());
+}
+
+bool StorageEngine::DoUpsertArchiveContainer(const ArchiveContainerMeta &meta) {
+  std::lock_guard<std::mutex> lock(writer_mutex_);
+  if (!writer_db_) {
+    SetLastError("Database not open");
+    return false;
+  }
+  std::string norm_path = meta.container_path;
+  std::replace(norm_path.begin(), norm_path.end(), '\\', '/');
+
+  const char *sql = R"SQL(
+    INSERT INTO archive_containers (container_id, container_path, file_size, mtime, status, item_count)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    ON CONFLICT(container_id) DO UPDATE SET
+        container_path=excluded.container_path,
+        file_size=excluded.file_size,
+        mtime=excluded.mtime,
+        status=excluded.status,
+        item_count=excluded.item_count;
+  )SQL";
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(writer_db_, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(writer_db_));
+    return false;
+  }
+  sqlite3_bind_int64(stmt, 1, meta.container_id);
+  sqlite3_bind_text(stmt, 2, norm_path.data(), static_cast<int>(norm_path.size()), SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 3, static_cast<int64_t>(meta.file_size));
+  sqlite3_bind_int64(stmt, 4, meta.mtime);
+  sqlite3_bind_int(stmt, 5, meta.status);
+  sqlite3_bind_int(stmt, 6, meta.item_count);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    SetLastError(sqlite3_errmsg(writer_db_));
+    return false;
+  }
+  return true;
+}
+
+bool StorageEngine::DoDeleteArchiveContainer(int64_t container_id, std::vector<int64_t> *out_deleted_doc_ids) {
+  std::lock_guard<std::mutex> lock(writer_mutex_);
+  if (out_deleted_doc_ids) {
+    out_deleted_doc_ids->clear();
+  }
+  if (!writer_db_) {
+    SetLastError("Database not open");
+    return false;
+  }
+
+  std::vector<int64_t> child_ids;
+  std::unordered_map<std::string, int> ext_counts;
+  {
+    SqliteStmtScope stmt;
+    if (sqlite3_prepare_v2(writer_db_, "SELECT doc_id, ext FROM files WHERE parent_id = ?1;", -1, stmt.address(),
+                           nullptr) != SQLITE_OK) {
+      SetLastError(sqlite3_errmsg(writer_db_));
+      return false;
+    }
+    sqlite3_bind_int64(stmt, 1, container_id);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      child_ids.push_back(sqlite3_column_int64(stmt, 0));
+      const char *ext = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+      if (ext) {
+        ext_counts[ext]++;
+      }
+    }
+  }
+
+  const bool is_outer_tx = IsInTransactionUnlocked();
+  if (!is_outer_tx) {
+    sqlite3_exec(writer_db_, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr);
+  }
+
+  if (!child_ids.empty() && !DeleteDocDetailsUnlocked(child_ids, ext_counts, /*delete_files_rows=*/true)) {
+    if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    return false;
+  }
+
+  {
+    SqliteStmtScope stmt_del;
+    if (sqlite3_prepare_v2(writer_db_, "DELETE FROM archive_containers WHERE container_id = ?1;", -1,
+                           stmt_del.address(), nullptr) != SQLITE_OK) {
+      SetLastError(sqlite3_errmsg(writer_db_));
+      if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
+    sqlite3_bind_int64(stmt_del, 1, container_id);
+    if (sqlite3_step(stmt_del) != SQLITE_DONE) {
+      SetLastError(sqlite3_errmsg(writer_db_));
+      if (!is_outer_tx) sqlite3_exec(writer_db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return false;
+    }
+  }
+
+  if (is_outer_tx) {
+    uncommitted_count_ += child_ids.size() + 1;
+  } else {
+    sqlite3_exec(writer_db_, "COMMIT;", nullptr, nullptr, nullptr);
+  }
+  if (out_deleted_doc_ids) {
+    *out_deleted_doc_ids = std::move(child_ids);
+  }
+  return true;
 }
 
 bool StorageEngine::DoClearAll() {
@@ -1283,6 +1457,7 @@ bool StorageEngine::DoClearAll() {
     try {
       SQLite::Transaction transaction(*writer_cpp_db_);
       writer_cpp_db_->exec("DELETE FROM files;");
+      writer_cpp_db_->exec("DELETE FROM archive_containers;");
       writer_cpp_db_->exec("DELETE FROM doc_contents;");
       writer_cpp_db_->exec("DELETE FROM ext_stats;");
       writer_cpp_db_->exec("DELETE FROM parse_issues;");
@@ -1305,6 +1480,7 @@ bool StorageEngine::DoClearAll() {
     char *err_msg = nullptr;
     const char *sql = R"SQL(
       DELETE FROM files;
+      DELETE FROM archive_containers;
       DELETE FROM doc_contents;
       DELETE FROM ext_stats;
       DELETE FROM parse_issues;
@@ -1374,17 +1550,21 @@ std::vector<SearchResultItem> StorageEngine::DoSearch(const std::string &query, 
   }
 
   const char *search_sql = has_prefix ? R"SQL(
-          SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
+          SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score,
+                 COALESCE(ac.container_path, '') AS container_path
           FROM fts_docs AS fts
           JOIN files AS f ON f.doc_id = fts.rowid
+          LEFT JOIN archive_containers AS ac ON f.parent_id != 0 AND ac.container_id = f.parent_id
           WHERE fts_docs MATCH ?1 AND f.file_path LIKE ?4 ESCAPE '^'
           ORDER BY score ASC
           LIMIT ?2 OFFSET ?3;
         )SQL"
                                       : R"SQL(
-          SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score
+          SELECT fts.rowid, f.file_name, f.file_path, f.ext, f.file_size, f.mtime, bm25(fts_docs) AS score,
+                 COALESCE(ac.container_path, '') AS container_path
           FROM fts_docs AS fts
           JOIN files AS f ON f.doc_id = fts.rowid
+          LEFT JOIN archive_containers AS ac ON f.parent_id != 0 AND ac.container_id = f.parent_id
           WHERE fts_docs MATCH ?1
           ORDER BY score ASC
           LIMIT ?2 OFFSET ?3;
@@ -1440,6 +1620,7 @@ std::vector<SearchResultItem> StorageEngine::DoSearch(const std::string &query, 
         item.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 4));
         item.mtime = sqlite3_column_int64(stmt, 5);
         item.rank = sqlite3_column_double(stmt, 6);
+        item.container_path = SafeColumnText(stmt, 7);
         results.push_back(std::move(item));
       } else if (rc == SQLITE_DONE) {
         break;
@@ -1594,7 +1775,8 @@ bool StorageEngine::DoForEachFileMetadata(FileMetaCallback callback) {
     return false;
   }
 
-  const char *sql = "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat FROM files;";
+  const char *sql =
+      "SELECT doc_id, file_name, file_path, ext, file_size, mtime, parse_level, parse_stat, parent_id FROM files;";
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
     SetLastError(sqlite3_errmsg(target_db));
@@ -1611,6 +1793,7 @@ bool StorageEngine::DoForEachFileMetadata(FileMetaCallback callback) {
     r.mtime = sqlite3_column_int64(stmt, 5);
     r.parse_level = sqlite3_column_int(stmt, 6);
     r.parse_stat = sqlite3_column_int(stmt, 7);
+    r.parent_id = sqlite3_column_int64(stmt, 8);
     callback(r);
   }
   return true;
@@ -1748,10 +1931,18 @@ std::vector<common::ParseIssueRecord> StorageEngine::DoGetParseIssues(
 
   const char *sql =
       filter_status.has_value()
-          ? "SELECT doc_id, file_name, file_path, ext, file_size, mtime, status, reason, updated_at "
-            "FROM parse_issues WHERE status = ?1 ORDER BY updated_at DESC, file_path ASC LIMIT ?2 OFFSET ?3;"
-          : "SELECT doc_id, file_name, file_path, ext, file_size, mtime, status, reason, updated_at "
-            "FROM parse_issues ORDER BY updated_at DESC, file_path ASC LIMIT ?1 OFFSET ?2;";
+          ? "SELECT p.doc_id, p.file_name, p.file_path, p.ext, p.file_size, p.mtime, p.status, p.reason, p.updated_at, "
+            "COALESCE(ac.container_path, '') AS container_path "
+            "FROM parse_issues p "
+            "LEFT JOIN files f ON f.doc_id = p.doc_id "
+            "LEFT JOIN archive_containers ac ON f.parent_id != 0 AND ac.container_id = f.parent_id "
+            "WHERE p.status = ?1 ORDER BY p.updated_at DESC, p.file_path ASC LIMIT ?2 OFFSET ?3;"
+          : "SELECT p.doc_id, p.file_name, p.file_path, p.ext, p.file_size, p.mtime, p.status, p.reason, p.updated_at, "
+            "COALESCE(ac.container_path, '') AS container_path "
+            "FROM parse_issues p "
+            "LEFT JOIN files f ON f.doc_id = p.doc_id "
+            "LEFT JOIN archive_containers ac ON f.parent_id != 0 AND ac.container_id = f.parent_id "
+            "ORDER BY p.updated_at DESC, p.file_path ASC LIMIT ?1 OFFSET ?2;";
 
   SqliteStmtScope stmt;
   if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
@@ -1777,9 +1968,140 @@ std::vector<common::ParseIssueRecord> StorageEngine::DoGetParseIssues(
     rec.status = common::ParseStatusFromInt(sqlite3_column_int(stmt, 6));
     rec.reason = SafeColumnText(stmt, 7);
     rec.updated_at = sqlite3_column_int64(stmt, 8);
+    rec.container_path = SafeColumnText(stmt, 9);
     results.push_back(std::move(rec));
   }
   return results;
+}
+
+bool StorageEngine::DoGetArchiveContainerMeta(int64_t container_id, ArchiveContainerMeta *out_meta) {
+  if (out_meta) {
+    *out_meta = ArchiveContainerMeta{};
+  }
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    return false;
+  }
+
+  const char *sql =
+      "SELECT container_id, container_path, file_size, mtime, status, item_count "
+      "FROM archive_containers WHERE container_id = ?1;";
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(target_db));
+    return false;
+  }
+  sqlite3_bind_int64(stmt, 1, container_id);
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    return false;
+  }
+  if (out_meta) {
+    out_meta->container_id = sqlite3_column_int64(stmt, 0);
+    out_meta->container_path = SafeColumnText(stmt, 1);
+    out_meta->file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 2));
+    out_meta->mtime = sqlite3_column_int64(stmt, 3);
+    out_meta->status = sqlite3_column_int(stmt, 4);
+    out_meta->item_count = sqlite3_column_int(stmt, 5);
+  }
+  return true;
+}
+
+std::vector<int64_t> StorageEngine::DoGetArchiveChildDocIds(int64_t container_id) {
+  std::vector<int64_t> ids;
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    return ids;
+  }
+
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, "SELECT doc_id FROM files WHERE parent_id = ?1;", -1, stmt.address(), nullptr) !=
+      SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(target_db));
+    return ids;
+  }
+  sqlite3_bind_int64(stmt, 1, container_id);
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    ids.push_back(sqlite3_column_int64(stmt, 0));
+  }
+  return ids;
+}
+
+std::vector<ArchiveContainerMeta> StorageEngine::DoListArchiveContainers() {
+  std::vector<ArchiveContainerMeta> list;
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    return list;
+  }
+
+  const char *sql =
+      "SELECT container_id, container_path, file_size, mtime, status, item_count FROM archive_containers;";
+  SqliteStmtScope stmt;
+  if (sqlite3_prepare_v2(target_db, sql, -1, stmt.address(), nullptr) != SQLITE_OK) {
+    SetLastError(sqlite3_errmsg(target_db));
+    return list;
+  }
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    ArchiveContainerMeta m;
+    m.container_id = sqlite3_column_int64(stmt, 0);
+    m.container_path = SafeColumnText(stmt, 1);
+    m.file_size = static_cast<uint64_t>(sqlite3_column_int64(stmt, 2));
+    m.mtime = sqlite3_column_int64(stmt, 3);
+    m.status = sqlite3_column_int(stmt, 4);
+    m.item_count = sqlite3_column_int(stmt, 5);
+    list.push_back(std::move(m));
+  }
+  return list;
+}
+
+std::unordered_map<int64_t, std::string> StorageEngine::DoGetContainerPathsByDocIds(
+    const std::vector<int64_t> &doc_ids) {
+  std::unordered_map<int64_t, std::string> out;
+  if (doc_ids.empty()) {
+    return out;
+  }
+  ScopedReadConnection read_conn;
+  std::unique_lock<std::mutex> fallback_lock;
+  sqlite3 *target_db = AcquireReadTarget(&read_conn, &fallback_lock);
+  if (!target_db) {
+    return out;
+  }
+
+  constexpr size_t kBatchSize = 500;
+  for (size_t offset = 0; offset < doc_ids.size(); offset += kBatchSize) {
+    const size_t batch_len = std::min(kBatchSize, doc_ids.size() - offset);
+    std::string sql =
+        "SELECT f.doc_id, ac.container_path FROM files f "
+        "JOIN archive_containers ac ON ac.container_id = f.parent_id "
+        "WHERE f.parent_id != 0 AND f.doc_id IN (";
+    for (size_t i = 0; i < batch_len; ++i) {
+      if (i > 0) sql += ',';
+      sql += '?';
+    }
+    sql += ");";
+
+    SqliteStmtScope stmt;
+    if (sqlite3_prepare_v2(target_db, sql.c_str(), -1, stmt.address(), nullptr) != SQLITE_OK) {
+      SetLastError(sqlite3_errmsg(target_db));
+      return out;
+    }
+    for (size_t i = 0; i < batch_len; ++i) {
+      sqlite3_bind_int64(stmt, static_cast<int>(i + 1), doc_ids[offset + i]);
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      int64_t id = sqlite3_column_int64(stmt, 0);
+      std::string path = SafeColumnText(stmt, 1);
+      if (!path.empty()) {
+        out.emplace(id, std::move(path));
+      }
+    }
+  }
+  return out;
 }
 
 }  // namespace storage

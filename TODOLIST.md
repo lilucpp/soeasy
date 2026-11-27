@@ -21,7 +21,7 @@
 | **FEAT-011** | **IndexOrchestrator 上帝类领域解耦与挂载死循环防护** | 7 | 6 | 4 | 3 | **2.9** | **P1 (中高)** | 已完成 (已验证) |
 | **FEAT-003** | **Linux 监控注册阶段物理剪枝与监控库架构升级** | 7 | 8 | 6 | 5 | **2.0** | **P1 (评估中)**| 调研阶段 |
 | **FEAT-012** | **GIF 静态与动态图像文字识别支持（基于 `stb_image` 多帧抽帧）** | 4 | 2 | 3 | 3 | **1.7** | **P2 (待排期)** | 待排期 |
-| **FEAT-004** | **压缩包格式（zip/7z/tar 等）正文递归检索** | 5 | 3 | 8 | 8 | **0.8** | **P2 (延后)** | 需求待细化 |
+| **FEAT-004** | **压缩包格式（zip/7z/rar/tar 等）零落盘递归流式检索** | 7 | 4 | 6 | 4 | **1.8** | **P1 (高优)** | 已完成 (已验证) |
 
 ---
 
@@ -89,19 +89,23 @@
 
 ---
 
-### [FEAT-004] 压缩包格式（zip, tar, gz, 7z, rar 等）正文递归检索
+### [FEAT-004] 压缩包格式（zip, tar, rar, 7z, gz, bz2, xz, lzma 等）零落盘递归流式检索
 * **需求层级**：深层功能扩展需求 (Extended Capability)
-* **业务背景 (实测驱动)**：
-  * 实测表明当前系统单进程内存表现极佳（稳定在 54MB），解压大包与海量深层嵌套包极易引发内存暴涨、临时磁盘耗尽（ZipBomb 攻击风险）；
-  * 必须先确立严密的防御规格（限制解压最大层级=2、单包提取上限=50MB、解压时限=2s）后方可排期开发。
-* **关联模块**：`src/worker/l2_office_parser.cpp`
+* **业务背景与架构决策 (实测驱动)**：
+  * `doctotext` 保持纯正的单文档格式解析职责（不内置解包逻辑），压缩包流式递归解包由上层 SoEasy 编排层通过静态链接的 `libarchive 3.8.11`（预编译归档 `third-party-v1`）实现；
+  * 采用 **1 槽位独立 Unpacker 进程 + `worker_count` 大小 Parser 进程池** 物理隔离架构：Unpacker 专责流式解压与多层级嵌套递归（最大深度 6），不占用原有解析池并发槽位，且按心跳保活无整包体积上限；叶子条目通过有界背压队列经 `beginBufferParse` / `BufferParseSession` 分片 RPC 分发至解析池并执行单文件 `max_file_size` 与 60s/180s 超时熔断；单条目崩溃/超限/加密仅隔离记录该条目，绝不中断同包后续文件解析；
+  * 存储层复用 `files.parent_id` + 新增 `archive_containers` 关联表、`NameIndex` 前缀压缩路径免冗余，详细架构见 [`docs/design/archive_architecture.md`](docs/design/archive_architecture.md)。
+* **关联模块**：`src/worker/archive_reader.cpp`, `src/worker/worker_loop.cpp`, `src/service/worker_guard.cpp`, `src/service/index_orchestrator.cpp`, `src/storage/storage_engine.cpp`, `src/gui/`
+* **关联测试**：`tests/test_archive_reader_gtest.cpp`, `tests/test_index_state_machine_gtest.cpp`, `tests/test_sandbox_ipc.cpp`, `tests/test_storage_engine.cpp`
 * **验收准则 (Acceptance Criteria - Gherkin)**：
   ```gherkin
-  Scenario: 安全受限解压并检索 ZIP 压缩包内文档
-    Given 用户工作目录中存在一个包含 "contract.docx" 的 "archive.zip" 文件
-    When 系统后台流水线扫描到该压缩包
-    Then Worker 沙箱安全解包并流式提取文本，临时缓存严格限制在内存阈值内
-    And 搜索 "contract" 关键词时能精准召回该压缩包内的文档
+  Scenario: 零落盘独立 Unpacker 流式解包与单条目故障隔离检索
+    Given 用户工作目录中存在包含 "contract.docx" 与损坏文件 "bad.pdf" 的多层级压缩包 "archive.zip/sub.7z"
+    When 系统启用压缩归档格式类别并触发扫描
+    Then 独立 Unpacker 进程在内存中递归流式解包，不占用 Parser Worker 池名额且无临时文件落盘
+    And "contract.docx" 经由 beginBufferParse 流式分片 RPC 提取正文并按 "archive.zip › sub.7z › contract.docx" 展示
+    And "bad.pdf" 的解析异常仅记录在 parse_issues 中，同包后续正常文档继续完成索引
+    And 搜索关键词 "contract" 命中压缩包内文档，双击打开预览弹窗且支持“打开所在压缩包”
   ```
 
 ---

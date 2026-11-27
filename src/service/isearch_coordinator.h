@@ -20,6 +20,7 @@ struct SearchResultItem {
   int64_t doc_id = 0;
   std::string file_name;
   std::string file_path;
+  std::string container_path;
   std::string ext;
   uint64_t file_size = 0;
   int64_t mtime = 0;
@@ -32,6 +33,7 @@ struct HybridSearchResultItem {
   int64_t doc_id = 0;
   std::string file_name;
   std::string file_path;
+  std::string container_path;
   std::string ext;
   uint64_t file_size = 0;
   int64_t mtime = 0;

@@ -25,29 +25,46 @@ void ParserRegistry::RegisterParser(std::unique_ptr<IDocumentParser> parser) {
                    });
 }
 
-bool ParserRegistry::ParseDocument(const ParseContext &ctx, ExtractedDocument *out_doc) {
+namespace {
+
+template <typename Fn>
+bool ParseWithChain(std::mutex &mutex, const std::vector<std::unique_ptr<IDocumentParser>> &parsers,
+                    const ParseContext &ctx, ExtractedDocument *out_doc, const char *mode_label, Fn &&invoke) {
   if (!out_doc) return false;
   out_doc->outcome = ParseOutcome::kOk;
   out_doc->error_message.clear();
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (const auto &parser : parsers_) {
+  std::lock_guard<std::mutex> lock(mutex);
+  for (const auto &parser : parsers) {
     if (parser->CanHandle(ctx)) {
-      const bool ok = parser->Parse(ctx, out_doc);
+      const bool ok = invoke(*parser);
       if (!ok) {
         if (out_doc->outcome == ParseOutcome::kOk) {
           out_doc->outcome = ParseOutcome::kFailed;
         }
         if (out_doc->error_message.empty()) {
-          out_doc->error_message = parser->Name() + " failed to parse document";
+          out_doc->error_message = parser->Name() + " failed to parse " + mode_label;
         }
       }
       return ok;
     }
   }
-  LOG_WARN("[ParserRegistry] No registered parser claimed file '{}' (ext: '{}')", ctx.file_path, ctx.ext);
+  LOG_WARN("[ParserRegistry] No registered parser claimed {} '{}' (ext: '{}')", mode_label, ctx.file_path, ctx.ext);
   out_doc->outcome = ParseOutcome::kFailed;
   out_doc->error_message = "No registered parser claimed extension '" + ctx.ext + "'";
   return false;
+}
+
+}  // namespace
+
+bool ParserRegistry::ParseDocument(const ParseContext &ctx, ExtractedDocument *out_doc) {
+  return ParseWithChain(mutex_, parsers_, ctx, out_doc, "document",
+                        [&](IDocumentParser &p) { return p.Parse(ctx, out_doc); });
+}
+
+bool ParserRegistry::ParseBufferDocument(const char *raw_bytes, size_t raw_size, const ParseContext &ctx,
+                                         ExtractedDocument *out_doc) {
+  return ParseWithChain(mutex_, parsers_, ctx, out_doc, "memory buffer",
+                        [&](IDocumentParser &p) { return p.ParseBuffer(raw_bytes, raw_size, ctx, out_doc); });
 }
 
 bool ParserRegistry::IsSupported(const std::string &ext) const {

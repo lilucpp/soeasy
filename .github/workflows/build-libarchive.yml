@@ -1,0 +1,220 @@
+name: Build Minimal Static LibArchive (third-party-v1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      libarchive_version:
+        description: 'libarchive release version tag to build (without v prefix)'
+        required: true
+        default: '3.8.11'
+        type: string
+      release_tag:
+        description: 'Target GitHub Release tag for prebuilt third-party archives'
+        required: true
+        default: 'third-party-v1'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-libarchive-linux:
+    name: Build LibArchive Minimal Static (Linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout zstd submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake ninja-build zlib1g-dev liblzma-dev zstd curl
+
+      - name: Download and Compile LibArchive ${{ inputs.libarchive_version }}
+        run: |
+          VER="${{ inputs.libarchive_version }}"
+          mkdir -p /tmp/la_src /tmp/la_deps/include /tmp/la_deps/lib /tmp/la_install
+          cd /tmp/la_src
+          curl -L --fail --retry 3 -o "libarchive-${VER}.tar.xz" \
+            "https://github.com/libarchive/libarchive/releases/download/v${VER}/libarchive-${VER}.tar.xz"
+          curl -L --fail --retry 3 -o "bzip2-1.0.8.tar.gz" \
+            "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
+          tar -xf "libarchive-${VER}.tar.xz"
+          tar -xzf "bzip2-1.0.8.tar.gz"
+
+          cd /tmp/la_src/bzip2-1.0.8
+          gcc -O3 -fPIC -D_FILE_OFFSET_BITS=64 -c blocksort.c huffman.c crctable.c randtable.c compress.c decompress.c bzlib.c
+          ar rcs /tmp/la_deps/lib/libbz2.a blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
+          cp bzlib.h /tmp/la_deps/include/
+
+          cmake -B /tmp/la_src/zstd_build -S "${{ github.workspace }}/third_party/zstd/build/cmake" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_STATIC=ON
+          cmake --build /tmp/la_src/zstd_build -j$(nproc)
+
+          cmake -B /tmp/la_src/build -S "/tmp/la_src/libarchive-${VER}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/tmp/la_install \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_ZLIB=ON \
+            -DENABLE_BZip2=ON -DBZIP2_INCLUDE_DIR=/tmp/la_deps/include -DBZIP2_LIBRARIES=/tmp/la_deps/lib/libbz2.a \
+            -DENABLE_LZMA=ON \
+            -DENABLE_ZSTD=ON -DZSTD_INCLUDE_DIR="${{ github.workspace }}/third_party/zstd/lib" -DZSTD_LIBRARY=/tmp/la_src/zstd_build/lib/libzstd.a \
+            -DENABLE_OPENSSL=OFF -DENABLE_MBEDTLS=OFF -DENABLE_NETTLE=OFF -DENABLE_LIBB2=OFF \
+            -DENABLE_LZ4=OFF -DENABLE_LZO=OFF -DENABLE_LIBXML2=OFF -DENABLE_BSDXML=OFF \
+            -DENABLE_EXPAT=OFF -DENABLE_PCREPOSIX=OFF -DENABLE_PCRE2POSIX=OFF \
+            -DENABLE_XATTR=OFF -DENABLE_ACL=OFF \
+            -DENABLE_TAR=OFF -DENABLE_CPIO=OFF -DENABLE_CAT=OFF -DENABLE_UNZIP=OFF -DENABLE_TEST=OFF
+          cmake --build /tmp/la_src/build -j$(nproc)
+          cmake --install /tmp/la_src/build
+          cp /tmp/la_deps/lib/libbz2.a /tmp/la_install/lib/
+          cp /tmp/la_deps/include/bzlib.h /tmp/la_install/include/
+          rm -rf /tmp/la_install/share/man
+          ls -lh /tmp/la_install/lib/ /tmp/la_install/include/
+
+      - name: Pack Archive (.tar.zst)
+        run: |
+          VER="${{ inputs.libarchive_version }}"
+          ARCHIVE="${{ github.workspace }}/libarchive-${VER}-minimal-linux-x86_64.tar.zst"
+          tar --zstd -C /tmp/la_install -cf "${ARCHIVE}" .
+          ls -lh "${ARCHIVE}"
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libarchive-minimal-linux-x86_64
+          path: libarchive-*-minimal-linux-x86_64.tar.zst
+
+  build-libarchive-windows:
+    name: Build LibArchive Minimal Static (Windows x64 MinGW)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      MINGW_PREFIX: D:/msys64/mingw64
+    steps:
+      - name: Checkout zstd submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download Prebuilt MSYS2 Toolchain (win-env-v1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download win-env-v1 \
+            --repo "$GH_REPO" \
+            --pattern "soeasy-win64-msys2-env.tar.zst" \
+            --dir "D:/"
+          rm -rf "/d/msys64" "/d/msys64_tmp"
+          mkdir -p "/d/msys64_tmp"
+          if command -v zstd >/dev/null 2>&1; then
+            tar --warning=no-unknown-keyword --zstd -xf "/d/soeasy-win64-msys2-env.tar.zst" -C "/d/msys64_tmp"
+          else
+            7z x "D:/soeasy-win64-msys2-env.tar.zst" -so | tar --warning=no-unknown-keyword -xf - -C "/d/msys64_tmp"
+          fi
+          if [ -d "/d/msys64_tmp/msys64/mingw64" ]; then
+            mv "/d/msys64_tmp/msys64" "/d/msys64"
+            rm -rf "/d/msys64_tmp"
+          else
+            mv "/d/msys64_tmp" "/d/msys64"
+          fi
+          rm -f "/d/soeasy-win64-msys2-env.tar.zst"
+          echo "D:\msys64\mingw64\bin" >> "$GITHUB_PATH"
+          echo "D:\msys64\usr\bin" >> "$GITHUB_PATH"
+
+      - name: Download and Compile LibArchive ${{ inputs.libarchive_version }}
+        run: |
+          VER="${{ inputs.libarchive_version }}"
+          WS_UNIX="$(cygpath -u "${{ github.workspace }}")"
+          mkdir -p /d/la_src /d/la_deps/include /d/la_deps/lib /d/la_install
+          cd /d/la_src
+          curl -L --fail --retry 3 -o "libarchive-${VER}.tar.xz" \
+            "https://github.com/libarchive/libarchive/releases/download/v${VER}/libarchive-${VER}.tar.xz"
+          curl -L --fail --retry 3 -o "bzip2-1.0.8.tar.gz" \
+            "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
+          tar -xf "libarchive-${VER}.tar.xz"
+          tar -xzf "bzip2-1.0.8.tar.gz"
+
+          cd /d/la_src/bzip2-1.0.8
+          "${MINGW_PREFIX}/bin/gcc.exe" -O3 -D_FILE_OFFSET_BITS=64 -c blocksort.c huffman.c crctable.c randtable.c compress.c decompress.c bzlib.c
+          "${MINGW_PREFIX}/bin/ar.exe" rcs /d/la_deps/lib/libbz2.a blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
+          cp bzlib.h /d/la_deps/include/
+
+          "${MINGW_PREFIX}/bin/cmake.exe" -B D:/la_src/zstd_build -S "${{ github.workspace }}/third_party/zstd/build/cmake" -G "Ninja" \
+            -DCMAKE_C_COMPILER="${MINGW_PREFIX}/bin/gcc.exe" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_STATIC=ON
+          "${MINGW_PREFIX}/bin/cmake.exe" --build D:/la_src/zstd_build -j4
+
+          "${MINGW_PREFIX}/bin/cmake.exe" -B D:/la_src/build -S "D:/la_src/libarchive-${VER}" -G "Ninja" \
+            -DCMAKE_C_COMPILER="${MINGW_PREFIX}/bin/gcc.exe" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=D:/la_install \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_ZLIB=ON -DZLIB_ROOT="${MINGW_PREFIX}" \
+            -DENABLE_BZip2=ON -DBZIP2_INCLUDE_DIR=D:/la_deps/include -DBZIP2_LIBRARIES=D:/la_deps/lib/libbz2.a \
+            -DENABLE_LZMA=ON -DLIBLZMA_INCLUDE_DIR="${MINGW_PREFIX}/include" -DLIBLZMA_LIBRARY="${MINGW_PREFIX}/lib/liblzma.dll.a" \
+            -DENABLE_ZSTD=ON -DZSTD_INCLUDE_DIR="${{ github.workspace }}/third_party/zstd/lib" -DZSTD_LIBRARY=D:/la_src/zstd_build/lib/libzstd.a \
+            -DENABLE_ICONV=ON -DIconv_INCLUDE_DIR="${MINGW_PREFIX}/include" -DIconv_LIBRARY="${MINGW_PREFIX}/lib/libiconv.dll.a" \
+            -DENABLE_OPENSSL=OFF -DENABLE_MBEDTLS=OFF -DENABLE_NETTLE=OFF -DENABLE_LIBB2=OFF \
+            -DENABLE_LZ4=OFF -DENABLE_LZO=OFF -DENABLE_LIBXML2=OFF -DENABLE_BSDXML=OFF \
+            -DENABLE_EXPAT=OFF -DENABLE_WIN32_XMLLITE=OFF -DENABLE_PCREPOSIX=OFF -DENABLE_PCRE2POSIX=OFF \
+            -DENABLE_CNG=OFF -DENABLE_XATTR=OFF -DENABLE_ACL=OFF \
+            -DENABLE_TAR=OFF -DENABLE_CPIO=OFF -DENABLE_CAT=OFF -DENABLE_UNZIP=OFF -DENABLE_TEST=OFF
+          "${MINGW_PREFIX}/bin/cmake.exe" --build D:/la_src/build -j4
+          "${MINGW_PREFIX}/bin/cmake.exe" --install D:/la_src/build
+          cp /d/la_deps/lib/libbz2.a /d/la_install/lib/
+          cp /d/la_deps/include/bzlib.h /d/la_install/include/
+          rm -rf /d/la_install/share/man
+          ls -lh /d/la_install/lib/ /d/la_install/include/
+
+      - name: Pack Archive (.tar.zst)
+        run: |
+          VER="${{ inputs.libarchive_version }}"
+          ARCHIVE_UNIX="$(cygpath -u "${{ github.workspace }}")/libarchive-${VER}-minimal-windows-x64.tar.zst"
+          /d/msys64/usr/bin/tar.exe --zstd -C /d/la_install -cf "${ARCHIVE_UNIX}" .
+          ls -lh "${ARCHIVE_UNIX}"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libarchive-minimal-windows-x64
+          path: libarchive-*-minimal-windows-x64.tar.zst
+
+  publish-third-party:
+    name: Publish to Release (${{ inputs.release_tag }})
+    needs: [build-libarchive-linux, build-libarchive-windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download built LibArchive archives
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to Third-Party Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          ls -lh artifacts/
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/*.tar.zst --repo "$GH_REPO" --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/*.tar.zst \
+              --repo "$GH_REPO" \
+              --target "$TARGET_SHA" \
+              --title "Prebuilt Third-Party Libraries ($RELEASE_TAG)" \
+              --notes "Prebuilt minimal static third-party libraries for SoEasy CI (OpenCV, LibArchive, etc.)." \
+              --prerelease
+          fi

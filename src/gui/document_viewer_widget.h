@@ -64,7 +64,7 @@ class DocumentViewerWidget : public QWidget {
    */
   static DocumentPreviewResult LoadPreviewDocument(
       int64_t doc_id, const QString &file_path,
-      const std::shared_ptr<service::ISearchCoordinator> &coordinator);
+      const std::shared_ptr<service::ISearchCoordinator> &coordinator, bool allow_disk_fallback = true);
 
   /**
    * @brief Format loaded preview content on the UI thread (appending localized truncation notice if needed).

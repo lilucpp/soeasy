@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,6 +23,7 @@ struct SearchResultItem {
   int64_t doc_id = 0;
   std::string file_name;
   std::string file_path;
+  std::string container_path;  // Real host archive path if this item lives inside an archive
   std::string ext;
   uint64_t file_size = 0;
   int64_t mtime = 0;
@@ -30,6 +32,7 @@ struct SearchResultItem {
 
 struct FileMetaRecord {
   int64_t doc_id = 0;
+  int64_t parent_id = 0;
   std::string file_name;
   std::string file_path;
   std::string ext;
@@ -37,6 +40,15 @@ struct FileMetaRecord {
   int64_t mtime = 0;
   int parse_level = 0;
   int parse_stat = 0;
+};
+
+struct ArchiveContainerMeta {
+  int64_t container_id = 0;
+  std::string container_path;
+  uint64_t file_size = 0;
+  int64_t mtime = 0;
+  int status = 0;
+  int item_count = 0;
 };
 
 using FileMetaCallback = std::function<void(const FileMetaRecord &)>;
@@ -130,6 +142,19 @@ class IDocumentSearchReader {
 
   virtual std::vector<common::ParseIssueRecord> GetParseIssues(
       std::optional<common::ParseStatus> filter_status = std::nullopt, size_t limit = 500, size_t offset = 0) = 0;
+
+  virtual bool GetArchiveContainerMeta(int64_t /*container_id*/, ArchiveContainerMeta * /*out_meta*/) {
+    return false;
+  }
+
+  virtual std::vector<int64_t> GetArchiveChildDocIds(int64_t /*container_id*/) { return {}; }
+
+  virtual std::vector<ArchiveContainerMeta> ListArchiveContainers() { return {}; }
+
+  virtual std::unordered_map<int64_t, std::string> GetContainerPathsByDocIds(
+      const std::vector<int64_t> & /*doc_ids*/) {
+    return {};
+  }
 };
 
 }  // namespace storage

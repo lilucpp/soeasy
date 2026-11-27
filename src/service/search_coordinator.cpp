@@ -55,6 +55,35 @@ void PopulateSnippetFromStorage(storage::IDocumentSearchReader *storage, const s
   }
 }
 
+template <typename ItemT>
+void EnrichContainerPaths(storage::IDocumentSearchReader *storage, std::vector<ItemT> *items) {
+  if (!storage || !items || items->empty()) {
+    return;
+  }
+  std::vector<int64_t> missing_ids;
+  missing_ids.reserve(items->size());
+  for (const auto &it : *items) {
+    if (it.container_path.empty()) {
+      missing_ids.push_back(it.doc_id);
+    }
+  }
+  if (missing_ids.empty()) {
+    return;
+  }
+  const auto map = storage->GetContainerPathsByDocIds(missing_ids);
+  if (map.empty()) {
+    return;
+  }
+  for (auto &it : *items) {
+    if (it.container_path.empty()) {
+      auto found = map.find(it.doc_id);
+      if (found != map.end()) {
+        it.container_path = found->second;
+      }
+    }
+  }
+}
+
 struct PagingWindow {
   int limit = 0;
   int offset = 0;
@@ -96,7 +125,11 @@ std::vector<NameMatchResult> SearchCoordinator::DoSearchFilename(const std::stri
     return {};
   }
   auto res = name_index_->Search(query, page.limit, page.offset, path_prefix, out_total_count);
-  return page.valid ? res : std::vector<NameMatchResult>{};
+  if (!page.valid) {
+    return {};
+  }
+  EnrichContainerPaths(storage_engine_.get(), &res);
+  return res;
 }
 
 std::vector<SearchResultItem> SearchCoordinator::DoSearchFulltext(const std::string &query, int limit, int offset,
@@ -117,6 +150,7 @@ std::vector<SearchResultItem> SearchCoordinator::DoSearchFulltext(const std::str
     item.doc_id = raw.doc_id;
     item.file_name = raw.file_name;
     item.file_path = raw.file_path;
+    item.container_path = raw.container_path;
     item.ext = raw.ext;
     item.file_size = raw.file_size;
     item.mtime = raw.mtime;
@@ -175,6 +209,9 @@ std::vector<HybridSearchResultItem> SearchCoordinator::DoSearchHybrid(const std:
       if (it != doc_map.end()) {
         // Document matched both filename and content
         auto &existing = merged_results[it->second];
+        if (existing.container_path.empty() && !fh.container_path.empty()) {
+          existing.container_path = fh.container_path;
+        }
         existing.is_fulltext_match = true;
         existing.score += std::abs(fh.rank) * 10.0 + 20.0;  // Double match bonus
       } else {
@@ -183,6 +220,7 @@ std::vector<HybridSearchResultItem> SearchCoordinator::DoSearchHybrid(const std:
         item.doc_id = fh.doc_id;
         item.file_name = fh.file_name;
         item.file_path = fh.file_path;
+        item.container_path = fh.container_path;
         item.ext = fh.ext;
         item.file_size = fh.file_size;
         item.mtime = fh.mtime;
@@ -215,6 +253,7 @@ std::vector<HybridSearchResultItem> SearchCoordinator::DoSearchHybrid(const std:
   const size_t end_idx = std::min(merged_results.size(), safe_offset + static_cast<size_t>(limit));
   std::vector<HybridSearchResultItem> page(merged_results.begin() + static_cast<ptrdiff_t>(safe_offset),
                                            merged_results.begin() + static_cast<ptrdiff_t>(end_idx));
+  EnrichContainerPaths(storage_engine_.get(), &page);
   const auto keywords = common::SnippetHighlighter::ExtractKeywordsFromQuery(query);
   for (size_t i = 0; i < page.size(); ++i) {
     auto &item = page[i];

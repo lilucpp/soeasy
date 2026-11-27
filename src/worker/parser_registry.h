@@ -49,6 +49,12 @@ class ParserRegistry {
   bool ParseDocument(const ParseContext &ctx, ExtractedDocument *out_doc);
 
   /**
+   * @brief Execute parser responsibility chain directly on an in-memory byte buffer.
+   */
+  bool ParseBufferDocument(const char *raw_bytes, size_t raw_size, const ParseContext &ctx,
+                           ExtractedDocument *out_doc);
+
+  /**
    * @brief Check whether any registered parser can handle the given file extension.
    *
    * @param ext Lowercase file extension without dot

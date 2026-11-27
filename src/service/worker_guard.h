@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,6 +41,40 @@ struct ParseTask {
   std::string ext;
   int parse_level = 1;
   uint32_t timeout_ms = 60000;
+  std::shared_ptr<const std::string> raw_bytes;  // Non-null streams zero-disk buffer parse via beginBufferParse RPC
+};
+
+enum class ArchiveStreamEvent {
+  kData = 0,
+  kEncrypted = 1,
+  kSkippedTooLarge = 2,
+  kFailed = 3,
+  kHeartbeat = 4,
+};
+
+struct ArchiveStreamItem {
+  std::string virtual_path;
+  std::string file_name;
+  std::string ext;
+  uint64_t entry_size = 0;
+  int64_t entry_mtime = 0;
+  ArchiveStreamEvent event = ArchiveStreamEvent::kData;
+  std::string raw_bytes;
+  std::string message;
+};
+
+using ArchiveItemCallback = std::function<bool(ArchiveStreamItem &&)>;
+
+struct ArchiveExtractTask {
+  std::string archive_path;
+  std::vector<std::string> enabled_exts;
+  uint64_t max_entry_bytes = 50ULL * 1024ULL * 1024ULL;
+  uint32_t idle_heartbeat_timeout_ms = 60000;
+};
+
+struct ArchiveExtractResult {
+  TaskStatus status = TaskStatus::kFailed;
+  std::string error_message;
 };
 
 struct ParseTaskResult {
@@ -144,6 +179,12 @@ class WorkerGuard {
    */
   bool ExecuteTask(const ParseTask &task, ParseTaskResult *out_result);
 
+  /**
+   * @brief Stream items from an archive using the dedicated Unpacker slot (independent of worker_count pool).
+   */
+  bool ExecuteArchiveStream(const ArchiveExtractTask &task, const ArchiveItemCallback &on_item,
+                            ArchiveExtractResult *out_result);
+
   size_t worker_count() const;
   size_t active_worker_count() const;
   void SetWorkerCount(size_t new_count);
@@ -176,7 +217,12 @@ class WorkerGuard {
   void ClearWorkerStdio(size_t index);
   void RecordWorkerStdio(size_t index, const std::string &line);
   std::string GetRecentWorkerStdio(size_t index) const;
+  std::string BuildCrashErrorMessage(size_t index, const std::string &rpc_error, const char *default_msg) const;
   std::vector<std::string> BuildWorkerArgs(const std::string &ipc_param, size_t index) const;
+  WorkerInstance *GetSlotLocked(size_t index);
+  void MonitorSlotLocked(size_t slot_idx, WorkerInstance &inst, std::chrono::steady_clock::time_point now,
+                         int64_t now_epoch_ms, bool should_check_idle_mem,
+                         std::vector<DetachedWorkerResources> *to_cleanup, std::vector<size_t> *recycled_indices);
   void ReleaseRecycledSlots(const size_t *indices, size_t count, uint64_t expected_generation,
                             bool clear_watchdog_pending = false);
   void WatchdogLoop();
@@ -199,8 +245,12 @@ class WorkerGuard {
   uint64_t pool_generation_ = 0;
   size_t target_worker_count_ = 0;
   std::vector<std::unique_ptr<WorkerInstance>> workers_;
+  std::unique_ptr<WorkerInstance> unpacker_worker_;
+  std::atomic<int64_t> unpacker_last_activity_ms_{0};
+  std::atomic<bool> unpacker_in_callback_{false};
   mutable std::mutex stdio_mutex_;
   std::vector<std::deque<std::string>> recent_stdio_;
+  std::deque<std::string> unpacker_recent_stdio_;
   mutable std::mutex pool_mutex_;
   std::condition_variable worker_available_cv_;
 

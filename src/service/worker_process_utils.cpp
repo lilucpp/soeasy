@@ -163,11 +163,13 @@ size_t GetProcessRssBytes(WorkerPid pid) {
 }
 
 std::string DeriveWorkerLogPath(const std::string &log_dir, size_t index) {
-  return PathToGenericUtf8(PathFromUtf8(log_dir) / PathFromUtf8("soeasy_worker_" + std::to_string(index) + ".log"));
+  const std::string tag = (index == kUnpackerWorkerIndex) ? "unpacker" : std::to_string(index);
+  return PathToGenericUtf8(PathFromUtf8(log_dir) / PathFromUtf8("soeasy_worker_" + tag + ".log"));
 }
 
 std::string DeriveWorkerDocToTextLogPath(const std::string &configured_path, const std::string &log_dir, size_t index) {
-  const std::string suffix = "_worker_" + std::to_string(index);
+  const std::string suffix =
+      (index == kUnpackerWorkerIndex) ? "_unpacker" : ("_worker_" + std::to_string(index));
   if (configured_path.empty()) {
     return PathToGenericUtf8(PathFromUtf8(log_dir) / PathFromUtf8("doctotext" + suffix + ".log"));
   }

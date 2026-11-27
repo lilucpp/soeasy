@@ -35,6 +35,34 @@ inline QString FormatTimestamp(int64_t epoch_sec, const QString &format = "yyyy-
   return QDateTime::fromSecsSinceEpoch(epoch_sec).toString(format);
 }
 
+inline QString FormatArchiveBreadcrumb(const QString &file_path, const QString &container_path) {
+  if (container_path.isEmpty()) {
+    return file_path;
+  }
+  QString norm_file = file_path;
+  QString norm_container = container_path;
+  norm_file.replace('\\', '/');
+  norm_container.replace('\\', '/');
+  while (norm_container.endsWith('/')) {
+    norm_container.chop(1);
+  }
+  if (norm_file == norm_container) {
+    return norm_container;
+  }
+  if (!norm_file.startsWith(norm_container + '/')) {
+    return file_path;
+  }
+  QString rel = norm_file.mid(norm_container.size());
+  while (rel.startsWith('/')) {
+    rel.remove(0, 1);
+  }
+  if (rel.isEmpty()) {
+    return norm_container;
+  }
+  rel.replace('/', QString::fromUtf8(" \xE2\x80\xBA "));
+  return norm_container + QString::fromUtf8(" \xE2\x80\xBA ") + rel;
+}
+
 inline QString GenerateKbdBadgeHtml(const QString &key) {
   return QString("<span style=\"background-color:#E2E8F0; color:#0F172A; font-family:monospace; "
                  "font-size:11px; font-weight:bold; border-radius:4px;\">&nbsp;%1&nbsp;</span>")

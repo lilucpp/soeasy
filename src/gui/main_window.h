@@ -62,8 +62,10 @@ class MainWindow : public QMainWindow {
 
  private slots:
   void OnSearchTriggered(const QString &query, int mode, const QString &path_scope);
-  void OnFileSelected(int64_t doc_id, const QString &file_name, const QString &file_path);
-  void OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path);
+  void OnFileSelected(int64_t doc_id, const QString &file_name, const QString &file_path,
+                      const QString &container_path = QString());
+  void OnFileOpenRequested(int64_t doc_id, const QString &file_name, const QString &file_path,
+                           const QString &container_path = QString());
   void OnLoadMoreRequested();
   void OnTogglePreview();
   void OnOpenParseIssues();

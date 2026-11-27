@@ -314,6 +314,7 @@ target_include_directories(build_dat_dict PRIVATE
 # -------------------------------------------------------------
 add_library(soeasy_worker_lib STATIC
     third_party/miniz/miniz.c
+    src/worker/archive_reader.cpp
     src/worker/l1_text_parser.cpp
     src/worker/l2_office_parser.cpp
     src/worker/l3_image_parser.cpp
@@ -341,10 +342,33 @@ find_package(Iconv REQUIRED)
 find_library(XML2_LIB NAMES xml2 libxml2.so.2 libxml2 REQUIRED)
 find_library(Z_LIB NAMES z libz.so.1 libz REQUIRED)
 
+if(WIN32)
+    set(_SOEASY_LIBARCHIVE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libarchive/windows-x64")
+else()
+    set(_SOEASY_LIBARCHIVE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libarchive/linux-x86_64")
+endif()
+
+if(EXISTS "${_SOEASY_LIBARCHIVE_ROOT}/include/archive.h" AND EXISTS "${_SOEASY_LIBARCHIVE_ROOT}/lib/libarchive.a")
+    message(STATUS "[LibArchive] Using prebuilt minimal static LibArchive from: ${_SOEASY_LIBARCHIVE_ROOT}")
+    target_include_directories(soeasy_worker_lib PUBLIC "${_SOEASY_LIBARCHIVE_ROOT}/include")
+    target_compile_definitions(soeasy_worker_lib PUBLIC LIBARCHIVE_STATIC)
+    set(_SOEASY_LIBARCHIVE_LIBS "${_SOEASY_LIBARCHIVE_ROOT}/lib/libarchive.a")
+    if(EXISTS "${_SOEASY_LIBARCHIVE_ROOT}/lib/libbz2.a")
+        list(APPEND _SOEASY_LIBARCHIVE_LIBS "${_SOEASY_LIBARCHIVE_ROOT}/lib/libbz2.a")
+    endif()
+    find_library(_SOEASY_LZMA_LIB NAMES lzma liblzma.a liblzma REQUIRED)
+    list(APPEND _SOEASY_LIBARCHIVE_LIBS "${_SOEASY_LZMA_LIB}" libzstd_static)
+else()
+    find_package(LibArchive REQUIRED)
+    target_include_directories(soeasy_worker_lib PUBLIC ${LibArchive_INCLUDE_DIRS})
+    set(_SOEASY_LIBARCHIVE_LIBS ${LibArchive_LIBRARIES})
+endif()
+
 target_link_libraries(soeasy_worker_lib PUBLIC
     soeasy_common
     soeasy_schema
     doctotext
+    ${_SOEASY_LIBARCHIVE_LIBS}
     ${XML2_LIB}
     uchardet
     capnp
@@ -911,6 +935,30 @@ if(BUILD_TESTS)
       GTest::gtest_main
   )
   gtest_discover_tests(test_index_state_machine_gtest
+      DISCOVERY_MODE PRE_TEST
+      PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      TIMEOUT 60
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+  )
+
+  # ArchiveReader Unit, Nested Extraction & End-to-End Orchestrator Archive Lifecycle Tests
+  add_executable(test_archive_reader_gtest
+      tests/test_archive_reader_gtest.cpp
+  )
+  target_include_directories(test_archive_reader_gtest PRIVATE
+      src
+      .
+  )
+  target_link_libraries(test_archive_reader_gtest PRIVATE
+      soeasy_worker_lib
+      soeasy_service
+      soeasy_storage
+      soeasy_common
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(test_archive_reader_gtest
       DISCOVERY_MODE PRE_TEST
       PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"

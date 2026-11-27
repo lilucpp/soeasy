@@ -19,11 +19,13 @@ namespace gui {
 
 ContentPreviewDialog::ContentPreviewDialog(int64_t doc_id, QString file_name, QString file_path,
                                            std::vector<std::string> keywords,
-                                           std::shared_ptr<service::ISearchCoordinator> coordinator, QWidget *parent)
+                                           std::shared_ptr<service::ISearchCoordinator> coordinator, QWidget *parent,
+                                           QString container_path)
     : QDialog(parent),
       doc_id_(doc_id),
       file_name_(std::move(file_name)),
       file_path_(std::move(file_path)),
+      container_path_(std::move(container_path)),
       keywords_(std::move(keywords)),
       search_coordinator_(std::move(coordinator)) {
   SetupUi();
@@ -58,7 +60,8 @@ void ContentPreviewDialog::SetupUi() {
   title_label->setStyleSheet("font-size: 14px; font-weight: bold; color: #0F172A; border: none;");
   title_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-  auto *btn_open_file = new QPushButton(Tr("btn_open_file"), header_card);
+  auto *btn_open_file =
+      new QPushButton(container_path_.isEmpty() ? Tr("btn_open_file") : Tr("btn_open_parent_archive"), header_card);
   btn_open_file->setStyleSheet(
       "QPushButton {"
       "  font-size: 11px; padding: 4px 10px; border: 1px solid #CBD5E1; border-radius: 4px; background-color: #F8FAFC; "
@@ -83,7 +86,7 @@ void ContentPreviewDialog::SetupUi() {
   header_layout->addLayout(title_row);
 
   path_label_ = new ElidedLabel(Qt::ElideMiddle, true, header_card);
-  path_label_->SetFullText(file_path_);
+  path_label_->SetFullText(FormatArchiveBreadcrumb(file_path_, container_path_));
   path_label_->setStyleSheet("font-size: 11px; color: #64748B; border: none; font-family: monospace;");
   path_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
   header_layout->addWidget(path_label_);
@@ -101,8 +104,8 @@ void ContentPreviewDialog::SetupUi() {
 void ContentPreviewDialog::LoadContentAndHighlight() {
   if (!viewer_) return;
 
-  DocumentPreviewResult preview =
-      DocumentViewerWidget::LoadPreviewDocument(doc_id_, file_path_, search_coordinator_);
+  DocumentPreviewResult preview = DocumentViewerWidget::LoadPreviewDocument(
+      doc_id_, file_path_, search_coordinator_, /*allow_disk_fallback=*/container_path_.isEmpty());
 
   if (!preview.has_content || preview.content.empty()) {
     viewer_->SetHtml(DocumentViewerWidget::BuildStatusNoticeHtml(preview));
@@ -113,14 +116,16 @@ void ContentPreviewDialog::LoadContentAndHighlight() {
 }
 
 void ContentPreviewDialog::OnOpenFolder() {
-  if (file_path_.isEmpty()) return;
-  QFileInfo fi(file_path_);
+  const QString target = container_path_.isEmpty() ? file_path_ : container_path_;
+  if (target.isEmpty()) return;
+  QFileInfo fi(target);
   QDesktopServices::openUrl(QUrl::fromLocalFile(fi.absolutePath()));
 }
 
 void ContentPreviewDialog::OnOpenWithDefaultApp() {
-  if (file_path_.isEmpty()) return;
-  QDesktopServices::openUrl(QUrl::fromLocalFile(file_path_));
+  const QString target = container_path_.isEmpty() ? file_path_ : container_path_;
+  if (target.isEmpty()) return;
+  QDesktopServices::openUrl(QUrl::fromLocalFile(target));
 }
 
 }  // namespace gui

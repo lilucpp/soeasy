@@ -28,6 +28,9 @@ class L3ImageParser : public IDocumentParser {
   // IDocumentParser implementation
   bool CanHandle(const ParseContext &ctx) const override { return IsSupported(ctx.ext); }
   bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  bool ParseBuffer(const char *raw_bytes, size_t raw_size, const ParseContext &ctx,
+                   ExtractedDocument *out_doc) override;
+  bool ParseStream(std::istream &stream, const ParseContext &ctx, ExtractedDocument *out_doc) override;
   int Priority() const override { return 30; }
   std::string Name() const override { return "L3ImageParser"; }
   /**
@@ -69,8 +72,10 @@ class L3ImageParser : public IDocumentParser {
   size_t min_effective_chars() const { return min_effective_chars_; }
 
  private:
-  bool ParseInternal(const std::string &file_path, const std::string &ext, std::string *out_utf8_text,
-                     std::string *out_error);
+  bool ParseInternal(const std::string &file_path, const uint8_t *raw_bytes, size_t raw_size, const std::string &ext,
+                     std::string *out_utf8_text, std::string *out_error);
+  bool RecognizeSingleImage(const std::string &file_path, const cv::Mat &raw_img, std::string *out_utf8_text,
+                            std::string *out_error);
   void EnsureOcrEngineLoaded();
 
   ocr::ImageFilter filter_;

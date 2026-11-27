@@ -626,16 +626,16 @@ bool IsPlainTextFallbackAllowed(const QString &file_path) {
   }
   // Structured documents, images, archives, and native binaries must never fall back to raw disk reads
   // in plain-text preview (prevents leaking raw %PDF-/OLE/ZIP bytes when indexed content is empty).
-  if (soeasy::common::IsSupportedImageExtension(ext.toStdString())) {
+  if (soeasy::common::IsSupportedImageExtension(ext.toStdString()) ||
+      soeasy::common::IsSupportedArchiveExtension(ext.toStdString())) {
     return false;
   }
   static const std::unordered_set<std::string> kBlockedBinaryOrParsedExts = {
-      "pdf",  "doc",   "docx", "xls",   "xlsx",   "xlsb", "ppt",  "pptx",    "odt",     "ods",  "odp",
-      "odg",  "fodt",  "fods", "fodp",  "rtf",    "wps",  "et",   "dps",     "pages",   "key",  "keynote",
-      "numbers", "eml", "gif",  "ico",   "svg",   "zip",  "tar",  "rar",     "7z",      "gz",   "bz2",
-      "xz",   "exe",   "dll",  "so",    "dylib",  "bin",  "obj",  "o",       "a",       "lib",  "db",
-      "sqlite", "sqlite3", "class", "pyc", "wasm", "msi", "cab",  "iso",     "img",     "dmg",  "deb",
-      "rpm",
+      "pdf", "doc",   "docx",   "xls",     "xlsx",    "xlsb",  "ppt", "pptx",   "odt", "ods", "odp", "odg",
+      "fodt", "fods", "fodp",   "rtf",     "wps",     "et",    "dps", "pages",  "key", "keynote", "numbers",
+      "eml",  "gif",  "ico",    "svg",     "exe",     "dll",   "so",  "dylib",  "bin", "obj", "o",   "a",
+      "lib",  "db",   "sqlite", "sqlite3", "class",   "pyc",   "wasm","msi",    "cab", "iso", "img", "dmg",
+      "deb",  "rpm",
   };
   return kBlockedBinaryOrParsedExts.find(ext.toStdString()) == kBlockedBinaryOrParsedExts.end();
 }
@@ -740,7 +740,8 @@ void TruncatePreviewContent(std::string *content, bool *out_truncated) {
 }  // namespace
 
 DocumentPreviewResult DocumentViewerWidget::LoadPreviewDocument(
-    int64_t doc_id, const QString &file_path, const std::shared_ptr<service::ISearchCoordinator> &coordinator) {
+    int64_t doc_id, const QString &file_path, const std::shared_ptr<service::ISearchCoordinator> &coordinator,
+    bool allow_disk_fallback) {
   DocumentPreviewResult result;
   try {
     if (coordinator && doc_id > 0) {
@@ -757,7 +758,7 @@ DocumentPreviewResult DocumentViewerWidget::LoadPreviewDocument(
       result.content.clear();
     }
 
-    if (!IsPlainTextFallbackAllowed(file_path)) {
+    if (!allow_disk_fallback || !IsPlainTextFallbackAllowed(file_path)) {
       return result;
     }
     if (FallbackReadFromDisk(file_path, &result.content) && HasVisibleText(result.content)) {

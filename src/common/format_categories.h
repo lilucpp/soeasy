@@ -184,17 +184,20 @@ inline const std::vector<CategoryDef> &GetPresetCategories() {
        }},
       {
           "压缩归档格式 (Archives)",
-          "打包与压缩文件容器 (正文递归检索规划中)",
+          "打包与压缩文件容器 (支持免落盘流式遍历与多层级嵌套检索)",
           {
-              {"zip", "ZIP 压缩文件", false, true},
-              {"tar", "Tape Archive 归档包", false, true},
-              {"rar", "WinRAR 压缩包", false, true},
-              {"7z", "7-Zip 压缩包", false, true},
-              {"gz", "Gzip 压缩文件", false, true},
-              {"bz2", "Bzip2 压缩文件", false, true},
-              {"xz", "XZ 压缩文件", false, true},
+              {"zip", "ZIP 压缩文件", false},
+              {"tar", "Tape Archive 归档包", false},
+              {"rar", "WinRAR 压缩包 (支持 RAR4/RAR5)", false},
+              {"7z", "7-Zip 压缩包", false},
+              {"gz", "Gzip 压缩文件", false},
+              {"tgz", "Gzip 压缩 TAR 归档包 (.tar.gz)", false},
+              {"bz2", "Bzip2 压缩文件", false},
+              {"tbz2", "Bzip2 压缩 TAR 归档包 (.tar.bz2)", false},
+              {"xz", "XZ 压缩文件", false},
+              {"txz", "XZ 压缩 TAR 归档包 (.tar.xz)", false},
+              {"lzma", "LZMA 压缩文件", false},
           },
-          true  // 暂未支持，界面默认 disable，后续支持后直接设为 false 即可启用
       }};
   return kCategories;
 }
@@ -210,6 +213,23 @@ inline std::unordered_set<std::string> GetDefaultSupportedExtensions() {
     }
   }
   return defaults;
+}
+
+inline const std::unordered_set<std::string> &GetSupportedArchiveExtensions() {
+  static const std::unordered_set<std::string> kArchiveExts = {
+      "zip", "tar", "rar", "7z", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "lzma"};
+  return kArchiveExts;
+}
+
+inline bool IsSupportedArchiveExtension(const std::string &ext) {
+  std::string lower = ext;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (!lower.empty() && lower.front() == '.') {
+    lower.erase(0, 1);
+  }
+  const auto &exts = GetSupportedArchiveExtensions();
+  return exts.find(lower) != exts.end();
 }
 
 inline const std::unordered_set<std::string> &GetSupportedImageExtensions() {

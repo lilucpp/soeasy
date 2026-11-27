@@ -93,15 +93,16 @@ bool PathFilterPolicy::ShouldIndex(const std::string &file_path, const std::stri
                                    uint64_t max_file_size, const std::vector<std::string> &excluded_patterns,
                                    const std::unordered_set<std::string> &supported_exts,
                                    bool filter_cache_thumbnails) {
-  if (file_size > max_file_size) {
-    return false;
-  }
-
   std::string lower_ext = ext;
   if (!lower_ext.empty() && lower_ext.front() == '.') {
     lower_ext.erase(0, 1);
   }
   std::transform(lower_ext.begin(), lower_ext.end(), lower_ext.begin(), ::tolower);
+
+  // Host archives have no whole-archive size ceiling (size limit applies only per extracted leaf entry).
+  if (file_size > max_file_size && !common::IsSupportedArchiveExtension(lower_ext)) {
+    return false;
+  }
 
   // Check exclusion patterns
   std::string norm_path = NormalizePath(file_path);

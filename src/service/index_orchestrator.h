@@ -120,9 +120,28 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   void ScanDirectoryRecursive(const std::string &dir_path, bool force_reindex = false);
   bool IndexSingleFile(const std::string &file_path, bool force_reindex = false);
   bool IndexSingleFileLocked(const std::string &file_path, bool force_reindex = false);
+  bool IndexArchiveContainerLocked(const std::string &file_path, const std::string &filename, const std::string &ext,
+                                   uint64_t file_size, int64_t file_mtime, bool force_reindex);
+  void CleanupExistingArchiveChildrenLocked(int64_t container_id, const std::string &container_path,
+                                            bool force_pause = false);
+  bool ProcessArchiveStreamWithPool(int64_t container_id, const std::string &norm_archive_path,
+                                    const std::string &file_path, int64_t file_mtime, ArchiveExtractResult *out_res,
+                                    int *out_item_count, bool *out_aborted_by_cancel, bool *out_saw_top_issue,
+                                    common::ParseStatus *out_top_status, std::string *out_top_reason);
+  bool RecordArchiveContainerOutcome(int64_t container_id, const std::string &norm_archive_path,
+                                     const std::string &file_path, const std::string &filename,
+                                     const std::string &ext, uint64_t file_size, int64_t file_mtime,
+                                     bool extract_ok, const ArchiveExtractResult &extract_res, int item_count,
+                                     bool aborted_by_cancel, bool saw_top_issue, common::ParseStatus top_status,
+                                     const std::string &top_reason);
   void PersistIndexedFile(int64_t doc_id, const std::string &file_path, const std::string &filename,
                           const std::string &ext, uint64_t file_size, int64_t file_mtime, std::string content,
-                          int parse_stat = 1, std::string error_reason = "");
+                          int parse_stat = 1, std::string error_reason = "", int64_t parent_id = 0,
+                          int parse_level = 1);
+  bool FinalizeAndPersistTaskResult(int64_t doc_id, int64_t parent_id, int parse_level, const std::string &file_path,
+                                    const std::string &filename, const std::string &ext, uint64_t file_size,
+                                    int64_t file_mtime, bool exec_ok, ParseTaskResult *res, double parse_cost_ms,
+                                    std::chrono::high_resolution_clock::time_point start_time);
   void PurgeFailedFilesUnder(const std::string &dir_path);
 
   static constexpr int64_t kMinFreePagesForVacuum = 100;
@@ -142,6 +161,9 @@ class IndexOrchestrator final : public IIndexOrchestrator {
   mutable std::mutex stats_mutex_;
   PipelineStats stats_;
   std::atomic<bool> cancel_scan_{false};
+  std::atomic<bool> force_archive_rescan_{false};
+  // Serializes archive container indexing so at most one archive is processed at a time.
+  std::mutex archive_process_mutex_;
 
   struct FailedFileInfo {
     uint64_t file_size = 0;

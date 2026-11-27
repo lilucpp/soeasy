@@ -22,7 +22,7 @@
 namespace soeasy {
 namespace service {
 
-enum class WriteOpType { kIndex, kDelete };
+enum class WriteOpType { kIndex, kDelete, kUpsertArchiveContainer };
 
 struct WriteOp {
   WriteOpType type = WriteOpType::kIndex;
@@ -36,6 +36,7 @@ struct WriteOp {
   std::string content;
   int parse_stat = static_cast<int>(common::ParseStatus::kOk);
   std::string error_reason;
+  int64_t parent_id = 0;
 };
 
 /**

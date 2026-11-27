@@ -96,6 +96,7 @@ struct ParseIssueRecord {
   int64_t doc_id = 0;
   std::string file_name;
   std::string file_path;
+  std::string container_path;  // Non-empty for archive child items
   std::string ext;
   uint64_t file_size = 0;
   int64_t mtime = 0;

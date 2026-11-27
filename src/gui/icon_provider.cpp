@@ -189,6 +189,8 @@ QIcon IconProvider::GetFileIcon(const QString &extension_or_filename) {
     icon = RenderFileBadgeIcon("TS", "#2563EB", true);
   } else if (ext == "sql") {
     icon = RenderFileBadgeIcon("SQL", "#7C3AED", true);
+  } else if (soeasy::common::IsSupportedArchiveExtension(ext.toStdString())) {
+    icon = RenderFileBadgeIcon("ZIP", "#B45309", true);
   } else if (soeasy::common::IsSupportedImageExtension(ext.toStdString()) && ext != "svg") {
     icon = RenderFileBadgeIcon("IMG", "#9333EA", true);
   } else if (ext == "eml") {

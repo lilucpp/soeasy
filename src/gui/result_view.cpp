@@ -16,6 +16,9 @@
 #include <algorithm>
 #include <utility>
 
+#include "gui/gui_utils.h"
+#include "gui/i18n.h"
+
 namespace soeasy {
 namespace gui {
 
@@ -71,18 +74,41 @@ class FileNameAndPathDelegate : public QStyledItemDelegate {
       int top_y = opt.rect.top() + 5;
       painter->drawText(QRect(text_x, top_y, text_w, fm_name.height()), Qt::AlignLeft | Qt::AlignVCenter, elided_name);
 
-      // 2. File Path (Bottom Line)
+      // 2. File Path (Bottom Line) + subtle archive badge when item is inside an archive container
       QFont path_font = opt.font;
       path_font.setPointSizeF(std::max(7.5, (name_font.pointSizeF() > 0 ? name_font.pointSizeF() : 10.0) - 1.5));
       path_font.setWeight(QFont::Normal);
       painter->setFont(path_font);
-      painter->setPen(is_selected ? QColor("#0369A1") : QColor("#64748B"));
 
       QFontMetrics fm_path(path_font);
-      QString elided_path = fm_path.elidedText(file_path, Qt::ElideMiddle, text_w);
-      int bottom_y = top_y + fm_name.height() + 2;
-      painter->drawText(QRect(text_x, bottom_y, text_w, fm_path.height()), Qt::AlignLeft | Qt::AlignVCenter,
-                        elided_path);
+      int path_x = text_x;
+      int path_w = text_w;
+      const int bottom_y = top_y + fm_name.height() + 2;
+      const QString container_path = index.data(Qt::UserRole + 2).toString();
+      if (!container_path.isEmpty() && path_w > 60) {
+        const QString badge = Tr("archive_badge");
+        QFont badge_font = path_font;
+        badge_font.setPointSizeF(std::max(7.0, path_font.pointSizeF() - 0.5));
+        badge_font.setWeight(QFont::DemiBold);
+        QFontMetrics fm_badge(badge_font);
+        const int badge_w = fm_badge.horizontalAdvance(badge) + 8;
+        const int badge_h = fm_path.height();
+        QRect badge_rect(path_x, bottom_y, badge_w, badge_h);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(is_selected ? QColor("#BAE6FD") : QColor("#DBEAFE"));
+        painter->drawRoundedRect(badge_rect, 3, 3);
+        painter->setFont(badge_font);
+        painter->setPen(QColor("#1D4ED8"));
+        painter->drawText(badge_rect, Qt::AlignCenter, badge);
+        painter->setFont(path_font);
+        path_x += badge_w + 6;
+        path_w -= badge_w + 6;
+      }
+
+      painter->setPen(is_selected ? QColor("#0369A1") : QColor("#64748B"));
+      QString elided_path = fm_path.elidedText(file_path, Qt::ElideMiddle, std::max(0, path_w));
+      painter->drawText(QRect(path_x, bottom_y, std::max(0, path_w), fm_path.height()),
+                        Qt::AlignLeft | Qt::AlignVCenter, elided_path);
     }
 
     painter->restore();
@@ -276,7 +302,7 @@ void ResultView::OnDoubleClicked(const QModelIndex &index) {
   if (index.isValid() && model_) {
     const auto *it = model_->GetItem(index.row());
     if (it) {
-      emit FileOpenRequested(it->doc_id, it->file_name, it->file_path);
+      emit FileOpenRequested(it->doc_id, it->file_name, it->file_path, it->container_path);
     }
   }
 }
@@ -285,7 +311,7 @@ void ResultView::OnCurrentChanged(const QModelIndex &current, const QModelIndex 
   if (current.isValid() && model_) {
     const auto *it = model_->GetItem(current.row());
     if (it) {
-      emit FileSelected(it->doc_id, it->file_name, it->file_path);
+      emit FileSelected(it->doc_id, it->file_name, it->file_path, it->container_path);
     }
   }
 }
@@ -425,7 +451,8 @@ void ResultView::EnsureSnippetForRows(int start_row, int end_row) {
           if (self->hover_popup_ && self->hover_popup_->isVisible() && self->hover_row_ >= 0) {
             const auto *hovered = self->model_->GetItem(self->hover_row_);
             if (hovered && hovered->has_body_snippet) {
-              self->hover_popup_->ShowSnippet(self->hover_pos_, hovered->file_name, hovered->file_path,
+              self->hover_popup_->ShowSnippet(self->hover_pos_, hovered->file_name,
+                                              FormatArchiveBreadcrumb(hovered->file_path, hovered->container_path),
                                               hovered->snippet_html, hovered->file_size, hovered->mtime,
                                               hovered->score);
             }
@@ -459,7 +486,7 @@ void ResultView::OpenCurrentSelectedItem() {
   if (cur.isValid() && model_) {
     const auto *it = model_->GetItem(cur.row());
     if (it) {
-      emit FileOpenRequested(it->doc_id, it->file_name, it->file_path);
+      emit FileOpenRequested(it->doc_id, it->file_name, it->file_path, it->container_path);
     }
   }
 }
@@ -509,8 +536,8 @@ void ResultView::OnHoverTimerFired() {
     EnsureSnippetForRows(hover_row_, hover_row_);
     const auto *it = model_->GetItem(hover_row_);
     if (it) {
-      hover_popup_->ShowSnippet(hover_pos_, it->file_name, it->file_path, it->snippet_html, it->file_size, it->mtime,
-                                it->score);
+      hover_popup_->ShowSnippet(hover_pos_, it->file_name, FormatArchiveBreadcrumb(it->file_path, it->container_path),
+                                it->snippet_html, it->file_size, it->mtime, it->score);
     }
   }
 }

@@ -25,7 +25,8 @@ class ContentPreviewDialog : public QDialog {
 
  public:
   ContentPreviewDialog(int64_t doc_id, QString file_name, QString file_path, std::vector<std::string> keywords,
-                       std::shared_ptr<service::ISearchCoordinator> coordinator, QWidget *parent = nullptr);
+                       std::shared_ptr<service::ISearchCoordinator> coordinator, QWidget *parent = nullptr,
+                       QString container_path = QString());
   ~ContentPreviewDialog() override = default;
 
  private slots:
@@ -39,6 +40,7 @@ class ContentPreviewDialog : public QDialog {
   int64_t doc_id_ = 0;
   QString file_name_;
   QString file_path_;
+  QString container_path_;
   std::vector<std::string> keywords_;
   std::shared_ptr<service::ISearchCoordinator> search_coordinator_;
 

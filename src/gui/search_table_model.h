@@ -17,6 +17,7 @@ struct DisplayResultItem {
   int64_t doc_id = 0;
   QString file_name;
   QString file_path;
+  QString container_path;
   QString ext;
   uint64_t file_size = 0;
   int64_t mtime = 0;

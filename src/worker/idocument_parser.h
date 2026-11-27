@@ -66,6 +66,20 @@ class IDocumentParser {
   [[nodiscard]] virtual bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) = 0;
 
   /**
+   * @brief Parse document directly from an in-memory byte buffer without disk I/O.
+   *
+   * @param raw_bytes Pointer to raw file bytes
+   * @param raw_size Byte length of raw_bytes
+   * @param ctx Parsing execution parameters (virtual path, lowercase ext, timeout_ms)
+   * @param out_doc Destination document receiving extracted plain text and flags
+   * @return true on success, false on fatal parse failure
+   */
+  [[nodiscard]] virtual bool ParseBuffer(const char * /*raw_bytes*/, size_t /*raw_size*/, const ParseContext & /*ctx*/,
+                                         ExtractedDocument * /*out_doc*/) {
+    return false;
+  }
+
+  /**
    * @brief Parse document directly from a stream.
    * Enables stream processing, standard input pipe (cat file | parser), and memory-backed streams.
    *

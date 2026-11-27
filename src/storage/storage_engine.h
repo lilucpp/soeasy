@@ -55,6 +55,8 @@ class StorageEngine : public IStorageEngine {
   bool DoDeleteDocument(int64_t doc_id) override;
   bool DoDeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) override;
   int64_t DoDeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids) override;
+  bool DoUpsertArchiveContainer(const ArchiveContainerMeta &meta) override;
+  bool DoDeleteArchiveContainer(int64_t container_id, std::vector<int64_t> *out_deleted_doc_ids) override;
   bool DoClearAll() override;
   bool DoSetMetaValue(const std::string &key, const std::string &value) override;
   bool DoGetMetaValue(const std::string &key, std::string *out_value) override;
@@ -70,6 +72,10 @@ class StorageEngine : public IStorageEngine {
   common::ParseStatusSummary DoGetParseStatusSummary() override;
   std::vector<common::ParseIssueRecord> DoGetParseIssues(std::optional<common::ParseStatus> filter_status, size_t limit,
                                                          size_t offset) override;
+  bool DoGetArchiveContainerMeta(int64_t container_id, ArchiveContainerMeta *out_meta) override;
+  std::vector<int64_t> DoGetArchiveChildDocIds(int64_t container_id) override;
+  std::vector<ArchiveContainerMeta> DoListArchiveContainers() override;
+  std::unordered_map<int64_t, std::string> DoGetContainerPathsByDocIds(const std::vector<int64_t> &doc_ids) override;
   [[nodiscard]] std::string DoGetLastError() const override;
 
  private:

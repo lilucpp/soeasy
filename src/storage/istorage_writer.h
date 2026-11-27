@@ -13,8 +13,11 @@
 namespace soeasy {
 namespace storage {
 
+struct ArchiveContainerMeta;
+
 struct DocumentIndexEntry {
   int64_t doc_id = 0;
+  int64_t parent_id = 0;  // 0 for regular/container files; container_id for archive children
   std::string file_path;
   std::string file_name;
   std::string ext;
@@ -43,6 +46,11 @@ class IDocumentIndexWriter {
   virtual bool DeleteDocument(int64_t doc_id) = 0;
   virtual bool DeleteDocumentsBatch(const std::vector<int64_t> &doc_ids) = 0;
   virtual int64_t DeleteDirectory(const std::string &dir_path, std::vector<int64_t> *out_deleted_doc_ids = nullptr) = 0;
+  virtual bool UpsertArchiveContainer(const ArchiveContainerMeta & /*meta*/) { return false; }
+  virtual bool DeleteArchiveContainer(int64_t /*container_id*/,
+                                      std::vector<int64_t> * /*out_deleted_doc_ids*/ = nullptr) {
+    return false;
+  }
   virtual bool ClearAll() = 0;
   virtual bool SetMetaValue(const std::string &key, const std::string &value) = 0;
 };

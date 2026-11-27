@@ -33,6 +33,9 @@ class L2OfficeParser : public IDocumentParser {
   // IDocumentParser implementation
   bool CanHandle(const ParseContext &ctx) const override { return IsSupported(ctx.ext); }
   bool Parse(const ParseContext &ctx, ExtractedDocument *out_doc) override;
+  bool ParseBuffer(const char *raw_bytes, size_t raw_size, const ParseContext &ctx,
+                   ExtractedDocument *out_doc) override;
+  bool ParseStream(std::istream &stream, const ParseContext &ctx, ExtractedDocument *out_doc) override;
   void CheckIdleUnload(double idle_seconds = 60.0) override;
   bool is_embedded_ocr_loaded() const;
   int Priority() const override { return 20; }
@@ -95,13 +98,13 @@ class L2OfficeParser : public IDocumentParser {
  private:
   struct EmbeddedOcrBudget;
 
-  bool ParseInternal(const std::string &file_path, const std::string &ext, uint32_t timeout_ms,
-                     ExtractedDocument *out_doc);
+  bool ParseInternal(const std::string &file_path, const char *raw_bytes, size_t raw_size, uint64_t file_size,
+                     const std::string &ext, uint32_t timeout_ms, ExtractedDocument *out_doc);
   std::string RunEmbeddedImageOcr(const std::string &image_name, const char *image_buffer, size_t image_size,
                                   EmbeddedOcrBudget *budget);
-  void ExtractWithDocToText(const std::string &file_path, const std::string &lower_ext, uint32_t timeout_ms,
-                            std::string *out_utf8_text, int *out_dt_status, std::string *out_dt_error,
-                            EmbeddedOcrBudget *out_budget);
+  void ExtractWithDocToText(const std::string &file_path, const char *raw_bytes, size_t raw_size,
+                            const std::string &lower_ext, uint32_t timeout_ms, std::string *out_utf8_text,
+                            int *out_dt_status, std::string *out_dt_error, EmbeddedOcrBudget *out_budget);
   static const char *DocToTextImageParserCallbackC(const char *image_name, const char *image_buffer,
                                                    size_t image_size, void *user_data);
 

@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 namespace soeasy {
 namespace service {
 
+inline constexpr size_t kUnpackerWorkerIndex = std::numeric_limits<size_t>::max();
 using WorkerPid = int64_t;
 
 struct SubprocessDeleter {

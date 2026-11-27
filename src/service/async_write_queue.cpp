@@ -247,11 +247,32 @@ void AsyncWriteQueue::ExecuteBatchTransaction(const std::vector<WriteOp> &batch)
 
   auto execute_op = [this](const WriteOp &op) {
     if (op.type == WriteOpType::kIndex) {
-      return storage_engine_->IndexDocument(op.doc_id, op.file_path, op.file_name, op.ext, op.file_size, op.mtime,
-                                            op.parse_level, op.content, op.parse_stat, op.error_reason);
+      storage::DocumentIndexEntry entry;
+      entry.doc_id = op.doc_id;
+      entry.parent_id = op.parent_id;
+      entry.file_path = op.file_path;
+      entry.file_name = op.file_name;
+      entry.ext = op.ext;
+      entry.file_size = op.file_size;
+      entry.mtime = op.mtime;
+      entry.parse_level = op.parse_level;
+      entry.utf8_content = op.content;
+      entry.parse_stat = op.parse_stat;
+      entry.error_reason = op.error_reason;
+      return storage_engine_->IndexDocument(entry);
     }
     if (op.type == WriteOpType::kDelete) {
       return storage_engine_->DeleteDocument(op.doc_id);
+    }
+    if (op.type == WriteOpType::kUpsertArchiveContainer) {
+      storage::ArchiveContainerMeta meta;
+      meta.container_id = op.doc_id;
+      meta.container_path = op.file_path;
+      meta.file_size = op.file_size;
+      meta.mtime = op.mtime;
+      meta.status = op.parse_stat;
+      meta.item_count = op.parse_level;
+      return storage_engine_->UpsertArchiveContainer(meta);
     }
     return false;
   };

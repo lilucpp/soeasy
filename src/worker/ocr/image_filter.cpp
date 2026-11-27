@@ -61,6 +61,23 @@ FilterDecision ImageFilter::PrecheckFile(const std::string &file_path, uint64_t 
   return FilterDecision::kPass;
 }
 
+FilterDecision ImageFilter::PrecheckBuffer(const std::string &file_path, const uint8_t *buf, size_t bytes) const {
+  if (options_.filter_cache_thumbnails && IsCacheOrThumbnailPath(file_path)) {
+    return FilterDecision::kIconOrThumbnailPath;
+  }
+  if (!buf || bytes == 0) {
+    return FilterDecision::kUnreadable;
+  }
+  if (bytes > options_.max_file_size) {
+    return FilterDecision::kFileTooLarge;
+  }
+  ImageDimension dim = ProbeBufferDimensions(buf, bytes);
+  if (dim.valid) {
+    return CheckDimensions(dim.width, dim.height);
+  }
+  return FilterDecision::kPass;
+}
+
 bool ImageFilter::IsCacheOrThumbnailPath(const std::string &file_path) {
   std::string lower = file_path;
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);

@@ -31,7 +31,7 @@ class PreviewPanel : public QWidget {
   void SetSearchCoordinator(std::shared_ptr<service::ISearchCoordinator> coordinator);
 
   void LoadDocument(int64_t doc_id, const QString &file_name, const QString &file_path,
-                    const std::vector<std::string> &keywords);
+                    const std::vector<std::string> &keywords, const QString &container_path = QString());
   void ClearPreview();
   void RetranslateUi();
 
@@ -59,6 +59,7 @@ class PreviewPanel : public QWidget {
   int64_t current_doc_id_ = 0;
   QString current_file_name_;
   QString current_file_path_;
+  QString current_container_path_;
   std::vector<std::string> current_keywords_;
   std::shared_ptr<service::ISearchCoordinator> search_coordinator_;
 

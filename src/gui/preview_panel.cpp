@@ -128,7 +128,7 @@ void PreviewPanel::SetupUi() {
 
 void PreviewPanel::RetranslateUi() {
   if (btn_open_file_) {
-    btn_open_file_->setText(Tr("btn_open_file"));
+    btn_open_file_->setText(current_container_path_.isEmpty() ? Tr("btn_open_file") : Tr("btn_open_parent_archive"));
   }
   if (btn_open_folder_) {
     btn_open_folder_->setText(Tr("btn_open_folder"));
@@ -155,31 +155,38 @@ void PreviewPanel::ClearPreview() {
   current_doc_id_ = 0;
   current_file_name_.clear();
   current_file_path_.clear();
+  current_container_path_.clear();
   current_keywords_.clear();
 
   if (icon_label_) icon_label_->clear();
   if (title_label_) title_label_->SetFullText(Tr("no_file_selected"), false);
   if (path_label_) path_label_->SetFullText(Tr("no_content_extracted"), false);
-  if (btn_open_file_) btn_open_file_->setEnabled(false);
+  if (btn_open_file_) {
+    btn_open_file_->setText(Tr("btn_open_file"));
+    btn_open_file_->setEnabled(false);
+  }
   if (btn_open_folder_) btn_open_folder_->setEnabled(false);
 
   RenderEmptyStateGuide();
 }
 
 void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const QString &file_path,
-                                const std::vector<std::string> &keywords) {
+                                const std::vector<std::string> &keywords, const QString &container_path) {
   current_doc_id_ = doc_id;
   current_file_name_ = file_name;
   current_file_path_ = file_path;
+  current_container_path_ = container_path;
   current_keywords_ = keywords;
 
   QFileInfo fi(file_path);
   QString ext = fi.suffix();
+  const bool is_archive_item = !container_path.isEmpty();
 
   icon_label_->setPixmap(IconProvider::GetFileIcon(ext).pixmap(24, 24));
   title_label_->SetFullText(file_name);
-  path_label_->SetFullText(file_path);
+  path_label_->SetFullText(FormatArchiveBreadcrumb(file_path, container_path));
 
+  btn_open_file_->setText(is_archive_item ? Tr("btn_open_parent_archive") : Tr("btn_open_file"));
   btn_open_file_->setEnabled(true);
   btn_open_folder_->setEnabled(true);
 
@@ -190,13 +197,14 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
 
   viewer_->SetHtml(QString("<p style='color:#94A3B8; font-style:italic;'>%1</p>").arg(Tr("preview_loading_content")));
 
-  QThreadPool::globalInstance()->start([self, token_holder, req_id, doc_id, file_path, keywords, coordinator]() {
+  QThreadPool::globalInstance()->start(
+      [self, token_holder, req_id, doc_id, file_path, keywords, coordinator, is_archive_item]() {
     DocumentPreviewResult preview;
 
     // Skip the (potentially expensive) read entirely when a newer selection superseded us.
     if (token_holder->load(std::memory_order_relaxed) == req_id) {
       try {
-        preview = DocumentViewerWidget::LoadPreviewDocument(doc_id, file_path, coordinator);
+        preview = DocumentViewerWidget::LoadPreviewDocument(doc_id, file_path, coordinator, !is_archive_item);
       } catch (const std::exception &e) {
         LOG_WARN("[PreviewPanel] Failed to read preview for '{}': {}", file_path.toStdString(), e.what());
         preview = DocumentPreviewResult{};
@@ -227,14 +235,16 @@ void PreviewPanel::LoadDocument(int64_t doc_id, const QString &file_name, const 
 }
 
 void PreviewPanel::OnOpenFolder() {
-  if (current_file_path_.isEmpty()) return;
-  QFileInfo fi(current_file_path_);
+  const QString target = current_container_path_.isEmpty() ? current_file_path_ : current_container_path_;
+  if (target.isEmpty()) return;
+  QFileInfo fi(target);
   QDesktopServices::openUrl(QUrl::fromLocalFile(fi.absolutePath()));
 }
 
 void PreviewPanel::OnOpenWithDefaultApp() {
-  if (current_file_path_.isEmpty()) return;
-  QDesktopServices::openUrl(QUrl::fromLocalFile(current_file_path_));
+  const QString target = current_container_path_.isEmpty() ? current_file_path_ : current_container_path_;
+  if (target.isEmpty()) return;
+  QDesktopServices::openUrl(QUrl::fromLocalFile(target));
 }
 
 void PreviewPanel::RenderEmptyStateGuide() {

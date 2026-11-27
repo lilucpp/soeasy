@@ -247,7 +247,8 @@ void ParseIssuesDialog::PopulateTable() {
     }
 
     const QString q_name = QString::fromStdString(rec.file_name);
-    const QString q_path = QString::fromStdString(rec.file_path);
+    const QString q_path =
+        FormatArchiveBreadcrumb(QString::fromStdString(rec.file_path), QString::fromStdString(rec.container_path));
     const QString q_reason = QString::fromStdString(rec.reason);
     const QString q_ext = QString::fromStdString(rec.ext);
 
@@ -317,9 +318,11 @@ void ParseIssuesDialog::OnSelectionChanged() {
   if (idx >= all_issues_.size()) return;
 
   const auto &rec = all_issues_[idx];
+  const QString display_path =
+      FormatArchiveBreadcrumb(QString::fromStdString(rec.file_path), QString::fromStdString(rec.container_path));
   const QString detail = QString("[%1] %2\n%3: %4\n%5: %6")
                              .arg(StatusDisplayText(rec.status), QString::fromStdString(rec.file_name),
-                                  Tr("issues_col_path"), QString::fromStdString(rec.file_path), Tr("issues_col_reason"),
+                                  Tr("issues_col_path"), display_path, Tr("issues_col_reason"),
                                   QString::fromStdString(rec.reason.empty() ? "-" : rec.reason));
   detail_box_->setPlainText(detail);
   open_folder_btn_->setEnabled(!rec.file_path.empty());
@@ -329,9 +332,13 @@ void ParseIssuesDialog::OnSelectionChanged() {
 void ParseIssuesDialog::OnOpenContainingFolder() {
   const int row = table_->currentRow();
   if (row < 0) return;
-  auto *path_item = table_->item(row, kColPath);
-  if (!path_item) return;
-  const QString path = path_item->text();
+  auto *status_item = table_->item(row, kColStatus);
+  if (!status_item) return;
+  const size_t idx = static_cast<size_t>(status_item->data(kRoleIssueIndex).toULongLong());
+  if (idx >= all_issues_.size()) return;
+  const auto &rec = all_issues_[idx];
+  const QString path =
+      rec.container_path.empty() ? QString::fromStdString(rec.file_path) : QString::fromStdString(rec.container_path);
   if (path.isEmpty()) return;
   QFileInfo fi(path);
   QDesktopServices::openUrl(QUrl::fromLocalFile(fi.absolutePath()));

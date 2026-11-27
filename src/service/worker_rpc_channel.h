@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -14,8 +15,12 @@
 namespace soeasy {
 namespace service {
 
+struct ArchiveExtractResult;
+struct ArchiveExtractTask;
+struct ArchiveStreamItem;
 struct ParseTask;
 struct ParseTaskResult;
+using ArchiveItemCallback = std::function<bool(ArchiveStreamItem &&)>;
 
 class WorkerRpcChannel {
  public:
@@ -29,10 +34,12 @@ class WorkerRpcChannel {
 
   bool WaitConnected(uint32_t timeout_ms);
   ParseTaskResult Call(const ParseTask &task, uint32_t timeout_ms);
+  ArchiveExtractResult CallArchiveStream(const ArchiveExtractTask &task, const ArchiveItemCallback &on_item,
+                                         const std::function<void()> &on_activity);
   void Stop();
 
  private:
-  struct TaskRequest;
+  struct RequestItem;
 
   void Loop();
 
@@ -42,7 +49,7 @@ class WorkerRpcChannel {
   std::mutex mutex_;
   std::mutex join_mutex_;
   std::condition_variable cv_;
-  std::deque<std::shared_ptr<TaskRequest>> queue_;
+  std::deque<std::shared_ptr<RequestItem>> queue_;
   kj::Maybe<kj::Own<kj::CrossThreadPromiseFulfiller<void>>> active_fulfiller_;
   bool connected_ = false;
   bool stopped_ = false;
