@@ -776,6 +776,22 @@ TEST_F(IndexStateMachineTest, ProgressReportsProcessedCountWhenFilesFail) {
   EXPECT_EQ(last_processed, 2u);
 }
 
+TEST_F(IndexStateMachineTest, WpsPresetExtensionsDefaultEnabled) {
+  const auto defaults = IndexConfig::GetDefaultSupportedExtensions();
+  EXPECT_TRUE(defaults.count("wps") > 0u);
+  EXPECT_TRUE(defaults.count("et") > 0u);
+  EXPECT_TRUE(defaults.count("dps") > 0u);
+  EXPECT_TRUE(defaults.count("rtf") > 0u);
+
+  IndexConfig cfg;
+  EXPECT_TRUE(cfg.IsExtensionSupported("wps"));
+  EXPECT_TRUE(cfg.IsExtensionSupported("et"));
+  EXPECT_TRUE(cfg.IsExtensionSupported("dps"));
+  EXPECT_TRUE(cfg.IsFileSupported("report.wps"));
+  EXPECT_TRUE(cfg.IsFileSupported("sheet.et"));
+  EXPECT_TRUE(cfg.IsFileSupported("slides.dps"));
+}
+
 }  // namespace
 }  // namespace service
 }  // namespace soeasy

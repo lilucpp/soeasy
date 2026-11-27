@@ -148,11 +148,14 @@ QIcon IconProvider::GetFileIcon(const QString &extension_or_filename) {
   }
 
   QIcon icon;
-  if (ext == "doc" || ext == "docx" || ext == "odt" || ext == "fodt" || ext == "pages" || ext == "rtf") {
+  if (ext == "doc" || ext == "docx" || ext == "odt" || ext == "fodt" || ext == "pages" || ext == "rtf" ||
+      ext == "wps") {
     icon = RenderFileBadgeIcon("W", "#2B579A", true);
-  } else if (ext == "xls" || ext == "xlsx" || ext == "xlsb" || ext == "ods" || ext == "fods" || ext == "numbers" || ext == "csv") {
+  } else if (ext == "xls" || ext == "xlsx" || ext == "xlsb" || ext == "ods" || ext == "fods" || ext == "numbers" ||
+             ext == "csv" || ext == "et") {
     icon = RenderFileBadgeIcon("X", "#2E7D32", true);
-  } else if (ext == "ppt" || ext == "pptx" || ext == "odp" || ext == "fodp" || ext == "key" || ext == "keynote") {
+  } else if (ext == "ppt" || ext == "pptx" || ext == "odp" || ext == "fodp" || ext == "key" || ext == "keynote" ||
+             ext == "dps") {
     icon = RenderFileBadgeIcon("P", "#E65100", true);
   } else if (ext == "pdf") {
     icon = RenderFileBadgeIcon("pdf", "#D32F2F", true);

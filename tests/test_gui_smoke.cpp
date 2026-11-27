@@ -24,6 +24,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/format_categories.h"
 #include "common/resource_profile.h"
 #include "gui/content_preview_dialog.h"
 #include "gui/hover_preview_popup.h"
@@ -171,7 +172,15 @@ int main(int argc, char *argv[]) {
 
     // Verify format categories & format descriptions in English
     CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office OOXML Formats");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(3, "default") == "Kingsoft WPS Office Formats");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(5, "default") == "Comma-Separated Values (CSV)");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(10, "default") == "Web Pages & Stylesheets");
+    for (size_t i = 0; i < soeasy::common::GetPresetCategories().size(); ++i) {
+      CHECK(soeasy::gui::I18n::Instance().GetCategoryName(i, "") != QString("cat_name_%1").arg(i));
+      CHECK(soeasy::gui::I18n::Instance().GetCategoryDesc(i, "") != QString("cat_desc_%1").arg(i));
+    }
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "default") == "Word 2007+ Document");
+    CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("wps", "default") == "WPS Office Writer Document");
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("pdf", "default") == "Adobe PDF Portable Document");
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("cpp", "default") == "C++ Source Code");
 
@@ -226,6 +235,13 @@ int main(int argc, char *argv[]) {
     CHECK(soeasy::gui::Tr("guide_tips_html").contains("body:"));
     CHECK(soeasy::gui::Tr("app_title") == "SoEasy | 让电脑没有难搜的文件");
     CHECK(soeasy::gui::I18n::Instance().GetCategoryName(0, "default") == "Microsoft Office 新版格式 (OOXML)");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(3, "default") == "金山办公格式 (WPS Office)");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(5, "default") == "逗号分隔值表格 (CSV)");
+    CHECK(soeasy::gui::I18n::Instance().GetCategoryName(10, "default") == "网页与样式表");
+    for (size_t i = 0; i < soeasy::common::GetPresetCategories().size(); ++i) {
+      CHECK(soeasy::gui::I18n::Instance().GetCategoryName(i, "") != QString("cat_name_%1").arg(i));
+      CHECK(soeasy::gui::I18n::Instance().GetCategoryDesc(i, "") != QString("cat_desc_%1").arg(i));
+    }
     CHECK(soeasy::gui::I18n::Instance().GetFormatDesc("docx", "Word 2007+ 文本文档") == "Word 2007+ 文本文档");
 
     // Test SettingsDialog rendering in Chinese on Tab 0 and Tab 1
