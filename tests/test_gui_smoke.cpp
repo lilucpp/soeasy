@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QLabel>
 #include <QMetaObject>
 #include <QMouseEvent>
@@ -16,9 +17,11 @@
 #include <QThreadPool>
 #include <QTreeWidget>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -148,6 +151,22 @@ int main(int argc, char *argv[]) {
 
     CHECK(config->ShouldIndex("/tmp/test.rs", "rs", 100));
     CHECK(config->max_file_size() == 32 * 1024 * 1024);
+
+    // Verify ExtensionsTab two independent embedded toggles round-trip cleanly
+    soeasy::gui::ExtensionsTab ext_tab;
+    ext_tab.PopulateFromConfig(*config);
+    auto checks = ext_tab.findChildren<QCheckBox *>();
+    CHECK(checks.size() == 2);
+    CHECK(checks[0]->isChecked());
+    CHECK(!checks[1]->isChecked());
+    checks[0]->setChecked(false);
+    checks[1]->setChecked(true);
+    ext_tab.ApplyToConfig(config.get());
+    CHECK(!config->enable_embedded_files());
+    CHECK(config->enable_embedded_image_ocr());
+    ext_tab.PopulateFromConfig(*config);
+    CHECK(!checks[0]->isChecked());
+    CHECK(checks[1]->isChecked());
 
     std::cout << "  -> 索引目录/排除模式/扩展名扩展配置应用通过!\n";
   }
@@ -502,8 +521,15 @@ int main(int argc, char *argv[]) {
     CHECK(latency_lbl->text().contains("检索:"));
     CHECK(latency_lbl->toolTip().contains("重建索引"));
 
-    // 2. Wait for 4s banner timer to expire: left label restores file stats, right label retains index duration
-    pump_for(4150);
+    // 2. Wait for 4s banner timer to expire (bounded poll up to 5500ms against CPU scheduling jitter)
+    {
+      QElapsedTimer banner_wait;
+      banner_wait.start();
+      while (banner_wait.elapsed() < 5500 && !stats_lbl->text().contains("在索引文件:")) {
+        app.processEvents(QEventLoop::AllEvents, 20);
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+      }
+    }
     CHECK(stats_lbl->text().contains("在索引文件:"));
     CHECK(latency_lbl->text().contains("索引:"));
     CHECK(latency_lbl->text().contains("检索:"));
@@ -1152,6 +1178,113 @@ int main(int argc, char *argv[]) {
     std::error_code prev_clean_ec;
     std::filesystem::remove_all(preview_dir, prev_clean_ec);
     std::cout << "  -> 加密/空白/未索引(.svg/前导空白PDF)/空正文中性徽章/PreviewPanel异步防泄漏与XSS转义验证通过!\n";
+  }
+
+  // -------------------------------------------------------------
+  // Test: SearchTableModel & ResultView Chinese Pinyin/Natural Sorting & Strict Weak Ordering
+  // -------------------------------------------------------------
+  std::cout << "[Step Extra] 测试 SearchTableModel / ResultView 中文拼音+自然数字排序与反复正反排稳定性...\n";
+  {
+    soeasy::gui::ResultView sort_view;
+    auto *sort_model = sort_view.search_model();
+    CHECK(sort_model != nullptr);
+
+    std::vector<soeasy::gui::DisplayResultItem> items;
+    auto push_item = [&](int64_t id, const QString &name, uint64_t size, int64_t mtime, double score) {
+      soeasy::gui::DisplayResultItem it;
+      it.doc_id = id;
+      it.file_name = name;
+      it.file_path = QString("/tmp/sort_%1/%2").arg(id).arg(name);
+      it.file_size = size;
+      it.mtime = mtime;
+      it.score = score;
+      items.push_back(std::move(it));
+    };
+
+    // 28 duplicate Chinese names to trigger Introsort partitioning (>16 items)
+    for (int i = 0; i < 28; ++i) {
+      push_item(100 + i, QStringLiteral("测试.txt"), 1024, 1700000100, 80.0);
+    }
+    push_item(201, QStringLiteral("测试10.txt"), 2048, 1700000200, 90.0);
+    push_item(202, QStringLiteral("测试2.txt"), 2048, 1700000200, 90.0);
+    push_item(203, QStringLiteral("北极.txt"), 512, 1700000050, std::numeric_limits<double>::quiet_NaN());
+    push_item(204, QStringLiteral("安康.txt"), 512, 1700000050, 70.0);
+    push_item(205, QStringLiteral("测试1.txt"), 2048, 1700000200, 90.0);
+    push_item(206, QStringLiteral("阿爸.txt"), 4096, 1700000300, 95.0);
+    push_item(207, QStringLiteral("b10.txt"), 100, 1700000010, 60.0);
+    push_item(208, QStringLiteral("B2.txt"), 100, 1700000010, 60.0);
+
+    sort_view.SetResults(items);
+    sort_view.selectRow(29);  // doc_id == 202 ("测试2.txt")
+    const QModelIndex tracked = sort_model->index(29, soeasy::gui::SearchTableModel::kColFileName);
+    CHECK(sort_model->GetItem(tracked.row())->doc_id == 202);
+    const QPersistentModelIndex persistent_idx(tracked);
+
+    // Cycle Ascending -> Descending -> Ascending across every column without crash
+    const int cols[] = {
+        soeasy::gui::SearchTableModel::kColFileName, soeasy::gui::SearchTableModel::kColPath,
+        soeasy::gui::SearchTableModel::kColSize,     soeasy::gui::SearchTableModel::kColMtime,
+        soeasy::gui::SearchTableModel::kColScore,    soeasy::gui::SearchTableModel::kColIndex,
+    };
+    for (int rep = 0; rep < 3; ++rep) {
+      for (int col : cols) {
+        sort_model->sort(col, Qt::AscendingOrder);
+        sort_model->sort(col, Qt::DescendingOrder);
+      }
+    }
+
+    // Verify persistent index remained attached to doc_id 202 after all sorts
+    CHECK(persistent_idx.isValid());
+    CHECK(sort_model->GetItem(persistent_idx.row())->doc_id == 202);
+
+    // Verify ascending Chinese Pinyin + Natural Numeric + Latin Case-Insensitive order (preserving kColIndex order)
+    sort_model->sort(soeasy::gui::SearchTableModel::kColIndex, Qt::AscendingOrder);
+    sort_model->sort(soeasy::gui::SearchTableModel::kColFileName, Qt::AscendingOrder);
+    std::vector<QString> distinct_order;
+    for (const auto &it : sort_model->items()) {
+      if (distinct_order.empty() || distinct_order.back() != it.file_name) {
+        distinct_order.push_back(it.file_name);
+      }
+    }
+    auto idx_of = [&](const QString &name) -> int {
+      for (size_t k = 0; k < distinct_order.size(); ++k) {
+        if (distinct_order[k] == name) return static_cast<int>(k);
+      }
+      return -1;
+    };
+    CHECK(idx_of(QStringLiteral("阿爸.txt")) >= 0);
+    CHECK(idx_of(QStringLiteral("阿爸.txt")) < idx_of(QStringLiteral("安康.txt")));
+    CHECK(idx_of(QStringLiteral("安康.txt")) < idx_of(QStringLiteral("北极.txt")));
+    CHECK(idx_of(QStringLiteral("北极.txt")) < idx_of(QStringLiteral("测试.txt")));
+    CHECK(idx_of(QStringLiteral("测试.txt")) < idx_of(QStringLiteral("测试1.txt")));
+    CHECK(idx_of(QStringLiteral("测试1.txt")) < idx_of(QStringLiteral("测试2.txt")));
+    CHECK(idx_of(QStringLiteral("测试2.txt")) < idx_of(QStringLiteral("测试10.txt")));
+    CHECK(idx_of(QStringLiteral("B2.txt")) < idx_of(QStringLiteral("b10.txt")));
+
+    // Verify Descending order reverses Chinese natural order cleanly and preserves duplicate stability
+    sort_model->sort(soeasy::gui::SearchTableModel::kColFileName, Qt::DescendingOrder);
+    CHECK(sort_model->GetItem(0)->file_name == QStringLiteral("测试10.txt") ||
+          sort_model->GetItem(0)->file_name == QStringLiteral("b10.txt"));
+    int first_dup_row = -1;
+    for (int r = 0; r < sort_model->rowCount(); ++r) {
+      if (sort_model->GetItem(r)->file_name == QStringLiteral("测试.txt")) {
+        first_dup_row = r;
+        break;
+      }
+    }
+    CHECK(first_dup_row >= 0 && first_dup_row + 27 < sort_model->rowCount());
+    // Duplicates preserve original relative order (100, 101, ..., 127)
+    CHECK(sort_model->GetItem(first_dup_row)->doc_id == 100);
+    CHECK(sort_model->GetItem(first_dup_row + 27)->doc_id == 127);
+
+    // Verify ResultView 3-click cycle (Asc -> Desc -> Score Desc) does not crash
+    QMetaObject::invokeMethod(sort_view.horizontalHeader(), "sectionClicked", Qt::DirectConnection,
+                              Q_ARG(int, soeasy::gui::SearchTableModel::kColFileName));
+    QMetaObject::invokeMethod(sort_view.horizontalHeader(), "sectionClicked", Qt::DirectConnection,
+                              Q_ARG(int, soeasy::gui::SearchTableModel::kColFileName));
+    QMetaObject::invokeMethod(sort_view.horizontalHeader(), "sectionClicked", Qt::DirectConnection,
+                              Q_ARG(int, soeasy::gui::SearchTableModel::kColFileName));
+    std::cout << "  -> SearchTableModel / ResultView 反复排序稳定性与中文拼音/自然数字顺序验证通过!\n";
   }
 
   // Cleanup: shut down live watch, drain queued previews, and stop worker pool explicitly while pipeline

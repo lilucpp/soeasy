@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QPointer>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QStyledItemDelegate>
 #include <algorithm>
 #include <utility>
@@ -172,7 +173,10 @@ void ResultView::SetupTable() {
     if (logical_index == SearchTableModel::kColIndex) {
       last_sorted_col_ = SearchTableModel::kColIndex;
       last_sort_order_ = Qt::AscendingOrder;
-      horizontalHeader()->setSortIndicator(SearchTableModel::kColIndex, Qt::AscendingOrder);
+      {
+        const QSignalBlocker blocker(horizontalHeader());
+        horizontalHeader()->setSortIndicator(SearchTableModel::kColIndex, Qt::AscendingOrder);
+      }
       sortByColumn(SearchTableModel::kColIndex, Qt::AscendingOrder);
       return;
     }
@@ -180,7 +184,10 @@ void ResultView::SetupTable() {
       // 3rd click on sorted column: cycle back to default search relevance order!
       last_sorted_col_ = SearchTableModel::kColScore;
       last_sort_order_ = Qt::DescendingOrder;
-      horizontalHeader()->setSortIndicator(SearchTableModel::kColScore, Qt::DescendingOrder);
+      {
+        const QSignalBlocker blocker(horizontalHeader());
+        horizontalHeader()->setSortIndicator(SearchTableModel::kColScore, Qt::DescendingOrder);
+      }
       sortByColumn(SearchTableModel::kColScore, Qt::DescendingOrder);
       return;
     }

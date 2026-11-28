@@ -3,11 +3,15 @@
 
 #include "gui/search_table_model.h"
 
+#include <QCollator>
 #include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFont>
+#include <QLocale>
 #include <algorithm>
+#include <cmath>
+#include <optional>
 
 #include "gui/gui_utils.h"
 #include "gui/i18n.h"
@@ -212,34 +216,70 @@ void SearchTableModel::sort(int column, Qt::SortOrder order) {
   }
   layoutAboutToBeChanged();
 
-  std::sort(items_.begin(), items_.end(), [column, order](const DisplayResultItem &a, const DisplayResultItem &b) {
-    bool less = false;
+  const QModelIndexList persistent = persistentIndexList();
+  std::vector<int64_t> persistent_doc_ids;
+  persistent_doc_ids.reserve(persistent.size());
+  for (const QModelIndex &idx : persistent) {
+    if (idx.isValid() && idx.row() >= 0 && idx.row() < static_cast<int>(items_.size())) {
+      persistent_doc_ids.push_back(items_[idx.row()].doc_id);
+    } else {
+      persistent_doc_ids.push_back(-1);
+    }
+  }
+
+  std::optional<QCollator> collator;
+  if (column == kColFileName || column == kColPath) {
+    collator.emplace(QLocale(QLocale::Chinese, QLocale::China));
+    collator->setNumericMode(true);
+    collator->setCaseSensitivity(Qt::CaseInsensitive);
+  }
+
+  auto is_less = [column, &collator](const DisplayResultItem &a, const DisplayResultItem &b) -> bool {
     switch (column) {
       case kColFileName:
-        less = a.file_name.compare(b.file_name, Qt::CaseInsensitive) < 0;
-        break;
+        return collator->compare(a.file_name, b.file_name) < 0;
       case kColPath:
-        less = a.file_path.compare(b.file_path, Qt::CaseInsensitive) < 0;
-        break;
+        return collator->compare(a.file_path, b.file_path) < 0;
       case kColSize:
-        less = a.file_size < b.file_size;
-        break;
+        return a.file_size < b.file_size;
       case kColMtime:
-        less = a.mtime < b.mtime;
-        break;
-      case kColScore:
-        // Score: negative values, smaller is more relevant in SQLite FTS5
-        less = a.score < b.score;
-        break;
+        return a.mtime < b.mtime;
+      case kColScore: {
+        const bool a_nan = std::isnan(a.score);
+        const bool b_nan = std::isnan(b.score);
+        if (a_nan || b_nan) {
+          return !a_nan && b_nan;
+        }
+        return a.score < b.score;
+      }
       case kColIndex:
       default:
-        less = a.initial_order < b.initial_order;
-        break;
+        return a.initial_order < b.initial_order;
     }
-    return (order == Qt::AscendingOrder) ? less : !less;
+  };
+
+  std::stable_sort(items_.begin(), items_.end(), [&is_less, order](const DisplayResultItem &a, const DisplayResultItem &b) {
+    return (order == Qt::AscendingOrder) ? is_less(a, b) : is_less(b, a);
   });
 
   RebuildDocIdIndex();
+
+  if (!persistent.isEmpty()) {
+    QModelIndexList updated;
+    updated.reserve(persistent.size());
+    for (int i = 0; i < persistent.size(); ++i) {
+      const QModelIndex &old_idx = persistent[i];
+      const int64_t doc_id = persistent_doc_ids[static_cast<size_t>(i)];
+      auto it = (doc_id >= 0) ? doc_id_to_row_.find(doc_id) : doc_id_to_row_.end();
+      if (it != doc_id_to_row_.end()) {
+        updated.push_back(index(static_cast<int>(it->second), old_idx.column(), old_idx.parent()));
+      } else {
+        updated.push_back(QModelIndex());
+      }
+    }
+    changePersistentIndexList(persistent, updated);
+  }
+
   layoutChanged();
 }
 
