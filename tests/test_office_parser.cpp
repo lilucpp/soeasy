@@ -1204,6 +1204,75 @@ int main(int argc, char *argv[]) {
     std::cout << "  [+] 3/4 OCR 预算超限返回 ParseOutcome::kPartialOcr / IPC TaskStatus::kPartialOcr 与正常 kOk 验证通过\n";
   }
 
+  // Test: DocToText v5.1.6 independent parse_embedded_files toggle via L2OfficeParser
+  {
+    auto build_minimal_docx = [](const std::string &out_path, const std::string &body_token,
+                                 const std::string &embedded_docx_path) {
+      mz_zip_archive z;
+      std::memset(&z, 0, sizeof(z));
+      CHECK(mz_zip_writer_init_file(&z, out_path.c_str(), 0) == MZ_TRUE);
+      auto add_s = [&z](const char *n, const std::string &c) {
+        CHECK(mz_zip_writer_add_mem(&z, n, c.data(), c.size(), MZ_BEST_SPEED) == MZ_TRUE);
+      };
+      add_s("[Content_Types].xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+            "<Default Extension=\"docx\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"/>"
+            "<Override PartName=\"/word/document.xml\" "
+            "ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+            "</Types>");
+      add_s("_rels/.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Id=\"rId1\" "
+            "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" "
+            "Target=\"word/document.xml\"/>"
+            "</Relationships>");
+      add_s("word/document.xml",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>"
+            "<w:p><w:r><w:t>" +
+                body_token +
+                "</w:t></w:r></w:p>"
+                "</w:body></w:document>");
+      if (!embedded_docx_path.empty()) {
+        std::ifstream ifs(embedded_docx_path, std::ios::binary);
+        CHECK(ifs.is_open());
+        std::string inner_bytes((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+        add_s("word/embeddings/Microsoft_Word_Document1.docx", inner_bytes);
+      }
+      CHECK(mz_zip_writer_finalize_archive(&z) == MZ_TRUE);
+      CHECK(mz_zip_writer_end(&z) == MZ_TRUE);
+    };
+
+    const std::string inner_docx = test_dir + "/embedded_inner.docx";
+    const std::string outer_docx = test_dir + "/embedded_outer.docx";
+    build_minimal_docx(inner_docx, "EmbeddedChildSecret2026", "");
+    build_minimal_docx(outer_docx, "EmbeddedOuterMain2026", inner_docx);
+
+    const bool prev_embed = soeasy::worker::L2OfficeParser::parse_embedded_files();
+    soeasy::worker::ParseContext ctx;
+    ctx.file_path = outer_docx;
+    ctx.ext = "docx";
+
+    soeasy::worker::L2OfficeParser::SetParseEmbeddedFiles(false);
+    soeasy::worker::ExtractedDocument doc_no_embed;
+    CHECK(parser.Parse(ctx, &doc_no_embed));
+    CHECK(doc_no_embed.utf8_text.find("EmbeddedOuterMain2026") != std::string::npos);
+    CHECK(doc_no_embed.utf8_text.find("EmbeddedChildSecret2026") == std::string::npos);
+
+    soeasy::worker::L2OfficeParser::SetParseEmbeddedFiles(true);
+    soeasy::worker::ExtractedDocument doc_with_embed;
+    CHECK(parser.Parse(ctx, &doc_with_embed));
+    CHECK(doc_with_embed.utf8_text.find("EmbeddedOuterMain2026") != std::string::npos);
+    CHECK(doc_with_embed.utf8_text.find("EmbeddedChildSecret2026") != std::string::npos);
+
+    soeasy::worker::L2OfficeParser::SetParseEmbeddedFiles(prev_embed);
+    std::cout << "  [+] DocToText parse_embedded_files 开关独立控制验证通过\n";
+  }
+
   // Cleanup
   worker_guard.reset();
   storage->Close();

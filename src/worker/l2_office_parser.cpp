@@ -36,8 +36,8 @@
 #include "common/system_env.h"
 #include "doctotext_c_api.h"
 #if !defined(DOCTOTEXT_VERSION_MAJOR) || !defined(DOCTOTEXT_VERSION_MINOR) || !defined(DOCTOTEXT_VERSION_PATCH) || \
-    DOCTOTEXT_VERSION_MAJOR != 5 || DOCTOTEXT_VERSION_MINOR != 1 || DOCTOTEXT_VERSION_PATCH != 5
-#error "DocToText header version mismatch: SoEasy requires DocToText 5.1.5 headers."
+    DOCTOTEXT_VERSION_MAJOR != 5 || DOCTOTEXT_VERSION_MINOR != 1 || DOCTOTEXT_VERSION_PATCH < 6
+#error "DocToText header version mismatch: SoEasy requires DocToText >= 5.1.6 headers."
 #endif
 #include "miniz.h"
 #include "utf8.h"
@@ -61,6 +61,7 @@ static std::mutex g_dt_mutex;
 static bool g_dt_logging_enabled = false;
 static std::string g_dt_log_path = "";
 static std::unique_ptr<std::ofstream> g_dt_file_stream;
+static std::atomic<bool> s_parse_embedded_files{true};
 static std::atomic<bool> s_embedded_image_ocr{false};
 static std::atomic<uint64_t> g_dt_tmp_seq{0};
 
@@ -708,7 +709,11 @@ void L2OfficeParser::ExtractWithDocToText(const std::string &file_path, const ch
       doctotext_extractor_params_set_log_file(params.get(), kNullDevice);
     }
     doctotext_extractor_params_set_parser_type(params.get(), ResolveDocToTextParserType(lower_ext));
-    if (s_embedded_image_ocr.load(std::memory_order_relaxed)) {
+    const bool parse_embedded = s_parse_embedded_files.load(std::memory_order_relaxed);
+    const bool parse_doc_images = s_embedded_image_ocr.load(std::memory_order_relaxed);
+    doctotext_extractor_params_set_parse_embedded_files(params.get(), parse_embedded ? 1 : 0);
+    doctotext_extractor_params_set_parse_document_images(params.get(), parse_doc_images ? 1 : 0);
+    if (parse_doc_images) {
       doctotext_extractor_params_set_image_parser_callback(params.get(), &L2OfficeParser::DocToTextImageParserCallbackC,
                                                            &local_budget);
     } else {
@@ -842,6 +847,14 @@ void L2OfficeParser::SetLogging(bool enable, const std::string &log_file_path) {
       g_dt_file_stream.reset();
     }
   }
+}
+
+void L2OfficeParser::SetParseEmbeddedFiles(bool enable) {
+  s_parse_embedded_files.store(enable, std::memory_order_relaxed);
+}
+
+bool L2OfficeParser::parse_embedded_files() {
+  return s_parse_embedded_files.load(std::memory_order_relaxed);
 }
 
 void L2OfficeParser::SetEmbeddedImageOcr(bool enable) {

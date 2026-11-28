@@ -42,6 +42,8 @@ class ExtensionsTab : public ISettingsTab {
   void UpdateExtensionsCount();
 
   QGroupBox *group_ocr_ = nullptr;
+  QCheckBox *embedded_files_check_ = nullptr;
+  QLabel *label_embedded_files_tip_ = nullptr;
   QCheckBox *embedded_image_ocr_check_ = nullptr;
   QLabel *label_ocr_tip_ = nullptr;
   QLabel *label_tree_title_ = nullptr;

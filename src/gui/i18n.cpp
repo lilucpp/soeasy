@@ -372,6 +372,9 @@ void I18n::InitDictionary() {
       {"word_exists_dict", "关键词“%1”已在自定义列表中！"},
       {"word_exists_base", "关键词“%1”已存在于系统基础词库中，分词器天然支持精准切词，无需重复添加。"},
       {"ocr_group_title", "高级解析能力"},
+      {"embedded_files_checkbox_label", "提取并解析文档内嵌文件与附件 (Office 内嵌对象 / PDF 附件 / ODF 等)"},
+      {"embedded_files_tip_label",
+       "💡 默认勾选。取消勾选后将跳过文档内嵌附件与 OLE 对象，仅索引主文档正文（纯文本提取更快）。"},
       {"ocr_checkbox_label", "提取并 OCR 解析文档内嵌图片 (Office 系列 / PDF / ODF 等)"},
       {"ocr_tip_label",
        "💡 默认不勾选。勾选后将提取 Office/PDF/ODF 等文档中的嵌入插图并调用 PP-OCRv6 引擎进行文本识别融合；\n    "
@@ -810,6 +813,9 @@ void I18n::InitDictionary() {
       {"word_exists_base",
        "Keyword '%1' already exists in system base dictionary; tokenization is naturally supported."},
       {"ocr_group_title", "Advanced Parsing Capabilities"},
+      {"embedded_files_checkbox_label", "Extract && parse embedded files/attachments in documents (Office / PDF / ODF)"},
+      {"embedded_files_tip_label",
+       "💡 Checked by default. Uncheck to skip embedded attachments and OLE objects and index only main text."},
       {"ocr_checkbox_label", "Extract && OCR embedded images in documents (Office / PDF / ODF)"},
       {"ocr_tip_label",
        "💡 Unchecked by default. Extracts embedded images for PP-OCRv6 recognition.\n    Unchecked yields maximum "

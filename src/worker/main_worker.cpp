@@ -28,6 +28,7 @@ int main(int argc, char *argv[]) {
   bool doctotext_logging = false;
   std::string doctotext_log_path = "";
   bool embedded_image_ocr = false;
+  bool parse_embedded_files = true;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -55,6 +56,10 @@ int main(int argc, char *argv[]) {
       embedded_image_ocr = true;
     } else if (arg == "--no-embedded-image-ocr") {
       embedded_image_ocr = false;
+    } else if (arg == "--parse-embedded-files") {
+      parse_embedded_files = true;
+    } else if (arg == "--no-parse-embedded-files") {
+      parse_embedded_files = false;
     }
   }
 
@@ -65,8 +70,9 @@ int main(int argc, char *argv[]) {
   // Optimize worker process file descriptor limits for heavy concurrent parsing
   soeasy::common::SystemEnv::OptimizeProcessFileLimits();
 
-  // Configure DocToText logging and embedded image OCR in this worker process
+  // Configure DocToText logging, embedded file extraction, and embedded image OCR in this worker process
   soeasy::worker::L2OfficeParser::SetLogging(doctotext_logging, doctotext_log_path);
+  soeasy::worker::L2OfficeParser::SetParseEmbeddedFiles(parse_embedded_files);
   soeasy::worker::L2OfficeParser::SetEmbeddedImageOcr(embedded_image_ocr);
 
   if (rpc_addr.empty()) {

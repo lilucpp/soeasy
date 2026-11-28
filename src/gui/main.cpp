@@ -350,9 +350,16 @@ int main(int argc, char *argv[]) {
 
   // 3. Initialize Worker Guard with configured worker count and 15s base timeout
   auto worker_guard = std::make_shared<soeasy::service::WorkerGuard>();
-  worker_guard->SetLoggingOptions(soeasy::common::Logger::LevelToString(level_enum), enable_console, enable_sync,
-                                  config->doctotext_logging(), config->doctotext_log_path(),
-                                  config->enable_embedded_image_ocr(), (app_data_dir + "/logs").toStdString());
+  soeasy::service::WorkerLoggingOptions worker_opts;
+  worker_opts.level = soeasy::common::Logger::LevelToString(level_enum);
+  worker_opts.enable_console = enable_console;
+  worker_opts.enable_sync = enable_sync;
+  worker_opts.doctotext_logging = config->doctotext_logging();
+  worker_opts.doctotext_log_path = config->doctotext_log_path();
+  worker_opts.embedded_image_ocr = config->enable_embedded_image_ocr();
+  worker_opts.parse_embedded_files = config->enable_embedded_files();
+  worker_opts.worker_log_dir = (app_data_dir + "/logs").toStdString();
+  worker_guard->SetLoggingOptions(worker_opts);
   if (!worker_guard->Init(worker_bin.toStdString(), config->worker_count(),
                           soeasy::service::WorkerGuard::kDefaultTimeoutMs)) {
     std::cerr << "[Warning] Worker guard failed to spawn workers immediately. "

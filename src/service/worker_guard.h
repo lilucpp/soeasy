@@ -139,6 +139,7 @@ struct WorkerLoggingOptions {
   bool doctotext_logging = false;
   std::string doctotext_log_path;
   bool embedded_image_ocr = false;
+  bool parse_embedded_files = true;
   std::string worker_log_dir;
 };
 
@@ -207,7 +208,8 @@ class WorkerGuard {
   void SetLoggingOptions(const WorkerLoggingOptions &options);
   void SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                          bool doctotext_logging = false, const std::string &doctotext_log_path = "",
-                         bool embedded_image_ocr = false, const std::string &worker_log_dir = "");
+                         bool embedded_image_ocr = false, const std::string &worker_log_dir = "",
+                         bool parse_embedded_files = true);
 
  private:
   void ShutdownLocked();
@@ -239,6 +241,7 @@ class WorkerGuard {
   bool doctotext_logging_ = false;
   std::string doctotext_log_path_;
   bool embedded_image_ocr_ = false;
+  bool parse_embedded_files_ = true;
   std::string worker_log_dir_ = "logs";
 
   std::mutex lifecycle_mutex_;

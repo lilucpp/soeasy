@@ -23,12 +23,17 @@ void ExtensionsTab::SetupUi() {
   layout_exts->setContentsMargins(16, 16, 16, 16);
   layout_exts->setSpacing(10);
 
-  // Group 1: 嵌入图片解析选项
+  // Group 1: 文档内嵌内容解析选项（内嵌文件 + 内嵌图片 OCR 独立控制）
   group_ocr_ = new QGroupBox(this);
   auto *layout_ocr = new QVBoxLayout(group_ocr_);
+  embedded_files_check_ = new QCheckBox(group_ocr_);
+  label_embedded_files_tip_ = new QLabel(group_ocr_);
+  label_embedded_files_tip_->setStyleSheet("color: #666; font-size: 12px; margin-left: 20px;");
   embedded_image_ocr_check_ = new QCheckBox(group_ocr_);
   label_ocr_tip_ = new QLabel(group_ocr_);
   label_ocr_tip_->setStyleSheet("color: #666; font-size: 12px; margin-left: 20px;");
+  layout_ocr->addWidget(embedded_files_check_);
+  layout_ocr->addWidget(label_embedded_files_tip_);
   layout_ocr->addWidget(embedded_image_ocr_check_);
   layout_ocr->addWidget(label_ocr_tip_);
   layout_exts->addWidget(group_ocr_);
@@ -141,6 +146,7 @@ void ExtensionsTab::SetupUi() {
 void ExtensionsTab::PopulateFromConfig(const service::IndexConfig &config) {
   is_updating_tree_ = true;
 
+  embedded_files_check_->setChecked(config.enable_embedded_files());
   embedded_image_ocr_check_->setChecked(config.enable_embedded_image_ocr());
 
   const auto &supported_exts = config.GetSupportedExtensions();
@@ -189,6 +195,7 @@ void ExtensionsTab::PopulateFromConfig(const service::IndexConfig &config) {
 void ExtensionsTab::ApplyToConfig(service::IndexConfig *config) {
   if (!config || structural_read_only_) return;
 
+  config->set_enable_embedded_files(embedded_files_check_->isChecked());
   config->set_enable_embedded_image_ocr(embedded_image_ocr_check_->isChecked());
 
   std::vector<std::string> exts;
@@ -218,6 +225,8 @@ void ExtensionsTab::SetStructuralReadOnly(bool read_only) {
 
 void ExtensionsTab::RetranslateUi() {
   if (group_ocr_) group_ocr_->setTitle(Tr("ocr_group_title"));
+  if (embedded_files_check_) embedded_files_check_->setText(Tr("embedded_files_checkbox_label"));
+  if (label_embedded_files_tip_) label_embedded_files_tip_->setText(Tr("embedded_files_tip_label"));
   if (embedded_image_ocr_check_) embedded_image_ocr_check_->setText(Tr("ocr_checkbox_label"));
   if (label_ocr_tip_) label_ocr_tip_->setText(Tr("ocr_tip_label"));
   if (label_tree_title_) label_tree_title_->setText(Tr("exts_tree_title"));

@@ -71,6 +71,15 @@ class L2OfficeParser : public IDocumentParser {
   static void SetLogging(bool enable, const std::string &log_file_path = "");
 
   /**
+   * @brief Configure whether embedded files/attachments inside Office / PDF / ODF documents are extracted.
+   * Default is true (enabled).
+   *
+   * @param enable Whether embedded file extraction is enabled
+   */
+  static void SetParseEmbeddedFiles(bool enable);
+  static bool parse_embedded_files();
+
+  /**
    * @brief Configure whether embedded images in Office / PDF documents are extracted and OCR'd.
    * Default is false (disabled for performance).
    *

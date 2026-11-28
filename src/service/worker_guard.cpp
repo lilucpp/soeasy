@@ -171,7 +171,8 @@ std::vector<std::string> WorkerGuard::BuildWorkerArgs(const std::string &ipc_par
           log_sync_ ? "--log-sync" : "--no-log-sync",
           doctotext_logging_ ? "--doctotext-logging" : "--no-doctotext-logging",
           "--doctotext-log-path=" + worker_dt_log_file,
-          embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr"};
+          embedded_image_ocr_ ? "--embedded-image-ocr" : "--no-embedded-image-ocr",
+          parse_embedded_files_ ? "--parse-embedded-files" : "--no-parse-embedded-files"};
 }
 
 void WorkerGuard::ClearWorkerStdio(size_t index) {
@@ -885,13 +886,15 @@ void WorkerGuard::SetLoggingOptions(const WorkerLoggingOptions &options) {
     bool changed =
         (log_level_ != options.level || log_console_ != options.enable_console || log_sync_ != options.enable_sync ||
          doctotext_logging_ != options.doctotext_logging || doctotext_log_path_ != options.doctotext_log_path ||
-         embedded_image_ocr_ != options.embedded_image_ocr || worker_log_dir_ != next_log_dir);
+         embedded_image_ocr_ != options.embedded_image_ocr || parse_embedded_files_ != options.parse_embedded_files ||
+         worker_log_dir_ != next_log_dir);
     log_level_ = options.level;
     log_console_ = options.enable_console;
     log_sync_ = options.enable_sync;
     doctotext_logging_ = options.doctotext_logging;
     doctotext_log_path_ = options.doctotext_log_path;
     embedded_image_ocr_ = options.embedded_image_ocr;
+    parse_embedded_files_ = options.parse_embedded_files;
     worker_log_dir_ = next_log_dir;
 
     if (changed) {
@@ -1011,7 +1014,8 @@ void WorkerGuard::SetWorkerCount(size_t new_count) {
 
 void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_console, bool enable_sync,
                                     bool doctotext_logging, const std::string &doctotext_log_path,
-                                    bool embedded_image_ocr, const std::string &worker_log_dir) {
+                                    bool embedded_image_ocr, const std::string &worker_log_dir,
+                                    bool parse_embedded_files) {
   WorkerLoggingOptions opts;
   opts.level = level;
   opts.enable_console = enable_console;
@@ -1019,6 +1023,7 @@ void WorkerGuard::SetLoggingOptions(const std::string &level, bool enable_consol
   opts.doctotext_logging = doctotext_logging;
   opts.doctotext_log_path = doctotext_log_path;
   opts.embedded_image_ocr = embedded_image_ocr;
+  opts.parse_embedded_files = parse_embedded_files;
   opts.worker_log_dir = worker_log_dir;
   SetLoggingOptions(opts);
 }

@@ -316,6 +316,10 @@ bool IndexConfig::LoadFromFile(const std::string &file_path) {
       doctotext_log_path_ = j["doctotext_log_path"].get<std::string>();
     }
 
+    if (j.contains("enable_embedded_files") && j["enable_embedded_files"].is_boolean()) {
+      enable_embedded_files_ = j["enable_embedded_files"].get<bool>();
+    }
+
     if (j.contains("enable_embedded_image_ocr") && j["enable_embedded_image_ocr"].is_boolean()) {
       enable_embedded_image_ocr_ = j["enable_embedded_image_ocr"].get<bool>();
     }
@@ -368,6 +372,7 @@ bool IndexConfig::SaveToFile(const std::string &file_path) const {
       j["log_sync"] = log_sync_;
       j["doctotext_logging"] = doctotext_logging_;
       j["doctotext_log_path"] = doctotext_log_path_;
+      j["enable_embedded_files"] = enable_embedded_files_;
       j["enable_embedded_image_ocr"] = enable_embedded_image_ocr_;
       j["ui_language"] = ui_language_;
       j["custom_extensions"] = custom_exts_;
@@ -417,6 +422,7 @@ IndexConfigSnapshot IndexConfig::CaptureSnapshot() const {
   snap.log_sync = log_sync_;
   snap.doctotext_logging = doctotext_logging_;
   snap.doctotext_log_path = doctotext_log_path_;
+  snap.enable_embedded_files = enable_embedded_files_;
   snap.enable_embedded_image_ocr = enable_embedded_image_ocr_;
   snap.ui_language = ui_language_;
   return snap;
@@ -439,7 +445,9 @@ ConfigChangeSummary DiffIndexConfig(const IndexConfigSnapshot &before, const Ind
       diff.debounce_changed || diff.worker_count_changed || (before.ui_language != after.ui_language) ||
       (before.log_level != after.log_level) || (before.log_console != after.log_console) ||
       (before.log_sync != after.log_sync) || (before.doctotext_logging != after.doctotext_logging) ||
-      (before.doctotext_log_path != after.doctotext_log_path) || (before.resource_profile != after.resource_profile);
+      (before.doctotext_log_path != after.doctotext_log_path) || (before.resource_profile != after.resource_profile) ||
+      (before.enable_embedded_files != after.enable_embedded_files) ||
+      (before.enable_embedded_image_ocr != after.enable_embedded_image_ocr);
 
   std::unordered_set<std::string> before_dir_keys;
   for (const auto &d : before.indexed_dirs) {
@@ -503,6 +511,11 @@ ConfigChangeSummary DiffIndexConfig(const IndexConfigSnapshot &before, const Ind
     diff.rules_narrowed = true;
   } else if (after.max_file_size > before.max_file_size) {
     diff.rules_expanded = true;
+  }
+
+  if (!before.enable_embedded_files && after.enable_embedded_files) {
+    diff.rules_expanded = true;
+    diff.embedded_files_expanded = true;
   }
 
   if (!before.enable_embedded_image_ocr && after.enable_embedded_image_ocr) {

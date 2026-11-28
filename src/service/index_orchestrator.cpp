@@ -99,8 +99,9 @@ std::string NormalizeDirPrefixSlash(const std::string &dir_path) {
 }
 
 bool IsEmbeddedOcrCandidateExt(const std::string &ext) {
-  static const std::unordered_set<std::string> kOcrDocExts = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt",
-                                                              "ods", "odp", "odg",  "wps", "et",   "dps", "rtf"};
+  static const std::unordered_set<std::string> kOcrDocExts = {
+      "pdf",  "doc",  "docx", "xls",  "xlsx", "xlsb", "ppt", "pptx", "odt", "ods",
+      "odp",  "odg",  "fodt", "fods", "fodp", "wps",  "et",  "dps",  "rtf"};
   return kOcrDocExts.find(ext) != kOcrDocExts.end();
 }
 
@@ -1664,9 +1665,15 @@ void IndexOrchestrator::DoApplyRuntimeConfig() {
   common::Logger::SetConsoleEnabled(config_->log_console());
   common::Logger::SetSyncMode(config_->log_sync());
   if (worker_guard_) {
-    worker_guard_->SetLoggingOptions(config_->log_level(), config_->log_console(), config_->log_sync(),
-                                     config_->doctotext_logging(), config_->doctotext_log_path(),
-                                     config_->enable_embedded_image_ocr());
+    WorkerLoggingOptions opts;
+    opts.level = config_->log_level();
+    opts.enable_console = config_->log_console();
+    opts.enable_sync = config_->log_sync();
+    opts.doctotext_logging = config_->doctotext_logging();
+    opts.doctotext_log_path = config_->doctotext_log_path();
+    opts.embedded_image_ocr = config_->enable_embedded_image_ocr();
+    opts.parse_embedded_files = config_->enable_embedded_files();
+    worker_guard_->SetLoggingOptions(opts);
     worker_guard_->SetWorkerCount(config_->worker_count());
   }
   const auto profile = config_->resource_profile();
@@ -1881,6 +1888,7 @@ void IndexOrchestrator::EnqueueOrLaunchBackgroundTask(IndexTaskKind initial_kind
     dst.rules_narrowed = dst.rules_narrowed || src.rules_narrowed;
     dst.rules_expanded = dst.rules_expanded || src.rules_expanded;
     dst.ocr_expanded = dst.ocr_expanded || src.ocr_expanded;
+    dst.embedded_files_expanded = dst.embedded_files_expanded || src.embedded_files_expanded;
     for (const auto &d : src.removed_dirs) {
       if (std::find(dst.removed_dirs.begin(), dst.removed_dirs.end(), d) == dst.removed_dirs.end()) {
         dst.removed_dirs.push_back(d);
@@ -2032,7 +2040,7 @@ void IndexOrchestrator::BackgroundTaskLoop(IndexTaskKind initial_kind, uint64_t 
         } rescan_guard(force_archive_rescan_, diff.rules_expanded);
         std::lock_guard<std::mutex> scan_lock(scan_mutex_);
         PerformScanInternal(std::move(progress_forwarder), /*manage_buffering=*/true, /*manage_phase=*/false,
-                            /*force_ocr_reindex=*/diff.ocr_expanded);
+                            /*force_ocr_reindex=*/diff.ocr_expanded || diff.embedded_files_expanded);
       }
       count = DoIndexedFileCount();
     } else {

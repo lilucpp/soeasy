@@ -209,8 +209,28 @@ TEST_F(IndexStateMachineTest, DiffIndexConfigDetectsAllTransitions) {
   cfg.set_enable_embedded_image_ocr(true);
   {
     const auto d = DiffIndexConfig(base5, cfg.CaptureSnapshot());
+    EXPECT_TRUE(d.runtime_changed);
     EXPECT_TRUE(d.rules_expanded);
     EXPECT_TRUE(d.ocr_expanded);
+    EXPECT_FALSE(d.embedded_files_expanded);
+  }
+
+  const IndexConfigSnapshot base6 = cfg.CaptureSnapshot();
+  cfg.set_enable_embedded_files(false);
+  {
+    const auto d = DiffIndexConfig(base6, cfg.CaptureSnapshot());
+    EXPECT_TRUE(d.runtime_changed);
+    EXPECT_FALSE(d.rules_expanded);
+    EXPECT_FALSE(d.embedded_files_expanded);
+  }
+
+  const IndexConfigSnapshot base7 = cfg.CaptureSnapshot();
+  cfg.set_enable_embedded_files(true);
+  {
+    const auto d = DiffIndexConfig(base7, cfg.CaptureSnapshot());
+    EXPECT_TRUE(d.runtime_changed);
+    EXPECT_TRUE(d.rules_expanded);
+    EXPECT_TRUE(d.embedded_files_expanded);
   }
 }
 

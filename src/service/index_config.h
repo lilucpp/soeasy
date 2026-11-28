@@ -26,6 +26,7 @@ struct IndexConfigSnapshot {
   bool log_sync = false;
   bool doctotext_logging = false;
   std::string doctotext_log_path;
+  bool enable_embedded_files = true;
   bool enable_embedded_image_ocr = false;
   std::string ui_language;
 };
@@ -39,6 +40,7 @@ struct ConfigChangeSummary {
   bool rules_narrowed = false;
   bool rules_expanded = false;
   bool ocr_expanded = false;
+  bool embedded_files_expanded = false;
 
   [[nodiscard]] bool HasStructuralChanges() const {
     return !removed_dirs.empty() || !added_dirs.empty() || rules_narrowed || rules_expanded;
@@ -167,6 +169,15 @@ class IndexConfig {
     return doctotext_log_path_;
   }
 
+  void set_enable_embedded_files(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    enable_embedded_files_ = enable;
+  }
+  bool enable_embedded_files() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return enable_embedded_files_;
+  }
+
   void set_enable_embedded_image_ocr(bool enable) {
     std::lock_guard<std::mutex> lock(mutex_);
     enable_embedded_image_ocr_ = enable;
@@ -288,6 +299,7 @@ class IndexConfig {
   bool log_sync_ = kDefaultLogSync;
   bool doctotext_logging_ = false;
   std::string doctotext_log_path_;
+  bool enable_embedded_files_ = true;
   bool enable_embedded_image_ocr_ = false;
   std::string ui_language_ = kDefaultUiLanguage;
   std::vector<std::string> custom_exts_;
