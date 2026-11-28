@@ -1237,7 +1237,8 @@ int main(int argc, char *argv[]) {
     CHECK(persistent_idx.isValid());
     CHECK(sort_model->GetItem(persistent_idx.row())->doc_id == 202);
 
-    // Verify ascending Chinese Pinyin + Natural Numeric + Latin Case-Insensitive order (preserving kColIndex order)
+    // Verify ascending Chinese Pinyin (zh-CN) + Natural Numeric + Latin Case-Insensitive order
+    soeasy::gui::I18n::Instance().SetLanguage("zh");
     sort_model->sort(soeasy::gui::SearchTableModel::kColIndex, Qt::AscendingOrder);
     sort_model->sort(soeasy::gui::SearchTableModel::kColFileName, Qt::AscendingOrder);
     std::vector<QString> distinct_order;
@@ -1246,25 +1247,38 @@ int main(int argc, char *argv[]) {
         distinct_order.push_back(it.file_name);
       }
     }
-    auto idx_of = [&](const QString &name) -> int {
-      for (size_t k = 0; k < distinct_order.size(); ++k) {
-        if (distinct_order[k] == name) return static_cast<int>(k);
+    auto idx_of = [](const std::vector<QString> &seq, const QString &name) -> int {
+      for (size_t k = 0; k < seq.size(); ++k) {
+        if (seq[k] == name) return static_cast<int>(k);
       }
       return -1;
     };
-    CHECK(idx_of(QStringLiteral("阿爸.txt")) >= 0);
-    CHECK(idx_of(QStringLiteral("阿爸.txt")) < idx_of(QStringLiteral("安康.txt")));
-    CHECK(idx_of(QStringLiteral("安康.txt")) < idx_of(QStringLiteral("北极.txt")));
-    CHECK(idx_of(QStringLiteral("北极.txt")) < idx_of(QStringLiteral("测试.txt")));
-    CHECK(idx_of(QStringLiteral("测试.txt")) < idx_of(QStringLiteral("测试1.txt")));
-    CHECK(idx_of(QStringLiteral("测试1.txt")) < idx_of(QStringLiteral("测试2.txt")));
-    CHECK(idx_of(QStringLiteral("测试2.txt")) < idx_of(QStringLiteral("测试10.txt")));
-    CHECK(idx_of(QStringLiteral("B2.txt")) < idx_of(QStringLiteral("b10.txt")));
+    std::cout << "  -> zh-CN sorted order:";
+    for (const auto &s : distinct_order) {
+      std::cout << " [" << s.toStdString() << "]";
+    }
+    std::cout << "\n";
+    CHECK(distinct_order.size() == 9u);
+    CHECK(idx_of(distinct_order, QStringLiteral("阿爸.txt")) >= 0);
+    // "安"(U+5B89, 6 strokes) > "北"(U+5317, 5 strokes) in codepoint/stroke, so "安康" < "北极" proves real Pinyin!
+    CHECK(idx_of(distinct_order, QStringLiteral("安康.txt")) < idx_of(distinct_order, QStringLiteral("北极.txt")));
+    CHECK(idx_of(distinct_order, QStringLiteral("测试.txt")) < idx_of(distinct_order, QStringLiteral("测试1.txt")));
+    CHECK(idx_of(distinct_order, QStringLiteral("测试1.txt")) < idx_of(distinct_order, QStringLiteral("测试2.txt")));
+    CHECK(idx_of(distinct_order, QStringLiteral("测试2.txt")) < idx_of(distinct_order, QStringLiteral("测试10.txt")));
+    CHECK(idx_of(distinct_order, QStringLiteral("B2.txt")) < idx_of(distinct_order, QStringLiteral("b10.txt")));
 
-    // Verify Descending order reverses Chinese natural order cleanly and preserves duplicate stability
+    // Verify Descending order is exact reverse of Ascending on distinct keys and preserves duplicate stability
     sort_model->sort(soeasy::gui::SearchTableModel::kColFileName, Qt::DescendingOrder);
-    CHECK(sort_model->GetItem(0)->file_name == QStringLiteral("测试10.txt") ||
-          sort_model->GetItem(0)->file_name == QStringLiteral("b10.txt"));
+    std::vector<QString> desc_distinct;
+    for (const auto &it : sort_model->items()) {
+      if (desc_distinct.empty() || desc_distinct.back() != it.file_name) {
+        desc_distinct.push_back(it.file_name);
+      }
+    }
+    CHECK(desc_distinct.size() == distinct_order.size());
+    for (size_t k = 0; k < distinct_order.size(); ++k) {
+      CHECK(desc_distinct[k] == distinct_order[distinct_order.size() - 1 - k]);
+    }
     int first_dup_row = -1;
     for (int r = 0; r < sort_model->rowCount(); ++r) {
       if (sort_model->GetItem(r)->file_name == QStringLiteral("测试.txt")) {
@@ -1276,6 +1290,21 @@ int main(int argc, char *argv[]) {
     // Duplicates preserve original relative order (100, 101, ..., 127)
     CHECK(sort_model->GetItem(first_dup_row)->doc_id == 100);
     CHECK(sort_model->GetItem(first_dup_row + 27)->doc_id == 127);
+
+    // Verify English UI mode (en-US) Latin + Natural Numeric sorting, then restore zh
+    soeasy::gui::I18n::Instance().SetLanguage("en");
+    sort_model->sort(soeasy::gui::SearchTableModel::kColFileName, Qt::AscendingOrder);
+    std::vector<QString> en_distinct;
+    for (const auto &it : sort_model->items()) {
+      if (en_distinct.empty() || en_distinct.back() != it.file_name) {
+        en_distinct.push_back(it.file_name);
+      }
+    }
+    CHECK(idx_of(en_distinct, QStringLiteral("B2.txt")) < idx_of(en_distinct, QStringLiteral("b10.txt")));
+    CHECK(idx_of(en_distinct, QStringLiteral("测试.txt")) < idx_of(en_distinct, QStringLiteral("测试1.txt")));
+    CHECK(idx_of(en_distinct, QStringLiteral("测试1.txt")) < idx_of(en_distinct, QStringLiteral("测试2.txt")));
+    CHECK(idx_of(en_distinct, QStringLiteral("测试2.txt")) < idx_of(en_distinct, QStringLiteral("测试10.txt")));
+    soeasy::gui::I18n::Instance().SetLanguage("zh");
 
     // Verify ResultView 3-click cycle (Asc -> Desc -> Score Desc) does not crash
     QMetaObject::invokeMethod(sort_view.horizontalHeader(), "sectionClicked", Qt::DirectConnection,

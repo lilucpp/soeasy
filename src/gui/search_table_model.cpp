@@ -3,15 +3,32 @@
 
 #include "gui/search_table_model.h"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+// clang-format off
+#include <windows.h>
+#include <winnls.h>
+// clang-format on
+#ifndef SORT_DIGITSASNUMBERS
+#define SORT_DIGITSASNUMBERS 0x00000008
+#endif
+#else
 #include <QCollator>
+#include <QLocale>
+#include <optional>
+#endif
+
 #include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFont>
-#include <QLocale>
 #include <algorithm>
 #include <cmath>
-#include <optional>
 
 #include "gui/gui_utils.h"
 #include "gui/i18n.h"
@@ -227,19 +244,40 @@ void SearchTableModel::sort(int column, Qt::SortOrder order) {
     }
   }
 
+  const bool is_zh = (I18n::Instance().current_language() == Language::kChinese);
+#ifdef _WIN32
+  const wchar_t *win_locale = is_zh ? L"zh-CN" : L"en-US";
+#else
   std::optional<QCollator> collator;
   if (column == kColFileName || column == kColPath) {
-    collator.emplace(QLocale(QLocale::Chinese, QLocale::China));
+    collator.emplace(is_zh ? QLocale(QLocale::Chinese, QLocale::China)
+                           : QLocale(QLocale::English, QLocale::UnitedStates));
     collator->setNumericMode(true);
     collator->setCaseSensitivity(Qt::CaseInsensitive);
   }
+#endif
 
-  auto is_less = [column, &collator](const DisplayResultItem &a, const DisplayResultItem &b) -> bool {
+  auto compare_strings = [&](const QString &a, const QString &b) -> int {
+#ifdef _WIN32
+    const wchar_t *pa = a.isEmpty() ? L"" : reinterpret_cast<const wchar_t *>(a.utf16());
+    const wchar_t *pb = b.isEmpty() ? L"" : reinterpret_cast<const wchar_t *>(b.utf16());
+    const int rc = ::CompareStringEx(win_locale, NORM_IGNORECASE | SORT_DIGITSASNUMBERS, pa, a.size(), pb, b.size(),
+                                     nullptr, nullptr, 0);
+    if (rc == CSTR_LESS_THAN) return -1;
+    if (rc == CSTR_GREATER_THAN) return 1;
+    if (rc == CSTR_EQUAL) return 0;
+    return a.compare(b, Qt::CaseInsensitive);
+#else
+    return collator->compare(a, b);
+#endif
+  };
+
+  auto is_less = [column, &compare_strings](const DisplayResultItem &a, const DisplayResultItem &b) -> bool {
     switch (column) {
       case kColFileName:
-        return collator->compare(a.file_name, b.file_name) < 0;
+        return compare_strings(a.file_name, b.file_name) < 0;
       case kColPath:
-        return collator->compare(a.file_path, b.file_path) < 0;
+        return compare_strings(a.file_path, b.file_path) < 0;
       case kColSize:
         return a.file_size < b.file_size;
       case kColMtime:
